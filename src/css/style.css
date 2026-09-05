@@ -444,8 +444,8 @@ body {
 .classic-left-pane {
   display: flex;
   flex-direction: column;
-  width: 350px;
-  gap: 15px;
+  width: 400px;
+  gap: 10px;
 }
 .classic-cart-img {
   background: transparent;
@@ -464,16 +464,16 @@ body {
   gap: 5px;
 }
 .classic-field-box label {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: bold;
 }
 .classic-field-box .classic-value {
   text-align: right;
-  font-size: 40px;
+  font-size: 36px;
   font-weight: bold;
   background: transparent;
   color: white;
-  min-height: 48px;
+  min-height: 40px;
 }
 
 /* Right Pane (Table) */
@@ -537,7 +537,7 @@ body {
   height: auto;
 }
 .classic-bottom-left {
-  width: 350px;
+  width: 400px;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -560,11 +560,12 @@ body {
   height: 60px;
   font-size: 32px;
   font-weight: bold;
-  background: #111;
-  color: white;
+  background: white;
+  color: black;
   border: none;
   padding: 0 15px;
   outline: none;
+  border-radius: 4px;
 }
 .classic-shortcuts {
   flex: 1;
@@ -572,18 +573,17 @@ body {
   border: 1px solid #002366;
   border-radius: 6px;
   display: flex;
-  padding: 10px 15px;
-  font-size: 13px;
+  padding: 10px;
+  font-size: 12px;
   font-weight: 500;
   color: #002366;
-  gap: 20px;
+  gap: 10px;
   justify-content: space-between;
 }
 .shortcut-col {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  white-space: nowrap;
+  gap: 6px;
 }
 
 /* Bottom Right Totals */
@@ -616,7 +616,7 @@ body {
   justify-content: space-between;
 }
 .classic-total-box.subtotal .val {
-  font-size: 48px; /* Diminuído */
+  font-size: 36px;
   line-height: 1;
 }
 .classic-total-box.sm {
