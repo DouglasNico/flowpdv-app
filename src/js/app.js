@@ -704,7 +704,7 @@ export const App = {
   },
     iniciarRelogioAoVivo() {
     const update = () => {
-      const clocks = document.querySelectorAll('#header-live-clock, #pdv-live-clock, #footer-live-clock, .live-clock');
+      const clocks = document.querySelectorAll('#header-live-clock, #pdv-live-clock, #footer-live-clock, #classic-clock, .live-clock');
       const timeStr = new Date().toLocaleTimeString('pt-BR');
       clocks.forEach(c => { c.textContent = timeStr; });
     };
@@ -730,8 +730,17 @@ export const App = {
       const logo = (lic && lic.logoUrl) ? lic.logoUrl : ((cfg && cfg.logoUrl ? cfg.logoUrl : ''));
       if (logo && (logo.startsWith('http') || logo.startsWith('data:image'))) {
         brandIcon.innerHTML = `<img src="${logo}" alt="Logo da Empresa" class="pdv-brand-logo-img" style="max-width: 250px; max-height: 175px; width: auto; height: auto; object-fit: contain; border-radius: 14px; display: block; margin: auto; pointer-events: none; user-select: none;">`;
+        const classicLogo = document.getElementById('classic-client-logo');
+        if (classicLogo) {
+          classicLogo.src = logo;
+          classicLogo.style.display = 'block';
+        }
       } else {
         brandIcon.innerHTML = `<span style="font-size: 56px; pointer-events: none; user-select: none; display: block; margin: 0 auto;">${(lic && lic.icone) ? lic.icone : ((cfg && cfg.icone ? cfg.icone : "🏪"))}</span>`;
+        const classicLogo = document.getElementById('classic-client-logo');
+        if (classicLogo) {
+          classicLogo.src = 'src/assets/icon.png';
+        }
       }
     }
 

@@ -355,9 +355,11 @@ export const AuthModule = {
     const nameEl = document.getElementById('header-user-name');
     const roleEl = document.getElementById('header-user-role');
     const masterTab = document.getElementById('nav-btn-master');
+    const classicOperator = document.getElementById('classic-operator-name');
 
     const u = this.getUsuario();
     if (nameEl) nameEl.textContent = u.nome;
+    if (classicOperator) classicOperator.textContent = `Operador: ${u.nome}`;
     if (roleEl) {
       roleEl.textContent = u.cargo === 'gerente' ? 'Gerente' : 'Operador';
       roleEl.className = `user-role-tag ${u.cargo}`;

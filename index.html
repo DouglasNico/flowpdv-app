@@ -259,15 +259,20 @@
 
       <div id="classic-pdv-shell" aria-label="PDV Clássico">
         <header class="classic-header">
-          <div class="classic-logo-title">
-            <span class="classic-logo-icon">Y</span>
-            <span class="classic-title-text">FLOW® - PDV <small>SISTEMAS ERP</small></span>
-          </div>
-          <div class="classic-window-controls">
-            <span>−</span>
-            <span>✕</span>
-          </div>
-        </header>
+            <div class="classic-logo-title">
+              <span class="classic-title-text">FLOWPDV</span>
+            </div>
+            <div class="classic-header-info">
+              <span id="classic-clock">00:00:00</span>
+              <span class="divider">|</span>
+              <span id="classic-operator-name">Operador: ---</span>
+              <button id="classic-btn-trocar-operador" onclick="AuthModule.logout()">Trocar de Operador</button>
+            </div>
+            <div class="classic-window-controls">
+              <span onclick="require('electron').remote.getCurrentWindow().minimize()">−</span>
+              <span onclick="require('electron').remote.getCurrentWindow().close()">✕</span>
+            </div>
+          </header>
 
         <div class="classic-status-bar">
           <h2 id="classic-status-text">REALIZE A ABERTURA DO CAIXA</h2>
@@ -275,9 +280,9 @@
 
         <div class="classic-main-content">
           <div class="classic-left-pane">
-            <div class="classic-cart-img">
-              <img src="src/assets/icon.png" alt="Cart" style="width: 140px; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.3));" onerror="this.style.display='none'">
-            </div>
+              <div class="classic-cart-img">
+                <img id="classic-client-logo" src="src/assets/icon.png" alt="Logo Cliente" style="width: 100%; max-height: 120px; object-fit: contain; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.3));" onerror="this.src='src/assets/icon.png'">
+              </div>
             <div class="classic-field-box">
               <label>CÓDIGO DE BARRAS</label>
               <div class="classic-value" id="classic-codigo-barras"></div>
@@ -307,7 +312,7 @@
                   </tr>
                 </thead>
                 <tbody id="classic-pdv-itens-tbody">
-                  <!-- Itens inseridos via JS -->
+                  <!-- Itens -->
                 </tbody>
               </table>
             </div>
@@ -318,29 +323,27 @@
           <div class="classic-bottom-left">
             <div class="classic-input-group">
               <label>CÓDIGO</label>
-              <input type="text" id="classic-pdv-barcode-input" style="text-transform: uppercase;" autocomplete="off">
+              <input type="text" id="classic-pdv-barcode-input" style="text-transform: uppercase;" autocomplete="off" autofocus>
             </div>
             <div class="classic-shortcuts">
               <div class="shortcut-col">
-                <div><strong>F2</strong> - Buscar Prod</div>
-                <div><strong>F3</strong> - Excluir Item</div>
-                <div><strong>F4</strong> - Quantidade</div>
-                <div><strong>F5</strong> - Nova Venda</div>
-                <div><strong>F6</strong> - Gaveta</div>
+                <span><strong>F2</strong> - Buscar Prod</span>
+                <span><strong>F3</strong> - Excluir Item</span>
+                <span><strong>F4</strong> - Quantidade</span>
               </div>
               <div class="shortcut-col">
-                <div><strong>F7</strong> - Sangria</div>
-                <div><strong>F8</strong> - Suprimento</div>
-                <div><strong>F9</strong> - Fechar Caixa</div>
-                <div><strong>F10</strong> - Finalizar (Pag)</div>
-                <div><strong>F11</strong> - Cancelar Venda</div>
+                <span><strong>F5</strong> - Cliente/CPF</span>
+                <span><strong>F6</strong> - Desconto</span>
+                <span><strong>F7</strong> - Sangria</span>
               </div>
               <div class="shortcut-col">
-                <div><strong>Ctrl+D</strong> - Desconto</div>
-                <div><strong>Ctrl+P</strong> - Cliente/CPF</div>
-                <br>
-                <div><strong>F1</strong> - Gerência</div>
-                <div><strong>Esc</strong> - Sair</div>
+                <span><strong>F8</strong> - Suprimento</span>
+                <span><strong>F9</strong> - Fechar Caixa</span>
+                <span><strong>F10</strong> - Finalizar Venda</span>
+              </div>
+              <div class="shortcut-col">
+                <span><strong>F11</strong> - Cancelar Venda</span>
+                <span><strong>ESC</strong> - Sair / Voltar</span>
               </div>
             </div>
           </div>

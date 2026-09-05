@@ -371,25 +371,33 @@ body {
   align-items: center;
   gap: 12px;
 }
-.classic-logo-icon {
-  font-size: 32px;
-  font-weight: bold;
-  border: 2px solid white;
-  border-radius: 50%;
-  width: 48px;
-  height: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
 .classic-title-text {
   font-size: 26px;
   font-weight: 600;
+  letter-spacing: 1px;
 }
-.classic-title-text small {
-  font-size: 14px;
-  font-weight: 400;
-  opacity: 0.8;
+.classic-header-info {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  font-size: 16px;
+  font-weight: 500;
+}
+.classic-header-info .divider {
+  opacity: 0.5;
+}
+#classic-btn-trocar-operador {
+  background: transparent;
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.5);
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: 0.2s;
+}
+#classic-btn-trocar-operador:hover {
+  background: rgba(255,255,255,0.1);
 }
 .classic-window-controls {
   display: flex;
@@ -440,35 +448,32 @@ body {
   gap: 15px;
 }
 .classic-cart-img {
-  flex: 1;
-  background: #e3efff;
-  border: 2px solid #002366;
-  border-radius: 6px;
+  background: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 150px;
+  min-height: 120px;
 }
 .classic-field-box {
   background: #002366;
   border-radius: 6px;
-  padding: 8px 12px;
+  padding: 10px 14px;
   color: white;
   display: flex;
   flex-direction: column;
   gap: 5px;
 }
 .classic-field-box label {
-  font-size: 16px;
+  font-size: 20px;
   font-weight: bold;
 }
 .classic-field-box .classic-value {
   text-align: right;
-  font-size: 32px;
+  font-size: 40px;
   font-weight: bold;
   background: transparent;
   color: white;
-  min-height: 40px;
+  min-height: 48px;
 }
 
 /* Right Pane (Table) */
@@ -478,13 +483,14 @@ body {
   flex-direction: column;
 }
 .classic-table-container {
-  flex: 1;
+  flex: 0 1 55%; /* Diminui a altura da tabela para quase metade */
   background: #e3efff;
   border: 2px solid #002366;
   border-radius: 6px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  margin-bottom: auto; /* Empurra o resto pro espaço vazio */
 }
 .classic-table-header {
   background: #002366;
@@ -509,7 +515,7 @@ body {
 .classic-pdv-table tbody {
   display: block;
   overflow-y: auto;
-  height: calc(100vh - 460px);
+  height: calc(100vh - 580px); /* Ajusta barra de rolagem */
 }
 .classic-pdv-table thead, .classic-pdv-table tbody tr {
   display: table;
@@ -526,9 +532,9 @@ body {
 /* Bottom Panel */
 .classic-bottom-panel {
   display: flex;
-  padding: 0 25px 25px 25px;
+  padding: 0 25px 40px 25px; /* Adicionado respiro no final (40px) */
   gap: 25px;
-  height: 180px;
+  height: 200px;
 }
 .classic-bottom-left {
   width: 320px;
@@ -538,26 +544,26 @@ body {
 }
 .classic-input-group {
   background: #002366;
-  padding: 10px;
+  padding: 12px;
   border-radius: 6px;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 15px;
 }
 .classic-input-group label {
   color: white;
   font-weight: bold;
-  font-size: 18px;
+  font-size: 24px;
 }
 .classic-input-group input {
   flex: 1;
-  height: 40px;
-  font-size: 24px;
+  height: 60px;
+  font-size: 32px;
   font-weight: bold;
   background: #111;
   color: white;
   border: none;
-  padding: 0 10px;
+  padding: 0 15px;
   outline: none;
 }
 .classic-shortcuts {
@@ -565,10 +571,12 @@ body {
   background: #e3efff;
   border: 1px solid #002366;
   display: flex;
-  padding: 8px;
-  font-size: 11px;
+  padding: 10px;
+  font-size: 12px;
+  font-weight: 500;
   color: #002366;
   gap: 15px;
+  justify-content: space-between;
 }
 .shortcut-col {
   display: flex;
@@ -606,7 +614,7 @@ body {
   justify-content: space-between;
 }
 .classic-total-box.subtotal .val {
-  font-size: 64px;
+  font-size: 48px; /* Diminuído */
   line-height: 1;
 }
 .classic-total-box.sm {
@@ -617,17 +625,17 @@ body {
   align-items: center;
 }
 .classic-total-box label {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: bold;
   align-self: flex-start;
-  margin-top: 10px;
+  margin-top: 5px;
 }
 .classic-total-box.sm label {
   margin-top: 0;
-  font-size: 18px;
+  font-size: 16px;
 }
 .classic-total-box .val {
-  font-size: 42px;
+  font-size: 32px; /* Diminuído */
   font-weight: bold;
   text-align: right;
 }
