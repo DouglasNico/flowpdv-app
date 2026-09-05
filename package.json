@@ -1,0 +1,92 @@
+{
+  "name": "flowpdv",
+  "version": "3.0.0",
+  "description": "FlowPDV - Sistema de Gestão Comercial e Ponto de Venda Ágil",
+  "main": "main.js",
+  "scripts": {
+    "bundle": "esbuild src/js/app.js --bundle --outfile=src/js/bundle.js --format=iife --platform=browser",
+    "start": "npm run bundle && electron .",
+    "build": "npm run bundle && electron-builder --win",
+    "dist": "npm run build && powershell -Command \"Copy-Item 'C:/Users/User/AppData/Local/Temp/flowpdv_build/FlowPDV-Setup.exe' dist/ -Force; Copy-Item 'C:/Users/User/AppData/Local/Temp/flowpdv_build/latest.yml' dist/ -Force\"",
+    "watch": "esbuild src/js/app.js --bundle --outfile=src/js/bundle.js --format=iife --platform=browser --watch",
+    "chrome": "start chrome index.html"
+  },
+  "keywords": [
+    "pdv",
+    "flowpdv",
+    "caixa",
+    "estoque",
+    "gestao",
+    "electron"
+  ],
+  "author": "Douglas Batista",
+  "publisher": "Douglas Batista",
+  "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DouglasNico/flowpdv.git"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
+  },
+  "devDependencies": {
+    "docx": "^9.7.1",
+    "electron": "^31.0.0",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.25.0",
+    "exceljs": "^4.4.0",
+    "firebase": "^11.4.0",
+    "xlsx": "^0.18.5"
+  },
+  "build": {
+    "appId": "com.flowpdv.app",
+    "productName": "FlowPDV",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "DouglasNico",
+        "repo": "flowpdv"
+      }
+    ],
+    "directories": {
+      "output": "C:/Users/User/AppData/Local/Temp/flowpdv_build"
+    },
+    "compression": "maximum",
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "src/**/*",
+      "!src/**/*.map",
+      "!dist/**/*",
+      "!release/**/*",
+      "!release_build/**/*",
+      "!docs_assets/**/*",
+      "!*.mjs",
+      "!*.docx"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "src/assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "FlowPDV",
+      "artifactName": "FlowPDV-Setup.exe",
+      "uninstallDisplayName": "FlowPDV",
+      "deleteAppDataOnUninstall": false
+    }
+  }
+}

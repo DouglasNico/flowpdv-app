@@ -1,0 +1,10 @@
+TESTANDO CONFIG VAIDATION NO ELECTRON...
+RESULTADO DIAGNOSTICO:
+{
+  "brandHasOnClick": false,
+  "brandCursorStyle": "auto",
+  "cfgLogoFileExists": false,
+  "cfgNomeEmpresaValue": null,
+  "cfgCnpjValue": null,
+  "logoImgRendered": "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/s"
+}

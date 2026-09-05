@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">
+  <NFe>
+    <infNFe Id="NFe35260845997418000153550010000889201994827103" versao="4.00">
+      <ide>
+        <cUF>35</cUF>
+        <cNF>99482710</cNF>
+        <natOp>VENDA DE MERCADORIAS</natOp>
+        <mod>55</mod>
+        <serie>1</serie>
+        <nNF>88920</nNF>
+        <dhEmi>2026-08-31T14:30:00-03:00</dhEmi>
+        <tpNF>1</tpNF>
+        <idDest>1</idDest>
+        <cMunFG>3550308</cMunFG>
+        <tpImp>1</tpImp>
+        <tpEmis>1</tpEmis>
+        <cDV>3</cDV>
+        <tpAmb>1</tpAmb>
+        <finNFe>1</finNFe>
+        <indFinal>0</indFinal>
+        <indPres>1</indPres>
+        <procEmi>0</procEmi>
+        <verProc>4.00</verProc>
+      </ide>
+      <emit>
+        <CNPJ>45997418000153</CNPJ>
+        <xNome>COCA-COLA FEMSA BRASIL DISTRIBUIDORA LTDA</xNome>
+        <xFant>COCA-COLA FEMSA</xFant>
+        <enderEmit>
+          <xLgr>AVENIDA ENGENHEIRO BILLINGS</xLgr>
+          <nro>2200</nro>
+          <xBairro>JAGUARE</xBairro>
+          <cMun>3550308</cMun>
+          <xMun>SAO PAULO</xMun>
+          <UF>SP</UF>
+          <CEP>05321010</CEP>
+          <cPais>1058</cPais>
+          <xPais>BRASIL</xPais>
+        </enderEmit>
+        <IE>111222333444</IE>
+        <CRT>3</CRT>
+      </emit>
+      <dest>
+        <CNPJ>12345678000190</CNPJ>
+        <xNome>COMERCIO E DISTRIBUICAO LTDA</xNome>
+        <enderDest>
+          <xLgr>RUA COMERCIAL PRINCIPAL</xLgr>
+          <nro>100</nro>
+          <xBairro>CENTRO</xBairro>
+          <cMun>3550308</cMun>
+          <xMun>SAO PAULO</xMun>
+          <UF>SP</UF>
+          <CEP>01001000</CEP>
+          <cPais>1058</cPais>
+          <xPais>BRASIL</xPais>
+        </enderDest>
+        <indIEDest>1</indIEDest>
+        <IE>987654321000</IE>
+      </dest>
+      
+      <!-- ITEM 1: COCA-COLA SEM AÇÚCAR LATA 350ML (10 CAIXAS COM 12 = 120 UNIDADES) -->
+      <det nItem="1">
+        <prod>
+          <cProd>KO-350-ZERO</cProd>
+          <cEAN>7894900010015</cEAN>
+          <xProd>REFRIGERANTE COCA-COLA SEM ACUCAR LATA 350ML</xProd>
+          <NCM>22021000</NCM>
+          <CEST>0300700</CEST>
+          <CFOP>5102</CFOP>
+          <uCom>CX</uCom>
+          <qCom>10.0000</qCom>
+          <vUnCom>42.0000</vUnCom>
+          <vProd>420.00</vProd>
+          <cEANTrib>7894900010015</cEANTrib>
+          <uTrib>UN</uTrib>
+          <qTrib>120.0000</qTrib>
+          <vUnTrib>3.5000</vUnTrib>
+          <indTot>1</indTot>
+        </prod>
+      </det>
+
+      <!-- ITEM 2: SUCO DEL VALLE 100% UVA 1L (6 CAIXAS COM 6 = 36 UNIDADES) -->
+      <det nItem="2">
+        <prod>
+          <cProd>DV-UVA-1L</cProd>
+          <cEAN>7894900530018</cEAN>
+          <xProd>SUCO DEL VALLE 100% UVA INTEGRAL 1L</xProd>
+          <NCM>20098990</NCM>
+          <CEST>0301200</CEST>
+          <CFOP>5102</CFOP>
+          <uCom>CX</uCom>
+          <qCom>6.0000</qCom>
+          <vUnCom>42.0000</vUnCom>
+          <vProd>252.00</vProd>
+          <cEANTrib>7894900530018</cEANTrib>
+          <uTrib>UN</uTrib>
+          <qTrib>36.0000</qTrib>
+          <vUnTrib>7.0000</vUnTrib>
+          <indTot>1</indTot>
+        </prod>
+      </det>
+
+      <!-- ITEM 3: CERVEJA HEINEKEN LAGER LONG NECK 330ML (5 CAIXAS COM 24 = 120 UNIDADES) -->
+      <det nItem="3">
+        <prod>
+          <cProd>HEIN-LN-330</cProd>
+          <cEAN>7896045506049</cEAN>
+          <xProd>CERVEJA HEINEKEN LAGER LONG NECK 330ML</xProd>
+          <NCM>22030000</NCM>
+          <CEST>0300100</CEST>
+          <CFOP>5102</CFOP>
+          <uCom>CX</uCom>
+          <qCom>5.0000</qCom>
+          <vUnCom>156.0000</vUnCom>
+          <vProd>780.00</vProd>
+          <cEANTrib>7896045506049</cEANTrib>
+          <uTrib>UN</uTrib>
+          <qTrib>120.0000</qTrib>
+          <vUnTrib>6.5000</vUnTrib>
+          <indTot>1</indTot>
+        </prod>
+      </det>
+
+      <!-- ITEM 4: AGUA MINERAL CRYSTAL SEM GAS 500ML (8 FARDOS COM 12 = 96 UNIDADES) -->
+      <det nItem="4">
+        <prod>
+          <cProd>CRYS-500-SG</cProd>
+          <cEAN>7894900550016</cEAN>
+          <xProd>AGUA MINERAL CRYSTAL SEM GAS 500ML</xProd>
+          <NCM>22011000</NCM>
+          <CEST>0300500</CEST>
+          <CFOP>5102</CFOP>
+          <uCom>FD</uCom>
+          <qCom>8.0000</qCom>
+          <vUnCom>18.0000</vUnCom>
+          <vProd>144.00</vProd>
+          <cEANTrib>7894900550016</cEANTrib>
+          <uTrib>UN</uTrib>
+          <qTrib>96.0000</qTrib>
+          <vUnTrib>1.5000</vUnTrib>
+          <indTot>1</indTot>
+        </prod>
+      </det>
+
+      <total>
+        <ICMSTot>
+          <vBC>1596.00</vBC>
+          <vICMS>0.00</vICMS>
+          <vProd>1596.00</vProd>
+          <vFrete>0.00</vFrete>
+          <vSeg>0.00</vSeg>
+          <vDesc>0.00</vDesc>
+          <vII>0.00</vII>
+          <vIPI>0.00</vIPI>
+          <vPIS>0.00</vPIS>
+          <vCOFINS>0.00</vCOFINS>
+          <vOutro>0.00</vOutro>
+          <vNF>1596.00</vNF>
+        </ICMSTot>
+      </total>
+      
+      <!-- COBRANÇA E DUPLICATAS / BOLETOS A PAGAR -->
+      <cobr>
+        <fat>
+          <nFat>88920</nFat>
+          <vOrig>1596.00</vOrig>
+          <vLiq>1596.00</vLiq>
+        </fat>
+        <dup>
+          <nDup>001</nDup>
+          <dVenc>2026-09-20</dVenc>
+          <vDup>798.00</vDup>
+        </dup>
+        <dup>
+          <nDup>002</nDup>
+          <dVenc>2026-10-20</dVenc>
+          <vDup>798.00</vDup>
+        </dup>
+      </cobr>
+
+      <pag>
+        <detPag>
+          <tPag>15</tPag>
+          <vPag>1596.00</vPag>
+        </detPag>
+      </pag>
+    </infNFe>
+  </NFe>
+</nfeProc>

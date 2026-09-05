@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<nfeProc versao="4.00" xmlns="http://www.portalfiscal.inf.br/nfe">
+  <NFe>
+    <infNFe Id="NFe35260812345678000199550010000458921000458925" versao="4.00">
+      <ide>
+        <cUF>35</cUF>
+        <cNF>00045892</cNF>
+        <natOp>VENDA DE MERCADORIA</natOp>
+        <mod>55</mod>
+        <serie>1</serie>
+        <nNF>45892</nNF>
+        <dhEmi>2026-08-31T10:00:00-03:00</dhEmi>
+        <tpNF>1</tpNF>
+        <idDest>1</idDest>
+        <cMunFG>3509502</cMunFG>
+        <tpImp>1</tpImp>
+        <tpEmis>1</tpEmis>
+      </ide>
+      <emit>
+        <CNPJ>07526557000100</CNPJ>
+        <xNome>AMBEV S.A. DISTRIBUIDORA DE BEBIDAS</xNome>
+        <xFant>AMBEV CAMPINAS</xFant>
+        <enderEmit>
+          <xLgr>AVENIDA DOS EXPEDICIONARIOS</xLgr>
+          <nro>1500</nro>
+          <xBairro>JARDIM SAO GABRIEL</xBairro>
+          <cMun>3509502</cMun>
+          <xMun>CAMPINAS</xMun>
+          <UF>SP</UF>
+          <CEP>13045000</CEP>
+        </enderEmit>
+      </emit>
+      <dest>
+        <CNPJ>12345678000199</CNPJ>
+        <xNome>ADEGA E BEBIDAS FLOW LTDA</xNome>
+      </dest>
+      <det nItem="1">
+        <prod>
+          <cProd>BEB-001</cProd>
+          <cEAN>7896045506049</cEAN>
+          <xProd>CERVEJA HEINEKEN LAGER LONG NECK 330ML</xProd>
+          <NCM>22030000</NCM>
+          <CFOP>5102</CFOP>
+          <uCom>CX</uCom>
+          <qCom>10.0000</qCom>
+          <vUnCom>78.0000</vUnCom>
+          <vProd>780.00</vProd>
+        </prod>
+      </det>
+      <det nItem="2">
+        <prod>
+          <cProd>BEB-002</cProd>
+          <cEAN>7891149103218</cEAN>
+          <xProd>CERVEJA CORONA EXTRA 330ML</xProd>
+          <NCM>22030000</NCM>
+          <CFOP>5102</CFOP>
+          <uCom>CX</uCom>
+          <qCom>5.0000</qCom>
+          <vUnCom>84.0000</vUnCom>
+          <vProd>420.00</vProd>
+        </prod>
+      </det>
+      <det nItem="3">
+        <prod>
+          <cProd>BEB-003</cProd>
+          <cEAN>7891050001004</cEAN>
+          <xProd>REFRIGERANTE COCA-COLA LATA 350ML</xProd>
+          <NCM>22021000</NCM>
+          <CFOP>5102</CFOP>
+          <uCom>FD</uCom>
+          <qCom>8.0000</qCom>
+          <vUnCom>38.4000</vUnCom>
+          <vProd>307.20</vProd>
+        </prod>
+      </det>
+      <total>
+        <ICMSTot>
+          <vBC>1507.20</vBC>
+          <vICMS>271.29</vICMS>
+          <vProd>1507.20</vProd>
+          <vNF>1507.20</vNF>
+        </ICMSTot>
+      </total>
+      <cobr>
+        <fat>
+          <nFat>45892</nFat>
+          <vOrig>1507.20</vOrig>
+          <vLiq>1507.20</vLiq>
+        </fat>
+        <dup>
+          <nDup>001</nDup>
+          <dVenc>2026-09-15</dVenc>
+          <vDup>753.60</vDup>
+        </dup>
+        <dup>
+          <nDup>002</nDup>
+          <dVenc>2026-10-15</dVenc>
+          <vDup>753.60</vDup>
+        </dup>
+      </cobr>
+    </infNFe>
+  </NFe>
+</nfeProc>
