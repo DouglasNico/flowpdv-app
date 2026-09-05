@@ -444,7 +444,9 @@ body {
 .classic-left-pane {
   display: flex;
   flex-direction: column;
-  width: 550px;
+  width: 650px;
+  min-width: 650px;
+  flex-shrink: 0;
   gap: 10px;
 }
 .classic-cart-img {
@@ -539,8 +541,8 @@ body {
   height: auto;
 }
 .classic-bottom-left {
-  width: 550px;
-  min-width: 550px;
+  width: 650px;
+  min-width: 650px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -595,8 +597,6 @@ body {
 .classic-bottom-right {
   flex: 1;
   min-width: 0;
-  max-width: 700px;
-  margin-left: auto;
   display: flex;
   flex-direction: column;
   gap: 10px;
