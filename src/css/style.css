@@ -351,8 +351,8 @@ body {
   left: 0;
   width: 100vw;
   height: 100vh;
-  background: #bbd3fc; /* Fundo azul claro */
-  z-index: 99999;
+  z-index: 50; /* Baixado para 50 para modais (100) abrirem na frente! */
+  background: #cce0ff;
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   box-sizing: border-box;
 }
@@ -452,7 +452,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 160px;
+  min-height: 180px;
 }
 .classic-field-box {
   background: #002366;
@@ -464,16 +464,16 @@ body {
   gap: 5px;
 }
 .classic-field-box label {
-  font-size: 18px;
+  font-size: 15px;
   font-weight: bold;
 }
 .classic-field-box .classic-value {
   text-align: right;
-  font-size: 36px;
+  font-size: 28px;
   font-weight: bold;
   background: transparent;
   color: white;
-  min-height: 40px;
+  min-height: 32px;
 }
 
 /* Right Pane (Table) */
@@ -616,7 +616,7 @@ body {
   justify-content: space-between;
 }
 .classic-total-box.subtotal .val {
-  font-size: 36px;
+  font-size: 28px;
   line-height: 1;
 }
 .classic-total-box.sm {
