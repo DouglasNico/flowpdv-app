@@ -531,6 +531,8 @@ body {
 /* Bottom Panel */
 .classic-bottom-panel {
   display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
   padding: 0 25px 40px 25px; /* Adicionado respiro no final (40px) */
   gap: 25px;
   min-height: 180px;
@@ -538,6 +540,8 @@ body {
 }
 .classic-bottom-left {
   width: 400px;
+  min-width: 400px;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -557,6 +561,7 @@ body {
 }
 .classic-input-group input {
   flex: 1;
+  min-width: 0;
   height: 60px;
   font-size: 32px;
   font-weight: bold;
@@ -589,6 +594,7 @@ body {
 /* Bottom Right Totals */
 .classic-bottom-right {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 10px;
