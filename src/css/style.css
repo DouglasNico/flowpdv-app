@@ -444,7 +444,7 @@ body {
 .classic-left-pane {
   display: flex;
   flex-direction: column;
-  width: 320px;
+  width: 350px;
   gap: 15px;
 }
 .classic-cart-img {
@@ -452,7 +452,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 120px;
+  min-height: 160px;
 }
 .classic-field-box {
   background: #002366;
@@ -483,14 +483,13 @@ body {
   flex-direction: column;
 }
 .classic-table-container {
-  flex: 0 1 55%; /* Diminui a altura da tabela para quase metade */
+  flex: 1; /* Ocupa todo o espaço vertical disponível (sem ficar cortado) */
   background: #e3efff;
   border: 2px solid #002366;
   border-radius: 6px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  margin-bottom: auto; /* Empurra o resto pro espaço vazio */
 }
 .classic-table-header {
   background: #002366;
@@ -534,10 +533,11 @@ body {
   display: flex;
   padding: 0 25px 40px 25px; /* Adicionado respiro no final (40px) */
   gap: 25px;
-  height: 200px;
+  min-height: 180px;
+  height: auto;
 }
 .classic-bottom-left {
-  width: 320px;
+  width: 350px;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -570,18 +570,20 @@ body {
   flex: 1;
   background: #e3efff;
   border: 1px solid #002366;
+  border-radius: 6px;
   display: flex;
-  padding: 10px;
-  font-size: 12px;
+  padding: 10px 15px;
+  font-size: 13px;
   font-weight: 500;
   color: #002366;
-  gap: 15px;
+  gap: 20px;
   justify-content: space-between;
 }
 .shortcut-col {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 5px;
+  white-space: nowrap;
 }
 
 /* Bottom Right Totals */
