@@ -522,7 +522,7 @@ body {
   overflow-y: auto;
   height: calc(100vh - 580px); /* Ajusta barra de rolagem */
 }
-.classic-pdv-table thead, .classic-pdv-table tbody tr {
+.classic-pdv-table thead tr, .classic-pdv-table tbody tr {
   display: grid;
   grid-template-columns: 60px 140px 1fr 70px 100px 100px;
   width: 100%;
