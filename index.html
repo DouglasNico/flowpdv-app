@@ -272,8 +272,8 @@
               <button id="classic-btn-trocar-operador" onclick="AuthModule.logout()">Trocar de Operador</button>
             </div>
             <div class="classic-window-controls">
-              <span onclick="require('electron').remote.getCurrentWindow().minimize()">−</span>
-              <span onclick="require('electron').remote.getCurrentWindow().close()">✕</span>
+              <span onclick="if(window.electronAPI && window.electronAPI.minimizarApp) window.electronAPI.minimizarApp();">−</span>
+              <span onclick="App.solicitarFechamentoApp()">✕</span>
             </div>
           </header>
 
