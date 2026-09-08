@@ -903,51 +903,49 @@ export const PdvModule = {
           </td>
         </tr>
       `;
-      return;
-    }
-
-    let linhasHTML = this.carrinho.map((item, idx) => `
-      <tr>
-        <td>
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <span style="background: #f1f5f9; border: 1px solid #cbd5e1; color: #475569; font-family: 'JetBrains Mono'; font-weight: 800; font-size: 11px; padding: 1px 6px; border-radius: 4px; flex-shrink: 0;">#${idx + 1}</span>
-            <div>
-              <span class="item-code-tag">${item.codigoBarras || item.id}</span>
-              <span class="item-name-bold">${item.nome}</span>
+    } else {
+      let linhasHTML = this.carrinho.map((item, idx) => `
+        <tr>
+          <td>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="background: #f1f5f9; border: 1px solid #cbd5e1; color: #475569; font-family: 'JetBrains Mono'; font-weight: 800; font-size: 11px; padding: 1px 6px; border-radius: 4px; flex-shrink: 0;">#${idx + 1}</span>
+              <div>
+                <span class="item-code-tag">${item.codigoBarras || item.id}</span>
+                <span class="item-name-bold">${item.nome}</span>
+              </div>
             </div>
-          </div>
-        </td>
-        <td>R$ ${item.precoUnitario.toFixed(2).replace('.', ',')}</td>
-        <td>
-          <div class="item-qty-control">
-            <button type="button" class="btn-qty" onclick="PdvModule.alterarQuantidade(${idx}, -1)">-</button>
-            <strong style="min-width: 24px; text-align: center; font-family: 'JetBrains Mono';">${Number.isInteger(item.quantidade) ? item.quantidade : item.quantidade.toFixed(3).replace(/\.?0+$/, '')}</strong>
-            <button type="button" class="btn-qty" onclick="PdvModule.alterarQuantidade(${idx}, 1)">+</button>
-          </div>
-        </td>
-        <td style="font-weight: 800; font-family: 'JetBrains Mono'; color: var(--accent-green);">
-          R$ ${(item.precoUnitario * item.quantidade).toFixed(2).replace('.', ',')}
-        </td>
-        <td style="text-align: right;">
-          <button type="button" class="btn-remove-item" onclick="PdvModule.excluirItemPorIndice(${idx})" title="Remover item #${idx + 1}">🗑️</button>
-        </td>
-      </tr>
-    `).join('');
-
-    if (this.desconto > 0) {
-      linhasHTML += `
-        <tr style="background: #fef2f2;">
-          <td colspan="3" style="text-align: right; font-weight: 800; color: #dc2626; padding-right: 16px; border-bottom: none;">
-            🎁 Desconto Aplicado
           </td>
-          <td colspan="2" style="font-weight: 800; color: #dc2626; font-family: 'JetBrains Mono'; border-bottom: none;">
-            - R$ ${this.desconto.toFixed(2).replace('.', ',')}
+          <td>R$ ${item.precoUnitario.toFixed(2).replace('.', ',')}</td>
+          <td>
+            <div class="item-qty-control">
+              <button type="button" class="btn-qty" onclick="PdvModule.alterarQuantidade(${idx}, -1)">-</button>
+              <strong style="min-width: 24px; text-align: center; font-family: 'JetBrains Mono';">${Number.isInteger(item.quantidade) ? item.quantidade : item.quantidade.toFixed(3).replace(/\.?0+$/, '')}</strong>
+              <button type="button" class="btn-qty" onclick="PdvModule.alterarQuantidade(${idx}, 1)">+</button>
+            </div>
+          </td>
+          <td style="font-weight: 800; font-family: 'JetBrains Mono'; color: var(--accent-green);">
+            R$ ${(item.precoUnitario * item.quantidade).toFixed(2).replace('.', ',')}
+          </td>
+          <td style="text-align: right;">
+            <button type="button" class="btn-remove-item" onclick="PdvModule.excluirItemPorIndice(${idx})" title="Remover item #${idx + 1}">🗑️</button>
           </td>
         </tr>
-      `;
-    }
+      `).join('');
 
-    tbody.innerHTML = linhasHTML;
+      if (this.desconto > 0) {
+        linhasHTML += `
+          <tr style="background: #fef2f2;">
+            <td colspan="3" style="text-align: right; font-weight: 800; color: #dc2626; padding-right: 16px; border-bottom: none;">
+              🎁 Desconto Aplicado
+            </td>
+            <td colspan="2" style="font-weight: 800; color: #dc2626; font-family: 'JetBrains Mono'; border-bottom: none;">
+              - R$ ${this.desconto.toFixed(2).replace('.', ',')}
+            </td>
+          </tr>
+        `;
+      }
+      tbody.innerHTML = linhasHTML;
+    }
 
     // Atualiza tabela clássica
     const classicTbody = document.getElementById('classic-pdv-itens-tbody');
@@ -962,12 +960,12 @@ export const PdvModule = {
 
         let classicLinhasHTML = this.carrinho.map((item, idx) => `
           <tr>
-            <td style="font-weight: bold;">${String(idx + 1).padStart(3, '0')}</td>
-            <td>${item.codigoBarras || item.id}</td>
+            <td style="font-weight: bold; width: 60px;">${String(idx + 1).padStart(3, '0')}</td>
+            <td style="width: 120px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${item.codigoBarras || item.id}</td>
             <td style="font-weight: bold;">${item.nome}</td>
-            <td style="text-align: center;">${Number.isInteger(item.quantidade) ? item.quantidade : item.quantidade.toFixed(3).replace(/\.?0+$/, '')}</td>
-            <td style="text-align: right;">${item.precoUnitario.toFixed(2).replace('.', ',')}</td>
-            <td style="text-align: right; font-weight: bold;">${(item.precoUnitario * item.quantidade).toFixed(2).replace('.', ',')}</td>
+            <td style="text-align: center; width: 70px;">${Number.isInteger(item.quantidade) ? item.quantidade : item.quantidade.toFixed(3).replace(/\.?0+$/, '')}</td>
+            <td style="text-align: right; width: 100px;">${item.precoUnitario.toFixed(2).replace('.', ',')}</td>
+            <td style="text-align: right; font-weight: bold; width: 100px;">${(item.precoUnitario * item.quantidade).toFixed(2).replace('.', ',')}</td>
           </tr>
         `).join('');
         
