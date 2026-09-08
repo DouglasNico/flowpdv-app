@@ -932,14 +932,16 @@ export const PdvModule = {
         </tr>
       `).join('');
 
-      if (this.desconto > 0) {
+      const totalDesc = totais.desconto + (totais.descontoClube || 0);
+      if (totalDesc > 0) {
+        let descLabel = totais.descontoClube > 0 ? (totais.desconto > 0 ? '🎁 Desconto + Clube' : '🎁 Desconto Clube') : '🎁 Desconto Aplicado';
         linhasHTML += `
           <tr style="background: #fef2f2;">
             <td colspan="3" style="text-align: right; font-weight: 800; color: #dc2626; padding-right: 16px; border-bottom: none;">
-              🎁 Desconto Aplicado
+              ${descLabel}
             </td>
             <td colspan="2" style="font-weight: 800; color: #dc2626; font-family: 'JetBrains Mono'; border-bottom: none;">
-              - R$ ${this.desconto.toFixed(2).replace('.', ',')}
+              - R$ ${totalDesc.toFixed(2).replace('.', ',')}
             </td>
           </tr>
         `;
@@ -969,11 +971,13 @@ export const PdvModule = {
           </tr>
         `).join('');
         
-        if (this.desconto > 0) {
+        const totalDescClassic = totais.desconto + (totais.descontoClube || 0);
+        if (totalDescClassic > 0) {
+           let descLabel = totais.descontoClube > 0 ? (totais.desconto > 0 ? 'Desconto + Clube' : 'Desconto Clube') : 'Desconto Aplicado';
            classicLinhasHTML += `
              <tr style="background: rgba(220, 38, 38, 0.1);">
-               <td colspan="3" style="text-align: right; font-weight: 800; color: #dc2626;">Desconto Aplicado</td>
-               <td colspan="3" style="font-weight: 800; color: #dc2626; text-align: right;">- R$ ${this.desconto.toFixed(2).replace('.', ',')}</td>
+               <td colspan="3" style="text-align: right; font-weight: 800; color: #dc2626;">${descLabel}</td>
+               <td colspan="3" style="font-weight: 800; color: #dc2626; text-align: right;">- R$ ${totalDescClassic.toFixed(2).replace('.', ',')}</td>
              </tr>
            `;
         }
