@@ -580,12 +580,12 @@ body {
   border: 1px solid #002366;
   border-radius: 6px;
   display: flex;
-  padding: 10px;
+  padding: 10px 20px;
   font-size: 12px;
   font-weight: 500;
   color: #002366;
-  gap: 10px;
-  justify-content: space-between;
+  gap: 60px;
+  justify-content: center;
 }
 .shortcut-col {
   display: flex;
