@@ -955,10 +955,13 @@ export const PdvModule = {
       if (this.carrinho.length === 0) {
         classicTbody.innerHTML = '';
         const statusEl = document.getElementById('classic-status-text');
-        if (statusEl) statusEl.textContent = 'CAIXA LIVRE';
+        if (statusEl) {
+          const turnoAberto = StorageService.getTurnoAtual();
+          statusEl.textContent = turnoAberto ? 'CAIXA LIVRE' : 'CAIXA FECHADO'; statusEl.style.color = turnoAberto ? '#002366' : '#dc2626';
+        }
       } else {
         const statusEl = document.getElementById('classic-status-text');
-        if (statusEl) statusEl.textContent = 'VENDA EM ANDAMENTO';
+        if (statusEl) { statusEl.textContent = 'VENDA EM ANDAMENTO'; statusEl.style.color = '#002366'; }
 
         let classicLinhasHTML = this.carrinho.map((item, idx) => `
           <tr>
