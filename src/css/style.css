@@ -505,6 +505,10 @@ body {
   width: 100%;
   border-collapse: collapse;
 }
+.classic-pdv-table thead {
+  display: block;
+  width: calc(100% - 8px); /* Compensa a scrollbar do tbody */
+}
 .classic-pdv-table thead th {
   background: #e3efff;
   color: #002366;
@@ -519,9 +523,9 @@ body {
   height: calc(100vh - 580px); /* Ajusta barra de rolagem */
 }
 .classic-pdv-table thead, .classic-pdv-table tbody tr {
-  display: table;
+  display: grid;
+  grid-template-columns: 60px 140px 1fr 70px 100px 100px;
   width: 100%;
-  table-layout: fixed;
 }
 .classic-pdv-table tbody td {
   padding: 6px 8px;

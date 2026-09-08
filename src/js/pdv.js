@@ -962,12 +962,12 @@ export const PdvModule = {
 
         let classicLinhasHTML = this.carrinho.map((item, idx) => `
           <tr>
-            <td style="font-weight: bold; width: 60px;">${String(idx + 1).padStart(3, '0')}</td>
-            <td style="width: 120px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${item.codigoBarras || item.id}</td>
+            <td style="font-weight: bold;">${String(idx + 1).padStart(3, '0')}</td>
+            <td>${item.codigoBarras || item.id}</td>
             <td style="font-weight: bold;">${item.nome}</td>
-            <td style="text-align: center; width: 70px;">${Number.isInteger(item.quantidade) ? item.quantidade : item.quantidade.toFixed(3).replace(/\.?0+$/, '')}</td>
-            <td style="text-align: right; width: 100px;">${item.precoUnitario.toFixed(2).replace('.', ',')}</td>
-            <td style="text-align: right; font-weight: bold; width: 100px;">${(item.precoUnitario * item.quantidade).toFixed(2).replace('.', ',')}</td>
+            <td style="text-align: center;">${Number.isInteger(item.quantidade) ? item.quantidade : item.quantidade.toFixed(3).replace(/\.?0+$/, '')}</td>
+            <td style="text-align: right;">${item.precoUnitario.toFixed(2).replace('.', ',')}</td>
+            <td style="text-align: right; font-weight: bold;">${(item.precoUnitario * item.quantidade).toFixed(2).replace('.', ',')}</td>
           </tr>
         `).join('');
         
