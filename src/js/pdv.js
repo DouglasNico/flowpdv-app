@@ -870,6 +870,10 @@ export const PdvModule = {
 
     const classicSubtotalEl = document.getElementById('classic-subtotal');
     if (classicSubtotalEl) classicSubtotalEl.textContent = totais.subtotal.toFixed(2).replace('.', ',');
+    const classicQtdItensEl = document.getElementById('classic-qtd-itens');
+    if (classicQtdItensEl) classicQtdItensEl.textContent = totais.totalItens;
+    const classicTotalVendaEl = document.getElementById('classic-total-venda');
+    if (classicTotalVendaEl) classicTotalVendaEl.textContent = totais.total.toFixed(2).replace('.', ',');
 
     const descontoBox = document.getElementById('pdv-desconto-box');
     const descontoDisplay = document.getElementById('pdv-desconto-display');

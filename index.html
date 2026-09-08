@@ -278,7 +278,7 @@
           </header>
 
         <div class="classic-status-bar">
-          <h2 id="classic-status-text">REALIZE A ABERTURA DO CAIXA</h2>
+          <h2 id="classic-status-text">CAIXA LIVRE</h2>
         </div>
 
         <div class="classic-main-content">
@@ -329,24 +329,22 @@
               <input type="text" id="classic-pdv-barcode-input" style="text-transform: uppercase;" autocomplete="off" autofocus>
             </div>
             <div class="classic-shortcuts">
-              <div class="shortcut-col">
-                <span><strong>F2</strong> - Buscar Prod</span>
-                <span><strong>F3</strong> - Excluir Item</span>
-                <span><strong>F4</strong> - Quantidade</span>
-                <span><strong>F5</strong> - Cliente/CPF</span>
+                <div class="shortcut-col">
+                  <span><strong>F2</strong> - Buscar Prod</span>
+                  <span><strong>F4</strong> - Finalizar Venda</span>
+                  <span><strong>F6</strong> - Clube Fidelidade</span>
+                  <span><strong>F7</strong> - Cortesia</span>
+                </div>
+                <div class="shortcut-col">
+                  <span><strong>F8</strong> - Desconto</span>
+                  <span><strong>F9</strong> - Sangria</span>
+                  <span><strong>F10</strong> - Abrir/Fechar Caixa</span>
+                  <span><strong>DEL</strong> - Excluir Item</span>
+                </div>
+                <div class="shortcut-col">
+                  <span><strong>ESC</strong> - Sair / Voltar</span>
+                </div>
               </div>
-              <div class="shortcut-col">
-                <span><strong>F6</strong> - Desconto</span>
-                <span><strong>F7</strong> - Sangria</span>
-                <span><strong>F8</strong> - Suprimento</span>
-                <span><strong>F9</strong> - Fechar Caixa</span>
-              </div>
-              <div class="shortcut-col">
-                <span><strong>F10</strong> - Finalizar Venda</span>
-                <span><strong>F11</strong> - Cancelar Venda</span>
-                <span><strong>ESC</strong> - Sair / Voltar</span>
-              </div>
-            </div>
           </div>
           
           <div class="classic-bottom-right">
@@ -357,15 +355,15 @@
               </div>
             </div>
             <div class="classic-totals-row split">
-              <div class="classic-total-box sm">
-                <label>TOTAL RECEBIDO</label>
-                <div class="val">R$ <span id="classic-total-recebido">0,00</span></div>
+                <div class="classic-total-box sm">
+                  <label>QTD. ITENS</label>
+                  <div class="val"><span id="classic-qtd-itens">0</span></div>
+                </div>
+                <div class="classic-total-box sm">
+                  <label>TOTAL DA VENDA</label>
+                  <div class="val">R$ <span id="classic-total-venda">0,00</span></div>
+                </div>
               </div>
-              <div class="classic-total-box sm">
-                <label>TROCO</label>
-                <div class="val">R$ <span id="classic-troco">0,00</span></div>
-              </div>
-            </div>
           </div>
         </div>
       </div>
@@ -1981,7 +1979,7 @@
   <!-- MODAL: CANCELAR ITEM ESPECÍFICO DO CARRINHO [DEL]      -->
   <!-- ====================================================== -->
   <div class="modal-overlay" id="modal-cancelar-item-carrinho" style="z-index: 10500; backdrop-filter: blur(8px); background: rgba(15, 23, 42, 0.75);">
-    <div class="modal-content-box" style="max-width: 540px; width: 95vw; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; padding: 0;">
+    <div class="modal-content-box" style="max-width: 750px; width: 95vw; height: 85vh; max-height: 85vh; display: flex; flex-direction: column; overflow: hidden; padding: 0;">
       <div class="modal-header-bar" style="background: linear-gradient(135deg, #ef4444, #dc2626); color: #ffffff; padding: 16px 20px;">
         <div style="display: flex; align-items: center; gap: 10px;">
           <span style="font-size: 22px;">🗑️</span>
@@ -2022,7 +2020,7 @@
             <strong style="font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">📋 Itens Atuais no Carrinho:</strong>
             <span id="cancelar-item-total-badge" class="badge-stock ok" style="font-size: 11px;">0 itens</span>
           </div>
-          <div id="cancelar-item-lista-tbody" style="max-height: 240px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; background: #f8fafc; border: 1px solid var(--border-card); border-radius: 8px; padding: 8px;">
+          <div id="cancelar-item-lista-tbody" style="max-height: 500px; flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; background: #f8fafc; border: 1px solid var(--border-card); border-radius: 8px; padding: 8px;">
             <!-- Preenchido via JS -->
           </div>
         </div>
