@@ -24210,8 +24210,16 @@
       historico.unshift(turnoFechado);
       this.salvarHistoricoTurnos(historico);
       localStorage.removeItem("adega_turno_atual");
-      if (window.CloudSyncModule && typeof window.CloudSyncModule.enviarAlteracaoNuvem === "function") {
-        window.CloudSyncModule.enviarAlteracaoNuvem("turno");
+      if (window.CloudSyncModule) {
+        const fechado = turnoFechado && typeof turnoFechado === "object" ? { ...turnoFechado, terminalId: turnoFechado.terminalId || this.getDeviceId(), status: "fechado" } : null;
+        if (typeof window.CloudSyncModule.atualizarTurnoAtivoDoTerminal === "function") {
+          const chave = window.CloudSyncModule.getChaveLicenca ? window.CloudSyncModule.getChaveLicenca() : "";
+          window.CloudSyncModule.atualizarTurnoAtivoDoTerminal(chave, this.getDeviceId(), fechado).catch(() => {
+          });
+        }
+        if (typeof window.CloudSyncModule.enviarAlteracaoNuvem === "function") {
+          window.CloudSyncModule.enviarAlteracaoNuvem("turno");
+        }
       }
     },
     // Clientes & Fiado
@@ -53311,6 +53319,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       }
       const novoTurno = {
         id: "TRN-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
+        terminalId: StorageService.getDeviceId(),
         operador: usuario.nome,
         dataAbertura: (/* @__PURE__ */ new Date()).toISOString(),
         trocoInicial: valorTroco,
@@ -56246,11 +56255,11 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
         }
       }, 1200);
       const turnoAtual = StorageService.getTurnoAtual();
-      if (turnoAtual && (turnoAtual.status === "aberto" || turnoAtual.dataAbertura)) {
-        setTimeout(() => {
-          this.enviarAlteracaoNuvem("turno_ativo_startup");
-        }, 500);
-      }
+      setTimeout(() => {
+        this.enviarAlteracaoNuvem(
+          turnoAtual && (turnoAtual.status === "aberto" || turnoAtual.dataAbertura) ? "turno_ativo_startup" : "turno_fechado_startup"
+        );
+      }, 500);
     },
     configurarMonitorConexao() {
       this.atualizarStatusConexaoUI(navigator.onLine);
@@ -56453,20 +56462,36 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       }
       await this.enviarMovimentosPendentes(chave, movimentosEstoque);
     },
+    /** Slot na nuvem: turno aberto deste terminal, ou marcador de fechado (nunca deixa lixo "aberto"). */
+    turnoParaSlotNuvem(deviceId, turno) {
+      const id = String(deviceId || "").trim();
+      if (turno && typeof turno === "object" && !turno.dataFechamento && String(turno.status || "").toLowerCase() !== "fechado") {
+        return { ...turno, terminalId: turno.terminalId || id, status: turno.status || "aberto" };
+      }
+      return {
+        id: turno && turno.id ? turno.id : null,
+        status: "fechado",
+        dataFechamento: turno && turno.dataFechamento || (/* @__PURE__ */ new Date()).toISOString(),
+        dataAbertura: turno && turno.dataAbertura ? turno.dataAbertura : null,
+        operador: turno && turno.operador ? turno.operador : null,
+        terminalId: id
+      };
+    },
     /** Atualiza só o slot deste terminal em turnosAtivos (não apaga os outros). */
     async atualizarTurnoAtivoDoTerminal(chave, deviceId, turno) {
       const chaveNorm = String(chave || "").trim().toUpperCase();
       const id = String(deviceId || "").trim();
       if (!chaveNorm || !id) return;
+      const payload = this.turnoParaSlotNuvem(id, turno);
       try {
         await updateDoc(doc(db, COLECAO_BACKUPS, chaveNorm), {
-          [`turnosAtivos.${id}`]: turno || null,
+          [`turnosAtivos.${id}`]: payload,
           atualizadoEm: (/* @__PURE__ */ new Date()).toISOString()
         });
       } catch (e) {
         try {
           await setDoc(doc(db, COLECAO_BACKUPS, chaveNorm), {
-            turnosAtivos: { [id]: turno || null },
+            turnosAtivos: { [id]: payload },
             atualizadoEm: (/* @__PURE__ */ new Date()).toISOString()
           }, { merge: true });
         } catch (e2) {
@@ -61820,6 +61845,7 @@ NSU: ${nsuGerado}`
       this.verificarBoasVindasPosAtualizacao();
       this.atualizarPermissoesUsuario();
       this.verificarValidadesAoIniciar();
+      this.sincronizarTelaSemBloqueio();
       if (window.electronAPI && typeof window.electronAPI.onSolicitarFechamento === "function") {
         window.electronAPI.onSolicitarFechamento(() => {
           this.solicitarFechamentoApp();
@@ -61887,6 +61913,7 @@ NSU: ${nsuGerado}`
         this.gerenciaDesbloqueadaTemp = false;
       }
       this.abaAtiva = nomeAba;
+      this.sincronizarTelaSemBloqueio();
       document.querySelectorAll(".nav-btn").forEach((btn) => {
         btn.classList.toggle("active", btn.dataset.tab === nomeAba);
       });
@@ -61918,6 +61945,13 @@ NSU: ${nsuGerado}`
         this.verificarAcessoGerencia();
       } else if (nomeAba === "config") {
         this.verificarAcessoConfiguracoes();
+      }
+    },
+    sincronizarTelaSemBloqueio() {
+      const pdvNaTela = this.abaAtiva === "pdv";
+      if (window.electronAPI && typeof window.electronAPI.manterTelaAcordada === "function") {
+        window.electronAPI.manterTelaAcordada(pdvNaTela).catch(() => {
+        });
       }
     },
     atualizarPermissoesUsuario() {
