@@ -8,7 +8,7 @@
     "start": "npm run bundle && electron .",
     "build": "npm run bundle && electron-builder --win",
     "dist": "npm run build && powershell -Command \"Copy-Item 'C:/Users/User/AppData/Local/Temp/flowpdv_build/FlowPDV-Setup.exe' dist/ -Force; Copy-Item 'C:/Users/User/AppData/Local/Temp/flowpdv_build/latest.yml' dist/ -Force\"",
-    "release": "npm run bundle && electron-builder --win --publish always",
+    "release": "npm run bundle && electron-builder --win --publish always && node scripts/publicar-release.js",
     "test": "node test/run-tests.js",
     "watch": "esbuild src/js/app.js --bundle --outfile=src/js/bundle.js --format=iife --platform=browser --watch",
     "chrome": "start chrome index.html"
@@ -48,7 +48,7 @@
         "provider": "github",
         "owner": "DouglasNico",
         "repo": "flowpdv",
-        "releaseType": "release"
+        "releaseType": "draft"
       }
     ],
     "directories": {
