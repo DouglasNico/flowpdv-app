@@ -270,6 +270,7 @@ export const CaixaModule = {
 
     const novoTurno = {
       id: 'TRN-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+      terminalId: StorageService.getDeviceId(),
       operador: usuario.nome,
       dataAbertura: new Date().toISOString(),
       trocoInicial: valorTroco,

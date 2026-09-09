@@ -51,13 +51,16 @@ export const CloudSyncModule = {
       }
     }, 1200);
 
-    // Se o terminal estiver com caixa aberto, envia imediatamente o turno atual para a nuvem
+    // Sempre envia o slot deste terminal: aberto OU fechado.
+    // Sem o envio do fechado, o mobile fica com caixa "aberto" eterno se o sync do fechamento falhou.
     const turnoAtual = StorageService.getTurnoAtual();
-    if (turnoAtual && (turnoAtual.status === 'aberto' || turnoAtual.dataAbertura)) {
-      setTimeout(() => {
-        this.enviarAlteracaoNuvem('turno_ativo_startup');
-      }, 500);
-    }
+    setTimeout(() => {
+      this.enviarAlteracaoNuvem(
+        turnoAtual && (turnoAtual.status === 'aberto' || turnoAtual.dataAbertura)
+          ? 'turno_ativo_startup'
+          : 'turno_fechado_startup'
+      );
+    }, 500);
   },
 
   
@@ -316,21 +319,37 @@ export const CloudSyncModule = {
     await this.enviarMovimentosPendentes(chave, movimentosEstoque);
   },
 
+  /** Slot na nuvem: turno aberto deste terminal, ou marcador de fechado (nunca deixa lixo "aberto"). */
+  turnoParaSlotNuvem(deviceId, turno) {
+    const id = String(deviceId || '').trim();
+    if (turno && typeof turno === 'object' && !turno.dataFechamento && String(turno.status || '').toLowerCase() !== 'fechado') {
+      return { ...turno, terminalId: turno.terminalId || id, status: turno.status || 'aberto' };
+    }
+    return {
+      id: turno && turno.id ? turno.id : null,
+      status: 'fechado',
+      dataFechamento: (turno && turno.dataFechamento) || new Date().toISOString(),
+      dataAbertura: turno && turno.dataAbertura ? turno.dataAbertura : null,
+      operador: turno && turno.operador ? turno.operador : null,
+      terminalId: id
+    };
+  },
+
   /** Atualiza só o slot deste terminal em turnosAtivos (não apaga os outros). */
   async atualizarTurnoAtivoDoTerminal(chave, deviceId, turno) {
     const chaveNorm = String(chave || '').trim().toUpperCase();
     const id = String(deviceId || '').trim();
     if (!chaveNorm || !id) return;
+    const payload = this.turnoParaSlotNuvem(id, turno);
     try {
       await updateDoc(doc(db, COLECAO_BACKUPS, chaveNorm), {
-        [`turnosAtivos.${id}`]: turno || null,
+        [`turnosAtivos.${id}`]: payload,
         atualizadoEm: new Date().toISOString()
       });
     } catch (e) {
-      // Doc pode não existir ainda — cria só o slot deste terminal
       try {
         await setDoc(doc(db, COLECAO_BACKUPS, chaveNorm), {
-          turnosAtivos: { [id]: turno || null },
+          turnosAtivos: { [id]: payload },
           atualizadoEm: new Date().toISOString()
         }, { merge: true });
       } catch (e2) {

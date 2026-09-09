@@ -419,8 +419,17 @@ export const StorageService = {
     historico.unshift(turnoFechado);
     this.salvarHistoricoTurnos(historico);
     localStorage.removeItem('adega_turno_atual');
-    if (window.CloudSyncModule && typeof window.CloudSyncModule.enviarAlteracaoNuvem === 'function') {
-      window.CloudSyncModule.enviarAlteracaoNuvem('turno');
+    if (window.CloudSyncModule) {
+      const fechado = turnoFechado && typeof turnoFechado === 'object'
+        ? { ...turnoFechado, terminalId: turnoFechado.terminalId || this.getDeviceId(), status: 'fechado' }
+        : null;
+      if (typeof window.CloudSyncModule.atualizarTurnoAtivoDoTerminal === 'function') {
+        const chave = window.CloudSyncModule.getChaveLicenca ? window.CloudSyncModule.getChaveLicenca() : '';
+        window.CloudSyncModule.atualizarTurnoAtivoDoTerminal(chave, this.getDeviceId(), fechado).catch(() => {});
+      }
+      if (typeof window.CloudSyncModule.enviarAlteracaoNuvem === 'function') {
+        window.CloudSyncModule.enviarAlteracaoNuvem('turno');
+      }
     }
   },
 
