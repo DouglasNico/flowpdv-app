@@ -23867,6 +23867,17 @@
       if (digits.length > 0) return digits.padStart(6, "0");
       return texto.slice(-6);
     },
+    formatarNumeroVenda(vendaOuId) {
+      const venda = vendaOuId && typeof vendaOuId === "object" ? vendaOuId : { id: vendaOuId };
+      const num = parseInt(venda.numeroVenda, 10);
+      if (Number.isFinite(num) && num > 0) return String(num).padStart(6, "0");
+      const texto = String(venda.id || "");
+      const vnd = texto.match(/VND-(\d+)/i);
+      if (vnd) return vnd[1].slice(-6).padStart(6, "0");
+      const digits = texto.replace(/\D/g, "");
+      if (digits.length > 0) return digits.slice(-6).padStart(6, "0");
+      return "------";
+    },
     getDeviceId() {
       let devId = localStorage.getItem("flowpdv_device_id");
       if (!devId) {
@@ -24006,13 +24017,18 @@
       if (c.includes("acess\xF3r") || c.includes("acessor") || c.includes("copo") || c.includes("ta\xE7a") || c.includes("taca") || c.includes("canec")) return "\u{1F3FA}";
       return "\u{1F3F7}\uFE0F";
     },
+    _produtosMem: null,
     // Produtos & Estoque
     getProdutos() {
+      if (Array.isArray(this._produtosMem)) return this._produtosMem;
       const saved = localStorage.getItem("adega_produtos");
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            this._produtosMem = parsed;
+            return parsed;
+          }
         } catch (e) {
         }
       }
@@ -24027,6 +24043,7 @@
         } catch (e) {
         }
       }
+      this._produtosMem = [];
       return [];
     },
     // Produtos Excluídos (Tombstones para Multi-Terminal)
@@ -24059,6 +24076,7 @@
       }
       const excluidos = this.getProdutosExcluidosIds();
       const listaLimpa = Array.isArray(produtos) ? produtos.filter((p) => p && p.id && !excluidos.includes(String(p.id))) : [];
+      this._produtosMem = listaLimpa;
       localStorage.setItem("adega_produtos", JSON.stringify(listaLimpa));
     },
     // Vendas
@@ -24182,8 +24200,15 @@
     },
     salvarTurno(turno) {
       localStorage.setItem("adega_turno_atual", JSON.stringify(turno));
-      if (window.CloudSyncModule && typeof window.CloudSyncModule.enviarAlteracaoNuvem === "function") {
-        window.CloudSyncModule.enviarAlteracaoNuvem("turno");
+      if (window.CloudSyncModule) {
+        if (typeof window.CloudSyncModule.atualizarTurnoAtivoDoTerminal === "function") {
+          const chave = window.CloudSyncModule.getChaveLicenca ? window.CloudSyncModule.getChaveLicenca() : "";
+          window.CloudSyncModule.atualizarTurnoAtivoDoTerminal(chave, this.getDeviceId(), turno).catch(() => {
+          });
+        }
+        if (typeof window.CloudSyncModule.enviarAlteracaoNuvem === "function") {
+          window.CloudSyncModule.enviarAlteracaoNuvem("turno");
+        }
       }
     },
     getHistoricoTurnos() {
@@ -25419,7 +25444,7 @@
         ` : `
           <div class="text-center bold">CUPOM N\xC3O FISCAL</div>
         `}
-        <div>Venda: #${venda.numeroVenda ? String(venda.numeroVenda).padStart(6, "0") : (venda.id || "").slice(-6)}</div>
+        <div>Venda: #${StorageService.formatarNumeroVenda(venda)}</div>
         <div>Data: ${new Date(venda.data).toLocaleString("pt-BR")}</div>
         <div>Operador: ${venda.operador || "Caixa"}</div>
         ${venda.cpfCliente ? `
@@ -25756,7 +25781,7 @@
         <div class="meta-grid">
           <div class="meta-item">
             <label>N\xBA da Venda</label>
-            <span>#${venda.numeroVenda ? String(venda.numeroVenda).padStart(6, "0") : (venda.id || "").slice(-6)}</span>
+            <span>#${StorageService.formatarNumeroVenda(venda)}</span>
           </div>
           <div class="meta-item">
             <label>Data / Hora</label>
@@ -48427,7 +48452,7 @@ Venda bloqueada no PDV!`);
         <div class="reimpressao-venda-card">
           <div style="flex: 1; min-width: 0;">
             <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px; flex-wrap: wrap;">
-              <span class="reimpressao-card-id">#${(v.id || "").slice(-6)}</span>
+              <span class="reimpressao-card-id">#${StorageService.formatarNumeroVenda(v)}</span>
               <span style="font-size: 11.5px; color: #64748b; font-weight: 700;">\u{1F4C5} ${dataFmt} \xE0s ${horaFmt}</span>
               ${badgePag}
               <span style="font-size: 11px; color: #64748b; font-weight: 600;">\u{1F464} ${v.operador || "Caixa"}</span>
@@ -48463,10 +48488,10 @@ Venda bloqueada no PDV!`);
       }
       if (window.ThermalPrintModule && typeof window.ThermalPrintModule.imprimirCupomVenda === "function") {
         window.ThermalPrintModule.imprimirCupomVenda(v);
-        window.App.showToast(`\u{1F5A8}\uFE0F Imprimindo 2\xAA via da venda #${(v.id || "").slice(-6)}...`, "success");
+        window.App.showToast(`\u{1F5A8}\uFE0F Imprimindo 2\xAA via da venda #${StorageService.formatarNumeroVenda(v)}...`, "success");
         this.fecharModalReimpressaoCupom();
       } else {
-        window.App.showToast(`\u{1F5A8}\uFE0F Comprovante da venda #${(v.id || "").slice(-6)} impresso com sucesso!`, "info");
+        window.App.showToast(`\u{1F5A8}\uFE0F Comprovante da venda #${StorageService.formatarNumeroVenda(v)} impresso com sucesso!`, "info");
         this.fecharModalReimpressaoCupom();
       }
     },
@@ -48797,26 +48822,31 @@ Venda bloqueada no PDV!`);
     f2HighlightedIndex: 0,
     f2ModoFardo: false,
     f2ProdutosFiltrados: [],
+    f2Renderizados: 0,
+    _f2BuscaTimer: null,
+    _f2ChipsAssinatura: "",
+    _f2ValidadeAtiva: false,
+    _f2HojeValidade: null,
+    F2_PAGE_SIZE: 50,
     // Modal de Busca Rápida [F2]
     abrirBuscaProdutos() {
       const modal = document.getElementById("modal-busca-produtos");
       const input = document.getElementById("busca-rapida-input");
-      if (modal) {
-        modal.classList.add("active");
-        this.filtroCategoriaBusca = "todos";
-        this.renderChipsCategoriasBusca();
-        this.f2HighlightedIndex = 0;
-        this.f2ModoFardo = false;
-        if (input) {
-          input.value = "";
-          if (!input.dataset.hasKeyNav) {
-            input.dataset.hasKeyNav = "true";
-            input.addEventListener("keydown", (e) => this.handleBuscaRapidaKeydown(e));
-          }
-          setTimeout(() => input.focus(), 80);
+      if (!modal) return;
+      modal.classList.add("active");
+      this.filtroCategoriaBusca = "todos";
+      this.f2HighlightedIndex = 0;
+      this.f2ModoFardo = false;
+      if (input) {
+        input.value = "";
+        if (!input.dataset.hasKeyNav) {
+          input.dataset.hasKeyNav = "true";
+          input.addEventListener("keydown", (e) => this.handleBuscaRapidaKeydown(e));
         }
-        this.renderResultadosBusca("");
+        input.focus();
       }
+      this.renderResultadosBusca("");
+      requestAnimationFrame(() => this.renderChipsCategoriasBusca());
     },
     handleBuscaRapidaKeydown(e) {
       if (!this.f2ProdutosFiltrados || this.f2ProdutosFiltrados.length === 0) return;
@@ -48826,6 +48856,7 @@ Venda bloqueada no PDV!`);
           this.f2HighlightedIndex++;
           const p = this.f2ProdutosFiltrados[this.f2HighlightedIndex];
           if (!p || !p.precoFardo) this.f2ModoFardo = false;
+          this.garantirLinhaF2Visivel();
           this.atualizarHighlightBuscaRapida();
         }
       } else if (e.key === "ArrowUp") {
@@ -48871,7 +48902,7 @@ Venda bloqueada no PDV!`);
         const btnPack = row.querySelector(".f2-btn-pack");
         if (idx === this.f2HighlightedIndex) {
           row.classList.add("selected");
-          row.scrollIntoView({ block: "nearest", behavior: "smooth" });
+          row.scrollIntoView({ block: "nearest", behavior: "auto" });
           if (this.f2ModoFardo && btnPack) {
             btnPack.classList.add("f2-btn-focused");
             if (btnUnit) btnUnit.classList.remove("f2-btn-focused");
@@ -48897,16 +48928,17 @@ Venda bloqueada no PDV!`);
       if (!container) return;
       const produtos = StorageService.getProdutos() || [];
       const categoriasBase = StorageService.getCategorias() || [];
+      const assinatura = `${produtos.length}|${categoriasBase.join("|")}|${this.filtroCategoriaBusca}`;
+      if (this._f2ChipsAssinatura === assinatura && container.childElementCount > 0) return;
+      this._f2ChipsAssinatura = assinatura;
       const mapCategorias = /* @__PURE__ */ new Map();
-      produtos.forEach((p) => {
-        const cat = (p.categoria || "Geral").trim();
+      for (let i = 0; i < produtos.length; i++) {
+        const cat = (produtos[i].categoria || "Geral").trim();
         mapCategorias.set(cat, (mapCategorias.get(cat) || 0) + 1);
-      });
+      }
       categoriasBase.forEach((c) => {
-        const cat = c.trim();
-        if (!mapCategorias.has(cat)) {
-          mapCategorias.set(cat, 0);
-        }
+        const cat = String(c || "").trim();
+        if (cat && !mapCategorias.has(cat)) mapCategorias.set(cat, 0);
       });
       let html = `
       <button type="button" class="f2-cat-chip ${this.filtroCategoriaBusca === "todos" ? "active" : ""}" onclick="PdvModule.selecionarCategoriaBusca('todos', this)">
@@ -48944,9 +48976,114 @@ Venda bloqueada no PDV!`);
       const input = document.getElementById("busca-rapida-input");
       this.renderResultadosBusca(input ? input.value : "");
     },
+    agendarRenderResultadosBusca(termo) {
+      if (this._f2BuscaTimer) clearTimeout(this._f2BuscaTimer);
+      this._f2BuscaTimer = setTimeout(() => this.renderResultadosBusca(termo), 50);
+    },
+    garantirScrollF2(lista) {
+      if (!lista || lista.dataset.hasF2Scroll === "true") return;
+      lista.dataset.hasF2Scroll = "true";
+      lista.addEventListener("scroll", () => this.verificarScrollF2());
+    },
+    verificarScrollF2() {
+      const lista = document.getElementById("busca-produtos-lista");
+      if (!lista) return;
+      if (lista.scrollTop + lista.clientHeight >= lista.scrollHeight - 90) {
+        this.carregarMaisF2();
+      }
+    },
+    garantirLinhaF2Visivel() {
+      while (this.f2Renderizados <= this.f2HighlightedIndex && this.f2Renderizados < this.f2ProdutosFiltrados.length) {
+        this.carregarMaisF2();
+      }
+    },
+    htmlLinhaF2(p, idx) {
+      const controlaEstoque = p.controlarEstoque !== false && p.controlaEstoque !== false;
+      const estoqueNum = parseFloat(p.estoque) || 0;
+      const minNum = parseFloat(p.estoqueMinimo) || 5;
+      const isEstoqueOk = controlaEstoque ? estoqueNum > minNum : true;
+      const stockBadge = controlaEstoque ? `<span class="f2-col-stock ${isEstoqueOk ? "ok" : "low"}">\u{1F4E6} Estoque: <strong>${estoqueNum} un</strong></span>` : `<span class="f2-col-stock ok" style="background: #e0f2fe; color: #0369a1; border-color: #bae6fd;">\u267E\uFE0F Servi\xE7o / Fixo</span>`;
+      const isPromo = Boolean(p.emPromocao || p.precoPromocional && p.precoPromocional < p.precoVenda);
+      const precoOriginalExibir = p.precoOriginal || (isPromo ? p.precoVenda * 1.25 : p.precoVenda);
+      let validadeBadgeF2 = "";
+      if (this._f2ValidadeAtiva && p.dataValidade) {
+        const dataVal = /* @__PURE__ */ new Date(p.dataValidade + "T00:00:00");
+        const diffDias = Math.ceil((dataVal - this._f2HojeValidade) / (1e3 * 60 * 60 * 24));
+        if (diffDias < 0) {
+          validadeBadgeF2 = `<span style="font-size: 10.5px; color: #dc2626; font-weight: 800;">\u{1F6A8} Vencido (${dataVal.toLocaleDateString("pt-BR")})</span>`;
+        } else if (diffDias <= 30) {
+          validadeBadgeF2 = `<span style="font-size: 10.5px; color: #d97706; font-weight: 800;">\u23F3 Val: ${dataVal.toLocaleDateString("pt-BR")} (${diffDias}d)</span>`;
+        }
+      }
+      return `
+      <div class="f2-product-row" data-f2-index="${idx}">
+        <div class="f2-item-info">
+          <div class="f2-item-title" style="display: flex; align-items: center; gap: 6px;">
+            <span>${p.nome}</span>
+            ${isPromo ? `<span style="background: #ea580c; color: #ffffff; font-size: 10px; font-weight: 900; padding: 1px 6px; border-radius: 4px;">\u{1F525} PROMO</span>` : ""}
+          </div>
+          <div class="f2-item-sub">
+            <span class="f2-col-code">C\xF3d: <strong class="f2-code">${p.codigoBarras || "--"}</strong></span>
+            <span class="f2-col-cat">\u{1F3F7}\uFE0F ${p.categoria || "Geral"}</span>
+            ${stockBadge}
+            ${validadeBadgeF2}
+          </div>
+        </div>
+        <div class="f2-item-actions">
+          <button type="button" class="f2-btn-unit" onclick="PdvModule.selecionarProdutoBusca('${p.id}', false)" title="Adicionar 1 unidade ao carrinho [Enter]">
+            <span class="f2-btn-tag">${isPromo ? "\u{1F525} Promo\xE7\xE3o" : "+ Unidade"}</span>
+            ${isPromo ? `<span style="font-size: 10.5px; text-decoration: line-through; opacity: 0.7; line-height: 1;">R$ ${precoOriginalExibir.toFixed(2).replace(".", ",")}</span>` : ""}
+            <strong class="f2-price" style="${isPromo ? "color: #ea580c; font-size: 15px;" : ""}">R$ ${(parseFloat(p.precoVenda) || 0).toFixed(2).replace(".", ",")}</strong>
+          </button>
+          ${p.precoFardo ? `
+            <button type="button" class="f2-btn-pack" onclick="PdvModule.selecionarProdutoBusca('${p.id}', true)" title="Adicionar pacote/fardo ao carrinho [\u2192 Enter]">
+              <span class="f2-btn-tag">+ ${p.unidadeFracionada || "Fardo / Kit"}</span>
+              <strong class="f2-price">R$ ${(parseFloat(p.precoFardo) || 0).toFixed(2).replace(".", ",")}</strong>
+            </button>
+          ` : `<div class="f2-empty-slot"></div>`}
+        </div>
+      </div>
+    `;
+    },
+    atualizarSentinelaF2(lista) {
+      let sentinela = document.getElementById("f2-scroll-sentinel");
+      if (!sentinela) {
+        sentinela = document.createElement("div");
+        sentinela.id = "f2-scroll-sentinel";
+        sentinela.style.cssText = "text-align:center;padding:8px 10px 4px;color:#64748b;font-size:12px;font-weight:600;";
+        lista.appendChild(sentinela);
+      }
+      const total = this.f2ProdutosFiltrados.length;
+      const visiveis = this.f2Renderizados;
+      if (visiveis >= total) {
+        sentinela.textContent = total > this.F2_PAGE_SIZE ? `Todos os ${total} produtos` : "";
+      } else {
+        sentinela.textContent = `Mostrando ${visiveis} de ${total} \u2014 role para ver mais`;
+      }
+    },
+    carregarMaisF2() {
+      const lista = document.getElementById("busca-produtos-lista");
+      if (!lista) return;
+      const total = this.f2ProdutosFiltrados.length;
+      if (this.f2Renderizados >= total) return;
+      const proximo = Math.min(this.f2Renderizados + this.F2_PAGE_SIZE, total);
+      let html = "";
+      for (let i = this.f2Renderizados; i < proximo; i++) {
+        html += this.htmlLinhaF2(this.f2ProdutosFiltrados[i], i);
+      }
+      this.f2Renderizados = proximo;
+      const sentinela = document.getElementById("f2-scroll-sentinel");
+      if (sentinela) {
+        sentinela.insertAdjacentHTML("beforebegin", html);
+      } else {
+        lista.insertAdjacentHTML("beforeend", html);
+      }
+      this.atualizarSentinelaF2(lista);
+    },
     renderResultadosBusca(termo) {
       const lista = document.getElementById("busca-produtos-lista");
       if (!lista) return;
+      this.garantirScrollF2(lista);
       const produtos = StorageService.getProdutos() || [];
       const termoLower = (termo || "").toLowerCase().trim();
       let filtrados = produtos.filter((p) => {
@@ -48974,64 +49111,21 @@ Venda bloqueada no PDV!`);
         return (a.nome || "").localeCompare(b.nome || "");
       });
       this.f2ProdutosFiltrados = filtrados;
-      if (this.f2HighlightedIndex >= filtrados.length) {
-        this.f2HighlightedIndex = 0;
-      }
+      this.f2Renderizados = 0;
+      this.f2HighlightedIndex = 0;
+      this._f2ValidadeAtiva = StorageService.isModuloAtivo("validadeLotes");
+      this._f2HojeValidade = /* @__PURE__ */ new Date();
+      this._f2HojeValidade.setHours(0, 0, 0, 0);
       if (filtrados.length === 0) {
         const msgCat = this.filtroCategoriaBusca !== "todos" ? ` na categoria <strong>${this.filtroCategoriaBusca}</strong>` : "";
         lista.innerHTML = `<div style="text-align: center; padding: 36px 20px; color: #64748b; font-size: 14px; font-weight: 600;">Nenhum produto encontrado${termoLower ? ` para "<strong>${termo}</strong>"` : ""}${msgCat}.</div>`;
         return;
       }
-      lista.innerHTML = filtrados.map((p, idx) => {
-        const controlaEstoque = p.controlarEstoque !== false && p.controlaEstoque !== false;
-        const estoqueNum = parseFloat(p.estoque) || 0;
-        const minNum = parseFloat(p.estoqueMinimo) || 5;
-        const isEstoqueOk = controlaEstoque ? estoqueNum > minNum : true;
-        const stockBadge = controlaEstoque ? `<span class="f2-col-stock ${isEstoqueOk ? "ok" : "low"}">\u{1F4E6} Estoque: <strong>${estoqueNum} un</strong></span>` : `<span class="f2-col-stock ok" style="background: #e0f2fe; color: #0369a1; border-color: #bae6fd;">\u267E\uFE0F Servi\xE7o / Fixo</span>`;
-        const isPromo = Boolean(p.emPromocao || p.precoPromocional && p.precoPromocional < p.precoVenda);
-        const precoOriginalExibir = p.precoOriginal || (isPromo ? p.precoVenda * 1.25 : p.precoVenda);
-        let validadeBadgeF2 = "";
-        if (StorageService.isModuloAtivo("validadeLotes") && p.dataValidade) {
-          const hoje = /* @__PURE__ */ new Date();
-          hoje.setHours(0, 0, 0, 0);
-          const dataVal = /* @__PURE__ */ new Date(p.dataValidade + "T00:00:00");
-          const diffDias = Math.ceil((dataVal - hoje) / (1e3 * 60 * 60 * 24));
-          if (diffDias < 0) {
-            validadeBadgeF2 = `<span style="font-size: 10.5px; color: #dc2626; font-weight: 800;">\u{1F6A8} Vencido (${dataVal.toLocaleDateString("pt-BR")})</span>`;
-          } else if (diffDias <= 30) {
-            validadeBadgeF2 = `<span style="font-size: 10.5px; color: #d97706; font-weight: 800;">\u23F3 Val: ${dataVal.toLocaleDateString("pt-BR")} (${diffDias}d)</span>`;
-          }
-        }
-        return `
-        <div class="f2-product-row" data-f2-index="${idx}">
-          <div class="f2-item-info">
-            <div class="f2-item-title" style="display: flex; align-items: center; gap: 6px;">
-              <span>${p.nome}</span>
-              ${isPromo ? `<span style="background: #ea580c; color: #ffffff; font-size: 10px; font-weight: 900; padding: 1px 6px; border-radius: 4px;">\u{1F525} PROMO</span>` : ""}
-            </div>
-            <div class="f2-item-sub">
-              <span class="f2-col-code">C\xF3d: <strong class="f2-code">${p.codigoBarras || "--"}</strong></span>
-              <span class="f2-col-cat">\u{1F3F7}\uFE0F ${p.categoria || "Geral"}</span>
-              ${stockBadge}
-              ${validadeBadgeF2}
-            </div>
-          </div>
-          <div class="f2-item-actions">
-            <button type="button" class="f2-btn-unit" onclick="PdvModule.selecionarProdutoBusca('${p.id}', false)" title="Adicionar 1 unidade ao carrinho [Enter]">
-              <span class="f2-btn-tag">${isPromo ? "\u{1F525} Promo\xE7\xE3o" : "+ Unidade"}</span>
-              ${isPromo ? `<span style="font-size: 10.5px; text-decoration: line-through; opacity: 0.7; line-height: 1;">R$ ${precoOriginalExibir.toFixed(2).replace(".", ",")}</span>` : ""}
-              <strong class="f2-price" style="${isPromo ? "color: #ea580c; font-size: 15px;" : ""}">R$ ${(parseFloat(p.precoVenda) || 0).toFixed(2).replace(".", ",")}</strong>
-            </button>
-            ${p.precoFardo ? `
-              <button type="button" class="f2-btn-pack" onclick="PdvModule.selecionarProdutoBusca('${p.id}', true)" title="Adicionar pacote/fardo ao carrinho [\u2192 Enter]">
-                <span class="f2-btn-tag">+ ${p.unidadeFracionada || "Fardo / Kit"}</span>
-                <strong class="f2-price">R$ ${(parseFloat(p.precoFardo) || 0).toFixed(2).replace(".", ",")}</strong>
-              </button>
-            ` : `<div class="f2-empty-slot"></div>`}
-          </div>
-        </div>
-      `;
-      }).join("");
+      lista.innerHTML = "";
+      this.carregarMaisF2();
+      while (lista.scrollHeight <= lista.clientHeight + 8 && this.f2Renderizados < this.f2ProdutosFiltrados.length) {
+        this.carregarMaisF2();
+      }
       this.atualizarHighlightBuscaRapida();
     },
     selecionarProdutoBusca(id, isFardo = false) {
@@ -54268,7 +54362,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
         const totalDisplay = isGerente ? `R$ ${(v.total || 0).toFixed(2).replace(".", ",")}` : '<span style="filter: blur(4px); user-select: none;">R$ 0,00</span>';
         return `
         <tr>
-          <td><strong style="color: var(--text-main);">#${v.id ? v.id.slice(-6) : "-"}</strong></td>
+          <td><strong style="color: var(--text-main);">#${StorageService.formatarNumeroVenda(v)}</strong></td>
           <td>${hora}</td>
           <td>${v.itens ? v.itens.length : 0} itens</td>
           <td style="text-transform: capitalize; text-align: center;">${formaPgtoDisplay}</td>
@@ -54430,7 +54524,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       const modal = document.getElementById("modal-detalhes-venda");
       const title = document.getElementById("detalhes-venda-title");
       const corpo = document.getElementById("detalhes-venda-corpo");
-      if (title) title.innerHTML = `\u{1F9FE} Detalhes da Venda <strong>#${venda.id}</strong>`;
+      if (title) title.innerHTML = `\u{1F9FE} Detalhes da Venda <strong>#${StorageService.formatarNumeroVenda(venda)}</strong>`;
       if (corpo) {
         const dataStr = new Date(venda.data).toLocaleString("pt-BR");
         corpo.innerHTML = `
@@ -54524,7 +54618,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       if (this.vendaDetalheSelecionada) {
         ThermalPrintModule.imprimirCupomVenda(this.vendaDetalheSelecionada);
         if (window.App && typeof window.App.showToast === "function") {
-          window.App.showToast(`\u{1F5A8}\uFE0F Enviando cupom da venda #${this.vendaDetalheSelecionada.id} para a impressora...`, "info");
+          window.App.showToast(`\u{1F5A8}\uFE0F Enviando cupom da venda #${StorageService.formatarNumeroVenda(this.vendaDetalheSelecionada)} para a impressora...`, "info");
         }
       }
     }
@@ -55747,7 +55841,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
         } else if (diffDias > 3) {
           badgeEl.className = "license-badge";
           badgeEl.title = `Licen\xE7a ativa \u2014 vence em ${diffDias} dias`;
-          badgeEl.innerHTML = `<span class="license-status-icon">\u{1F7E2}</span> <span class="license-status-days">${diffDias} dias</span>`;
+          badgeEl.innerHTML = `<span class="license-status-icon">\u{1F7E2}</span> <span class="license-status-label">Licen\xE7a Ativa</span> <span class="license-status-days">${diffDias} dias</span>`;
         } else if (diffDias === 1) {
           badgeEl.className = "license-badge warning";
           badgeEl.innerHTML = `\u26A0\uFE0F Vence em 1 dia`;
@@ -57203,6 +57297,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
           usuarios,
           categorias,
           comandas,
+          origemTerminal: StorageService.getDeviceId(),
           turnosHistorico,
           turnoAtual: StorageService.getTurnoAtual() || null,
           turnosAtivos: {
