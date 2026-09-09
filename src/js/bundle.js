@@ -55460,15 +55460,32 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
     },
     limparTerminaisDuplicados(terminais) {
       if (!Array.isArray(terminais)) return [];
-      const mapa = /* @__PURE__ */ new Map();
+      const mapaId = /* @__PURE__ */ new Map();
       terminais.forEach((t) => {
         if (!t) return;
         const id = typeof t === "string" ? t.trim() : t.id ? String(t.id).trim() : "";
         if (!id) return;
         const obj = typeof t === "string" ? { id, hostname: "Computador", ultimoAcesso: (/* @__PURE__ */ new Date()).toISOString() } : t;
-        mapa.set(id, obj);
+        const atual = mapaId.get(id);
+        if (!atual || new Date(obj.ultimoAcesso || 0) > new Date(atual.ultimoAcesso || 0)) {
+          mapaId.set(id, obj);
+        }
       });
-      return Array.from(mapa.values());
+      const mapaHost = /* @__PURE__ */ new Map();
+      const semHost = [];
+      mapaId.forEach((obj) => {
+        const host = String(obj.hostname || "").trim().toLowerCase();
+        const hostGenerico = !host || host === "computador" || host === "computador local" || host === "desktop";
+        if (hostGenerico) {
+          semHost.push(obj);
+          return;
+        }
+        const atual = mapaHost.get(host);
+        if (!atual || new Date(obj.ultimoAcesso || 0) > new Date(atual.ultimoAcesso || 0)) {
+          mapaHost.set(host, obj);
+        }
+      });
+      return [...mapaHost.values(), ...semHost];
     },
     isTerminalRegistrado(terminais, myDevId) {
       const unicos = this.limparTerminaisDuplicados(terminais);
