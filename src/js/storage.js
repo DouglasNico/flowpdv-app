@@ -594,27 +594,39 @@ export const StorageService = {
 
   // Licença SaaS
   getLicenca() {
-    const saved = localStorage.getItem('adega_licenca');
-    if (saved) {
+    const ler = (chave) => {
+      const saved = localStorage.getItem(chave);
+      if (!saved) return null;
       try {
         const parsed = JSON.parse(saved);
-        if (parsed && parsed.chaveLicenca && parsed.chaveLicenca.trim().length > 0) {
-          let updated = false;
-          if (parsed.chavePixSuporte === '19999997777' || !parsed.chavePixSuporte) {
-            parsed.chavePixSuporte = '19989632127';
-            updated = true;
-          }
-          if (parsed.whatsappSuporte === '19999997777' || parsed.whatsappSuporte === '(19) 99999-7777') {
-            parsed.whatsappSuporte = '(19) 98963-2127';
-            updated = true;
-          }
-          if (updated) {
-            try { localStorage.setItem('adega_licenca', JSON.stringify(parsed)); } catch(e) {}
-          }
+        if (parsed && parsed.chaveLicenca && String(parsed.chaveLicenca).trim().length > 0) {
           return parsed;
         }
-      } catch(e) {}
+      } catch (e) {}
+      return null;
+    };
+
+    let parsed = ler('adega_licenca') || ler('adega_licenca_backup');
+    if (parsed) {
+      let updated = false;
+      if (parsed.chavePixSuporte === '19999997777' || !parsed.chavePixSuporte) {
+        parsed.chavePixSuporte = '19989632127';
+        updated = true;
+      }
+      if (parsed.whatsappSuporte === '19999997777' || parsed.whatsappSuporte === '(19) 99999-7777') {
+        parsed.whatsappSuporte = '(19) 98963-2127';
+        updated = true;
+      }
+      if (updated) {
+        try { this.saveLicenca(parsed); } catch (e) {}
+      }
+      // Se a chave principal sumiu mas o backup existe, restaura.
+      if (!ler('adega_licenca') && ler('adega_licenca_backup')) {
+        try { localStorage.setItem('adega_licenca', JSON.stringify(parsed)); } catch (e) {}
+      }
+      return parsed;
     }
+
     const defaults = {
       clienteId: '',
       chaveLicenca: '',
@@ -632,7 +644,34 @@ export const StorageService = {
   },
 
   saveLicenca(lic) {
-    localStorage.setItem('adega_licenca', JSON.stringify(lic));
+    if (!lic || typeof lic !== 'object') return;
+    try {
+      const novaChave = String(lic.chaveLicenca || '').trim();
+      if (!novaChave) {
+        // Nunca sobrescreve licença válida com objeto sem chave (causa "pedir licença" todo boot).
+        const atualRaw = localStorage.getItem('adega_licenca') || localStorage.getItem('adega_licenca_backup');
+        if (atualRaw) {
+          try {
+            const atual = JSON.parse(atualRaw);
+            if (atual && String(atual.chaveLicenca || '').trim()) {
+              console.warn('[Storage] saveLicenca bloqueado: tentativa de gravar licença sem chave.');
+              return;
+            }
+          } catch (e) {}
+        }
+      }
+
+      const json = JSON.stringify(lic);
+      localStorage.setItem('adega_licenca', json);
+      try { localStorage.setItem('adega_licenca_backup', json); } catch (e) {}
+    } catch (e) {
+      console.error('[Storage] Falha ao salvar licença (quota/disco?):', e);
+      try {
+        if (lic && lic.chaveLicenca) {
+          localStorage.setItem('adega_licenca_backup', JSON.stringify(lic));
+        }
+      } catch (e2) {}
+    }
   },
 
   // Gestão de Usuários & Operadores Multi-Acesso
@@ -807,7 +846,9 @@ export const StorageService = {
     'flowpdv_partes_manifesto',
     'flowpdv_partes_hash',
     'flowpdv_movimentos_enviados',
-    'flowpdv_ultimo_mov_sync'
+    'flowpdv_ultimo_mov_sync',
+    'adega_licenca_backup',
+    'flowpdv_terminal_heartbeat_ms'
   ],
 
   PREFIXOS_DA_LOJA: ['flowpdv_logs_auditoria_', 'flowpdv_logs_nuvem_pendentes_', 'flowpdv_logs_migrados_', 'flowpdv_cache_', 'flowpdv_master_'],

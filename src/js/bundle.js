@@ -24371,30 +24371,42 @@
     },
     // Licença SaaS
     getLicenca() {
-      const saved = localStorage.getItem("adega_licenca");
-      if (saved) {
+      const ler = (chave) => {
+        const saved = localStorage.getItem(chave);
+        if (!saved) return null;
         try {
-          const parsed = JSON.parse(saved);
-          if (parsed && parsed.chaveLicenca && parsed.chaveLicenca.trim().length > 0) {
-            let updated = false;
-            if (parsed.chavePixSuporte === "19999997777" || !parsed.chavePixSuporte) {
-              parsed.chavePixSuporte = "19989632127";
-              updated = true;
-            }
-            if (parsed.whatsappSuporte === "19999997777" || parsed.whatsappSuporte === "(19) 99999-7777") {
-              parsed.whatsappSuporte = "(19) 98963-2127";
-              updated = true;
-            }
-            if (updated) {
-              try {
-                localStorage.setItem("adega_licenca", JSON.stringify(parsed));
-              } catch (e) {
-              }
-            }
-            return parsed;
+          const parsed2 = JSON.parse(saved);
+          if (parsed2 && parsed2.chaveLicenca && String(parsed2.chaveLicenca).trim().length > 0) {
+            return parsed2;
           }
         } catch (e) {
         }
+        return null;
+      };
+      let parsed = ler("adega_licenca") || ler("adega_licenca_backup");
+      if (parsed) {
+        let updated = false;
+        if (parsed.chavePixSuporte === "19999997777" || !parsed.chavePixSuporte) {
+          parsed.chavePixSuporte = "19989632127";
+          updated = true;
+        }
+        if (parsed.whatsappSuporte === "19999997777" || parsed.whatsappSuporte === "(19) 99999-7777") {
+          parsed.whatsappSuporte = "(19) 98963-2127";
+          updated = true;
+        }
+        if (updated) {
+          try {
+            this.saveLicenca(parsed);
+          } catch (e) {
+          }
+        }
+        if (!ler("adega_licenca") && ler("adega_licenca_backup")) {
+          try {
+            localStorage.setItem("adega_licenca", JSON.stringify(parsed));
+          } catch (e) {
+          }
+        }
+        return parsed;
       }
       const defaults = {
         clienteId: "",
@@ -24412,7 +24424,37 @@
       return defaults;
     },
     saveLicenca(lic) {
-      localStorage.setItem("adega_licenca", JSON.stringify(lic));
+      if (!lic || typeof lic !== "object") return;
+      try {
+        const novaChave = String(lic.chaveLicenca || "").trim();
+        if (!novaChave) {
+          const atualRaw = localStorage.getItem("adega_licenca") || localStorage.getItem("adega_licenca_backup");
+          if (atualRaw) {
+            try {
+              const atual = JSON.parse(atualRaw);
+              if (atual && String(atual.chaveLicenca || "").trim()) {
+                console.warn("[Storage] saveLicenca bloqueado: tentativa de gravar licen\xE7a sem chave.");
+                return;
+              }
+            } catch (e) {
+            }
+          }
+        }
+        const json = JSON.stringify(lic);
+        localStorage.setItem("adega_licenca", json);
+        try {
+          localStorage.setItem("adega_licenca_backup", json);
+        } catch (e) {
+        }
+      } catch (e) {
+        console.error("[Storage] Falha ao salvar licen\xE7a (quota/disco?):", e);
+        try {
+          if (lic && lic.chaveLicenca) {
+            localStorage.setItem("adega_licenca_backup", JSON.stringify(lic));
+          }
+        } catch (e2) {
+        }
+      }
     },
     // Gestão de Usuários & Operadores Multi-Acesso
     getUsuarios() {
@@ -24569,7 +24611,9 @@
       "flowpdv_partes_manifesto",
       "flowpdv_partes_hash",
       "flowpdv_movimentos_enviados",
-      "flowpdv_ultimo_mov_sync"
+      "flowpdv_ultimo_mov_sync",
+      "adega_licenca_backup",
+      "flowpdv_terminal_heartbeat_ms"
     ],
     PREFIXOS_DA_LOJA: ["flowpdv_logs_auditoria_", "flowpdv_logs_nuvem_pendentes_", "flowpdv_logs_migrados_", "flowpdv_cache_", "flowpdv_master_"],
     // Limpeza de Isolamento Multi-Tenant ao Trocar de Empresa/Licença
@@ -39405,6 +39449,14 @@ This typically indicates that your device does not have a healthy Internet conne
       return null !== this.fieldMask ? new __PRIVATE_PatchMutation(e, this.data, this.fieldMask, t, this.fieldTransforms) : new __PRIVATE_SetMutation(e, this.data, t, this.fieldTransforms);
     }
   };
+  var ParsedUpdateData = class {
+    constructor(e, t, n) {
+      this.data = e, this.fieldMask = t, this.fieldTransforms = n;
+    }
+    toMutation(e, t) {
+      return new __PRIVATE_PatchMutation(e, this.data, this.fieldMask, t, this.fieldTransforms);
+    }
+  };
   function __PRIVATE_isWrite(e) {
     switch (e) {
       case 0:
@@ -39539,6 +39591,44 @@ This typically indicates that your device does not have a healthy Internet conne
       return e instanceof ___PRIVATE_DeleteFieldValueImpl;
     }
   };
+  function __PRIVATE_parseUpdateData(e, t, n, r) {
+    const i = e.Dc(1, t, n);
+    __PRIVATE_validatePlainObject("Data must be an object, but it was:", i, r);
+    const s = [], o = ObjectValue.empty();
+    forEach(r, ((e2, r2) => {
+      const _2 = __PRIVATE_fieldPathFromDotSeparatedString(t, e2, n);
+      r2 = getModularInstance(r2);
+      const a = i.gc(_2);
+      if (r2 instanceof __PRIVATE_DeleteFieldValueImpl)
+        s.push(_2);
+      else {
+        const e3 = __PRIVATE_parseData(r2, a);
+        null != e3 && (s.push(_2), o.set(_2, e3));
+      }
+    }));
+    const _ = new FieldMask(s);
+    return new ParsedUpdateData(o, _, i.fieldTransforms);
+  }
+  function __PRIVATE_parseUpdateVarargs(e, t, n, r, i, s) {
+    const o = e.Dc(1, t, n), _ = [__PRIVATE_fieldPathFromArgument$1(t, r, n)], a = [i];
+    if (s.length % 2 != 0) throw new FirestoreError(N.INVALID_ARGUMENT, `Function ${t}() needs to be called with an even number of arguments that alternate between field names and values.`);
+    for (let e2 = 0; e2 < s.length; e2 += 2) _.push(__PRIVATE_fieldPathFromArgument$1(t, s[e2])), a.push(s[e2 + 1]);
+    const u = [], c = ObjectValue.empty();
+    for (let e2 = _.length - 1; e2 >= 0; --e2) if (!__PRIVATE_fieldMaskContains(u, _[e2])) {
+      const t2 = _[e2];
+      let n2 = a[e2];
+      n2 = getModularInstance(n2);
+      const r2 = o.gc(t2);
+      if (n2 instanceof __PRIVATE_DeleteFieldValueImpl)
+        u.push(t2);
+      else {
+        const e3 = __PRIVATE_parseData(n2, r2);
+        null != e3 && (u.push(t2), c.set(t2, e3));
+      }
+    }
+    const l = new FieldMask(u);
+    return new ParsedUpdateData(c, l, o.fieldTransforms);
+  }
   function __PRIVATE_parseQueryValue(e, t, n, r = false) {
     return __PRIVATE_parseData(n, e.Dc(r ? 4 : 3, t));
   }
@@ -40337,6 +40427,15 @@ This typically indicates that your device does not have a healthy Internet conne
     e = __PRIVATE_cast(e, DocumentReference);
     const r = __PRIVATE_cast(e.firestore, Firestore), i = __PRIVATE_applyFirestoreDataConverter(e.converter, t, n);
     return executeWrite(r, [__PRIVATE_parseSetData(__PRIVATE_newUserDataReader(r), "setDoc", e._key, i, null !== e.converter, n).toMutation(e._key, Precondition.none())]);
+  }
+  function updateDoc(e, t, n, ...r) {
+    e = __PRIVATE_cast(e, DocumentReference);
+    const i = __PRIVATE_cast(e.firestore, Firestore), s = __PRIVATE_newUserDataReader(i);
+    let o;
+    o = "string" == typeof // For Compat types, we have to "extract" the underlying types before
+    // performing validation.
+    (t = getModularInstance(t)) || t instanceof FieldPath ? __PRIVATE_parseUpdateVarargs(s, "updateDoc", e._key, t, n, r) : __PRIVATE_parseUpdateData(s, "updateDoc", e._key, t);
+    return executeWrite(i, [o.toMutation(e._key, Precondition.exists(true))]);
   }
   function deleteDoc(e) {
     return executeWrite(__PRIVATE_cast(e.firestore, Firestore), [new __PRIVATE_DeleteMutation(e._key, Precondition.none())]);
@@ -55222,15 +55321,23 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
             let terminais = this.limparTerminaisDuplicados(cloudData.terminaisAtivos);
             const idxTerm = terminais.findIndex((t) => t.id === myDevId);
             if (idxTerm >= 0) {
+              const agora = Date.now();
+              const ultimoHb = parseInt(localStorage.getItem("flowpdv_terminal_heartbeat_ms") || "0", 10) || 0;
+              const precisaHb = agora - ultimoHb > 2 * 60 * 1e3;
               this.getDadosTerminalAtual().then((infoTerminal) => {
                 const termAtual = terminais[idxTerm];
-                if (!termAtual.hostname || termAtual.hostname !== infoTerminal.hostname) {
-                  terminais[idxTerm] = infoTerminal;
-                  const targetDocId = docIdFound || cloudData.chaveLicenca || chave;
-                  if (targetDocId) {
-                    setDoc(doc(db, "licencas", targetDocId), { terminaisAtivos: terminais }, { merge: true }).catch(() => {
-                    });
-                  }
+                const hostnameMudou = !termAtual.hostname || termAtual.hostname !== infoTerminal.hostname;
+                if (!hostnameMudou && !precisaHb) return;
+                terminais[idxTerm] = { ...termAtual, ...infoTerminal, id: myDevId };
+                const targetDocId = docIdFound || cloudData.chaveLicenca || chave;
+                if (targetDocId) {
+                  setDoc(doc(db, "licencas", targetDocId), { terminaisAtivos: terminais }, { merge: true }).then(() => {
+                    try {
+                      localStorage.setItem("flowpdv_terminal_heartbeat_ms", String(Date.now()));
+                    } catch (e) {
+                    }
+                  }).catch(() => {
+                  });
                 }
               });
             }
@@ -56294,6 +56401,10 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       await this.garantirSessao(chave);
       const envio = { ...pacote };
       const manifesto = {};
+      const meuDevId = envio.origemTerminal || StorageService.getDeviceId();
+      const meuTurno = Object.prototype.hasOwnProperty.call(envio, "turnosAtivos") ? envio.turnosAtivos && typeof envio.turnosAtivos === "object" ? envio.turnosAtivos[meuDevId] : void 0 : void 0;
+      const devePatchTurno = Object.prototype.hasOwnProperty.call(envio, "turnosAtivos");
+      delete envio.turnosAtivos;
       if (Array.isArray(envio.usuarios) && envio.usuarios.length === 0 && pacote.motivo !== "limpeza_manual_confirmada") {
         delete envio.usuarios;
       }
@@ -56312,7 +56423,31 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
         this.salvarManifesto(chave, manifesto);
       }
       await setDoc(doc(db, COLECAO_BACKUPS, chave), envio, { merge: true });
+      if (devePatchTurno && meuDevId) {
+        await this.atualizarTurnoAtivoDoTerminal(chave, meuDevId, meuTurno === void 0 ? null : meuTurno);
+      }
       await this.enviarMovimentosPendentes(chave, movimentosEstoque);
+    },
+    /** Atualiza só o slot deste terminal em turnosAtivos (não apaga os outros). */
+    async atualizarTurnoAtivoDoTerminal(chave, deviceId, turno) {
+      const chaveNorm = String(chave || "").trim().toUpperCase();
+      const id = String(deviceId || "").trim();
+      if (!chaveNorm || !id) return;
+      try {
+        await updateDoc(doc(db, COLECAO_BACKUPS, chaveNorm), {
+          [`turnosAtivos.${id}`]: turno || null,
+          atualizadoEm: (/* @__PURE__ */ new Date()).toISOString()
+        });
+      } catch (e) {
+        try {
+          await setDoc(doc(db, COLECAO_BACKUPS, chaveNorm), {
+            turnosAtivos: { [id]: turno || null },
+            atualizadoEm: (/* @__PURE__ */ new Date()).toISOString()
+          }, { merge: true });
+        } catch (e2) {
+          console.warn("[CloudSync] Falha ao atualizar turnosAtivos do terminal:", e2);
+        }
+      }
     },
     async completarPacote(chave, dados, legado = false) {
       if (!dados || legado || !dados.partes) return dados;

@@ -4,7 +4,7 @@
  */
 
 import { StorageService } from './storage.js';
-import { db, doc, getDoc, getDocs, collection, setDoc, deleteDoc, deleteField, onSnapshot, query, where, orderBy, limit, garantirSessaoLoja, encerrarSessaoLoja } from './firebase-config.js';
+import { db, doc, getDoc, getDocs, collection, setDoc, updateDoc, deleteDoc, deleteField, onSnapshot, query, where, orderBy, limit, garantirSessaoLoja, encerrarSessaoLoja } from './firebase-config.js';
 import {
   mesclarItensPorId,
   mesclarComandas,
@@ -269,6 +269,17 @@ export const CloudSyncModule = {
     const envio = { ...pacote };
     const manifesto = {};
 
+    // turnosAtivos NÃO pode ir no setDoc merge: o mapa inteiro seria
+    // substituído e apagaria o caixa aberto dos outros terminais.
+    const meuDevId = envio.origemTerminal || StorageService.getDeviceId();
+    const meuTurno = Object.prototype.hasOwnProperty.call(envio, 'turnosAtivos')
+      ? (envio.turnosAtivos && typeof envio.turnosAtivos === 'object'
+          ? envio.turnosAtivos[meuDevId]
+          : undefined)
+      : undefined;
+    const devePatchTurno = Object.prototype.hasOwnProperty.call(envio, 'turnosAtivos');
+    delete envio.turnosAtivos;
+
     // Lista de operadores vazia nunca sobe: apagaria os operadores dos outros caixas.
     if (Array.isArray(envio.usuarios) && envio.usuarios.length === 0 && pacote.motivo !== 'limpeza_manual_confirmada') {
       delete envio.usuarios;
@@ -297,7 +308,35 @@ export const CloudSyncModule = {
     }
 
     await setDoc(doc(db, COLECAO_BACKUPS, chave), envio, { merge: true });
+
+    if (devePatchTurno && meuDevId) {
+      await this.atualizarTurnoAtivoDoTerminal(chave, meuDevId, meuTurno === undefined ? null : meuTurno);
+    }
+
     await this.enviarMovimentosPendentes(chave, movimentosEstoque);
+  },
+
+  /** Atualiza só o slot deste terminal em turnosAtivos (não apaga os outros). */
+  async atualizarTurnoAtivoDoTerminal(chave, deviceId, turno) {
+    const chaveNorm = String(chave || '').trim().toUpperCase();
+    const id = String(deviceId || '').trim();
+    if (!chaveNorm || !id) return;
+    try {
+      await updateDoc(doc(db, COLECAO_BACKUPS, chaveNorm), {
+        [`turnosAtivos.${id}`]: turno || null,
+        atualizadoEm: new Date().toISOString()
+      });
+    } catch (e) {
+      // Doc pode não existir ainda — cria só o slot deste terminal
+      try {
+        await setDoc(doc(db, COLECAO_BACKUPS, chaveNorm), {
+          turnosAtivos: { [id]: turno || null },
+          atualizadoEm: new Date().toISOString()
+        }, { merge: true });
+      } catch (e2) {
+        console.warn('[CloudSync] Falha ao atualizar turnosAtivos do terminal:', e2);
+      }
+    }
   },
 
   async completarPacote(chave, dados, legado = false) {

@@ -200,21 +200,30 @@ export const LicencaModule = {
         const isAuth = this.validarTerminalDispositivo(cloudData, docIdFound);
         this.verificarStatusLicenca();
 
-        // Se este terminal JÁ ESTIVER registrado, apenas atualiza o hostname se necessário (NÃO auto-registra silenciosamente novos slots)
+        // Se este terminal JÁ ESTIVER registrado, atualiza heartbeat (ultimoAcesso)
+        // a cada ~2 min — senão o painel mobile marca Offline / some Online.
         try {
           const myDevId = StorageService.getDeviceId();
           let terminais = this.limparTerminaisDuplicados(cloudData.terminaisAtivos);
           const idxTerm = terminais.findIndex(t => t.id === myDevId);
 
           if (idxTerm >= 0) {
+            const agora = Date.now();
+            const ultimoHb = parseInt(localStorage.getItem('flowpdv_terminal_heartbeat_ms') || '0', 10) || 0;
+            const precisaHb = (agora - ultimoHb) > (2 * 60 * 1000);
             this.getDadosTerminalAtual().then(infoTerminal => {
               const termAtual = terminais[idxTerm];
-              if (!termAtual.hostname || termAtual.hostname !== infoTerminal.hostname) {
-                terminais[idxTerm] = infoTerminal;
-                const targetDocId = docIdFound || cloudData.chaveLicenca || chave;
-                if (targetDocId) {
-                  setDoc(doc(db, "licencas", targetDocId), { terminaisAtivos: terminais }, { merge: true }).catch(() => {});
-                }
+              const hostnameMudou = !termAtual.hostname || termAtual.hostname !== infoTerminal.hostname;
+              if (!hostnameMudou && !precisaHb) return;
+
+              terminais[idxTerm] = { ...termAtual, ...infoTerminal, id: myDevId };
+              const targetDocId = docIdFound || cloudData.chaveLicenca || chave;
+              if (targetDocId) {
+                setDoc(doc(db, "licencas", targetDocId), { terminaisAtivos: terminais }, { merge: true })
+                  .then(() => {
+                    try { localStorage.setItem('flowpdv_terminal_heartbeat_ms', String(Date.now())); } catch (e) {}
+                  })
+                  .catch(() => {});
               }
             });
           }
