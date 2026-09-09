@@ -419,6 +419,9 @@ export const StorageService = {
         window.CloudSyncModule.enviarAlteracaoNuvem('turno');
       }
     }
+    if (window.LicencaModule && typeof window.LicencaModule.forcarHeartbeatTerminal === 'function') {
+      window.LicencaModule.forcarHeartbeatTerminal().catch(() => {});
+    }
   },
 
   getHistoricoTurnos() {
@@ -457,6 +460,9 @@ export const StorageService = {
       if (typeof window.CloudSyncModule.enviarAlteracaoNuvem === 'function') {
         window.CloudSyncModule.enviarAlteracaoNuvem('turno');
       }
+    }
+    if (window.LicencaModule && typeof window.LicencaModule.forcarHeartbeatTerminal === 'function') {
+      window.LicencaModule.forcarHeartbeatTerminal().catch(() => {});
     }
   },
 

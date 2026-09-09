@@ -344,6 +344,7 @@ export const CloudSyncModule = {
     try {
       await updateDoc(doc(db, COLECAO_BACKUPS, chaveNorm), {
         [`turnosAtivos.${id}`]: payload,
+        turnoAtual: payload,
         atualizadoEm: new Date().toISOString()
       });
     } catch (e) {
@@ -949,7 +950,7 @@ export const CloudSyncModule = {
       clearTimeout(this.debounceTimer);
     }
 
-    const delay = (motivo === 'turno_excluido' || motivo === 'produtos' || motivo === 'comandas' || motivo === 'categorias_exclusao' || motivo === 'categoria_criada') ? 50 : 500;
+    const delay = (motivo === 'turno' || motivo === 'turno_excluido' || motivo === 'turno_ativo_startup' || motivo === 'turno_fechado_startup' || motivo === 'produtos' || motivo === 'comandas' || motivo === 'categorias_exclusao' || motivo === 'categoria_criada') ? 50 : 500;
 
     this.debounceTimer = setTimeout(async () => {
       try {

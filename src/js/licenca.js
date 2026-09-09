@@ -210,7 +210,7 @@ export const LicencaModule = {
           if (idxTerm >= 0) {
             const agora = Date.now();
             const ultimoHb = parseInt(localStorage.getItem('flowpdv_terminal_heartbeat_ms') || '0', 10) || 0;
-            const precisaHb = (agora - ultimoHb) > (2 * 60 * 1000);
+            const precisaHb = (agora - ultimoHb) > (20 * 1000);
             this.getDadosTerminalAtual().then(infoTerminal => {
               const termAtual = terminais[idxTerm];
               const hostnameMudou = !termAtual.hostname || termAtual.hostname !== infoTerminal.hostname;
@@ -275,6 +275,30 @@ export const LicencaModule = {
       sistema: platform === 'win32' ? 'Windows' : platform,
       ultimoAcesso: new Date().toISOString()
     };
+  },
+
+  /** Sobe hostname + ultimoAcesso na hora (abrir/fechar caixa). Sem espera de 2 min. */
+  async forcarHeartbeatTerminal() {
+    try {
+      const lic = StorageService.getLicenca() || {};
+      const chave = String(lic.chaveLicenca || lic.clienteId || '').trim().toUpperCase();
+      if (!chave) return;
+      await this.garantirSessaoNuvem(chave);
+      const myDevId = StorageService.getDeviceId();
+      const info = await this.getDadosTerminalAtual();
+      const snap = await getDoc(doc(db, 'licencas', chave));
+      const atuais = snap.exists() ? (snap.data().terminaisAtivos || []) : [];
+      let terminais = this.limparTerminaisDuplicados(atuais);
+      const idx = terminais.findIndex(t => t && t.id === myDevId);
+      const registro = { ...(idx >= 0 ? terminais[idx] : {}), ...info, id: myDevId, ultimoAcesso: new Date().toISOString() };
+      if (idx >= 0) terminais[idx] = registro;
+      else terminais.push(registro);
+      terminais = this.limparTerminaisDuplicados(terminais);
+      await setDoc(doc(db, 'licencas', chave), { terminaisAtivos: terminais }, { merge: true });
+      try { localStorage.setItem('flowpdv_terminal_heartbeat_ms', String(Date.now())); } catch (e) {}
+    } catch (e) {
+      console.warn('[CloudLic] Heartbeat imediato falhou:', e);
+    }
   },
 
   async atualizarOperadorTerminalNuvem(nomeOperador) {
