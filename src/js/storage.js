@@ -48,6 +48,18 @@ export const StorageService = {
     return texto.slice(-6);
   },
 
+  formatarNumeroVenda(vendaOuId) {
+    const venda = (vendaOuId && typeof vendaOuId === 'object') ? vendaOuId : { id: vendaOuId };
+    const num = parseInt(venda.numeroVenda, 10);
+    if (Number.isFinite(num) && num > 0) return String(num).padStart(6, '0');
+    const texto = String(venda.id || '');
+    const vnd = texto.match(/VND-(\d+)/i);
+    if (vnd) return vnd[1].slice(-6).padStart(6, '0');
+    const digits = texto.replace(/\D/g, '');
+    if (digits.length > 0) return digits.slice(-6).padStart(6, '0');
+    return '------';
+  },
+
   getDeviceId() {
     let devId = localStorage.getItem('flowpdv_device_id');
     if (!devId) {
@@ -200,13 +212,20 @@ export const StorageService = {
     return '🏷️';
   },
 
+  _produtosMem: null,
+
   // Produtos & Estoque
   getProdutos() {
+    if (Array.isArray(this._produtosMem)) return this._produtosMem;
+
     const saved = localStorage.getItem('adega_produtos');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          this._produtosMem = parsed;
+          return parsed;
+        }
       } catch(e) {}
     }
     // Tenta recuperar do backup de segurança local se existir
@@ -220,6 +239,7 @@ export const StorageService = {
         }
       } catch(e) {}
     }
+    this._produtosMem = [];
     return [];
   },
 
@@ -254,6 +274,7 @@ export const StorageService = {
     }
     const excluidos = this.getProdutosExcluidosIds();
     const listaLimpa = Array.isArray(produtos) ? produtos.filter(p => p && p.id && !excluidos.includes(String(p.id))) : [];
+    this._produtosMem = listaLimpa;
     localStorage.setItem('adega_produtos', JSON.stringify(listaLimpa));
   },
 
@@ -389,8 +410,14 @@ export const StorageService = {
 
   salvarTurno(turno) {
     localStorage.setItem('adega_turno_atual', JSON.stringify(turno));
-    if (window.CloudSyncModule && typeof window.CloudSyncModule.enviarAlteracaoNuvem === 'function') {
-      window.CloudSyncModule.enviarAlteracaoNuvem('turno');
+    if (window.CloudSyncModule) {
+      if (typeof window.CloudSyncModule.atualizarTurnoAtivoDoTerminal === 'function') {
+        const chave = window.CloudSyncModule.getChaveLicenca ? window.CloudSyncModule.getChaveLicenca() : '';
+        window.CloudSyncModule.atualizarTurnoAtivoDoTerminal(chave, this.getDeviceId(), turno).catch(() => {});
+      }
+      if (typeof window.CloudSyncModule.enviarAlteracaoNuvem === 'function') {
+        window.CloudSyncModule.enviarAlteracaoNuvem('turno');
+      }
     }
   },
 

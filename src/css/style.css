@@ -5724,6 +5724,22 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   }
 }
 
+@media (min-width: 1451px) {
+  .header-left-group {
+    flex: 0 1 auto;
+  }
+  .app-nav {
+    flex: 0 0 auto;
+    overflow: visible;
+  }
+}
+
+@media (min-width: 1600px) {
+  .license-status-label {
+    display: inline !important;
+  }
+}
+
 #pdv-desconto-box span { color: #dc2626 !important; }
 #pdv-desconto-box strong { color: #b91c1c !important; }
 

@@ -1381,7 +1381,7 @@ export const CaixaModule = {
 
       return `
         <tr>
-          <td><strong style="color: var(--text-main);">#${v.id ? v.id.slice(-6) : '-'}</strong></td>
+          <td><strong style="color: var(--text-main);">#${StorageService.formatarNumeroVenda(v)}</strong></td>
           <td>${hora}</td>
           <td>${v.itens ? v.itens.length : 0} itens</td>
           <td style="text-transform: capitalize; text-align: center;">${formaPgtoDisplay}</td>
@@ -1559,7 +1559,7 @@ export const CaixaModule = {
     const title = document.getElementById('detalhes-venda-title');
     const corpo = document.getElementById('detalhes-venda-corpo');
 
-    if (title) title.innerHTML = `🧾 Detalhes da Venda <strong>#${venda.id}</strong>`;
+    if (title) title.innerHTML = `🧾 Detalhes da Venda <strong>#${StorageService.formatarNumeroVenda(venda)}</strong>`;
 
     if (corpo) {
       const dataStr = new Date(venda.data).toLocaleString('pt-BR');
@@ -1657,7 +1657,7 @@ export const CaixaModule = {
     if (this.vendaDetalheSelecionada) {
       ThermalPrintModule.imprimirCupomVenda(this.vendaDetalheSelecionada);
       if (window.App && typeof window.App.showToast === 'function') {
-        window.App.showToast(`🖨️ Enviando cupom da venda #${this.vendaDetalheSelecionada.id} para a impressora...`, 'info');
+        window.App.showToast(`🖨️ Enviando cupom da venda #${StorageService.formatarNumeroVenda(this.vendaDetalheSelecionada)} para a impressora...`, 'info');
       }
     }
   }

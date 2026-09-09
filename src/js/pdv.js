@@ -928,7 +928,7 @@ export const PdvModule = {
         <div class="reimpressao-venda-card">
           <div style="flex: 1; min-width: 0;">
             <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px; flex-wrap: wrap;">
-              <span class="reimpressao-card-id">#${(v.id || '').slice(-6)}</span>
+              <span class="reimpressao-card-id">#${StorageService.formatarNumeroVenda(v)}</span>
               <span style="font-size: 11.5px; color: #64748b; font-weight: 700;">📅 ${dataFmt} às ${horaFmt}</span>
               ${badgePag}
               <span style="font-size: 11px; color: #64748b; font-weight: 600;">👤 ${v.operador || 'Caixa'}</span>
@@ -966,10 +966,10 @@ export const PdvModule = {
     }
     if (window.ThermalPrintModule && typeof window.ThermalPrintModule.imprimirCupomVenda === 'function') {
       window.ThermalPrintModule.imprimirCupomVenda(v);
-      window.App.showToast(`🖨️ Imprimindo 2ª via da venda #${(v.id || '').slice(-6)}...`, 'success');
+      window.App.showToast(`🖨️ Imprimindo 2ª via da venda #${StorageService.formatarNumeroVenda(v)}...`, 'success');
       this.fecharModalReimpressaoCupom();
     } else {
-      window.App.showToast(`🖨️ Comprovante da venda #${(v.id || '').slice(-6)} impresso com sucesso!`, 'info');
+      window.App.showToast(`🖨️ Comprovante da venda #${StorageService.formatarNumeroVenda(v)} impresso com sucesso!`, 'info');
       this.fecharModalReimpressaoCupom();
     }
   },
@@ -1345,27 +1345,34 @@ export const PdvModule = {
   f2HighlightedIndex: 0,
   f2ModoFardo: false,
   f2ProdutosFiltrados: [],
+  f2Renderizados: 0,
+  _f2BuscaTimer: null,
+  _f2ChipsAssinatura: '',
+  _f2ValidadeAtiva: false,
+  _f2HojeValidade: null,
+  F2_PAGE_SIZE: 50,
 
   // Modal de Busca Rápida [F2]
   abrirBuscaProdutos() {
     const modal = document.getElementById('modal-busca-produtos');
     const input = document.getElementById('busca-rapida-input');
-    if (modal) {
-      modal.classList.add('active');
-      this.filtroCategoriaBusca = 'todos';
-      this.renderChipsCategoriasBusca();
-      this.f2HighlightedIndex = 0;
-      this.f2ModoFardo = false;
-      if (input) {
-        input.value = '';
-        if (!input.dataset.hasKeyNav) {
-          input.dataset.hasKeyNav = 'true';
-          input.addEventListener('keydown', (e) => this.handleBuscaRapidaKeydown(e));
-        }
-        setTimeout(() => input.focus(), 80);
+    if (!modal) return;
+
+    modal.classList.add('active');
+    this.filtroCategoriaBusca = 'todos';
+    this.f2HighlightedIndex = 0;
+    this.f2ModoFardo = false;
+
+    if (input) {
+      input.value = '';
+      if (!input.dataset.hasKeyNav) {
+        input.dataset.hasKeyNav = 'true';
+        input.addEventListener('keydown', (e) => this.handleBuscaRapidaKeydown(e));
       }
-      this.renderResultadosBusca('');
+      input.focus();
     }
+    this.renderResultadosBusca('');
+    requestAnimationFrame(() => this.renderChipsCategoriasBusca());
   },
 
   handleBuscaRapidaKeydown(e) {
@@ -1377,6 +1384,7 @@ export const PdvModule = {
         this.f2HighlightedIndex++;
         const p = this.f2ProdutosFiltrados[this.f2HighlightedIndex];
         if (!p || !p.precoFardo) this.f2ModoFardo = false;
+        this.garantirLinhaF2Visivel();
         this.atualizarHighlightBuscaRapida();
       }
     } else if (e.key === 'ArrowUp') {
@@ -1424,7 +1432,7 @@ export const PdvModule = {
 
       if (idx === this.f2HighlightedIndex) {
         row.classList.add('selected');
-        row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        row.scrollIntoView({ block: 'nearest', behavior: 'auto' });
 
         if (this.f2ModoFardo && btnPack) {
           btnPack.classList.add('f2-btn-focused');
@@ -1454,20 +1462,18 @@ export const PdvModule = {
 
     const produtos = StorageService.getProdutos() || [];
     const categoriasBase = StorageService.getCategorias() || [];
-    
-    // Identifica todas as categorias presentes nos produtos cadastrados
-    const mapCategorias = new Map();
-    
-    produtos.forEach(p => {
-      const cat = (p.categoria || 'Geral').trim();
-      mapCategorias.set(cat, (mapCategorias.get(cat) || 0) + 1);
-    });
+    const assinatura = `${produtos.length}|${categoriasBase.join('|')}|${this.filtroCategoriaBusca}`;
+    if (this._f2ChipsAssinatura === assinatura && container.childElementCount > 0) return;
+    this._f2ChipsAssinatura = assinatura;
 
+    const mapCategorias = new Map();
+    for (let i = 0; i < produtos.length; i++) {
+      const cat = (produtos[i].categoria || 'Geral').trim();
+      mapCategorias.set(cat, (mapCategorias.get(cat) || 0) + 1);
+    }
     categoriasBase.forEach(c => {
-      const cat = c.trim();
-      if (!mapCategorias.has(cat)) {
-        mapCategorias.set(cat, 0);
-      }
+      const cat = String(c || '').trim();
+      if (cat && !mapCategorias.has(cat)) mapCategorias.set(cat, 0);
     });
 
     let html = `
@@ -1479,7 +1485,6 @@ export const PdvModule = {
     Array.from(mapCategorias.entries()).forEach(([cat, qtd]) => {
       const icone = StorageService.getIconeCategoria ? StorageService.getIconeCategoria(cat) : '🏷️';
       const isActive = this.filtroCategoriaBusca.toLowerCase() === cat.toLowerCase();
-
       html += `
         <button type="button" class="f2-cat-chip ${isActive ? 'active' : ''}" onclick="PdvModule.selecionarCategoriaBusca('${cat.replace(/'/g, "\\'")}', this)">
           <span>${icone} ${cat}</span> <small style="opacity: 0.85; font-weight: 800;">(${qtd})</small>
@@ -1514,15 +1519,133 @@ export const PdvModule = {
     this.renderResultadosBusca(input ? input.value : '');
   },
 
+  agendarRenderResultadosBusca(termo) {
+    if (this._f2BuscaTimer) clearTimeout(this._f2BuscaTimer);
+    this._f2BuscaTimer = setTimeout(() => this.renderResultadosBusca(termo), 50);
+  },
+
+  garantirScrollF2(lista) {
+    if (!lista || lista.dataset.hasF2Scroll === 'true') return;
+    lista.dataset.hasF2Scroll = 'true';
+    lista.addEventListener('scroll', () => this.verificarScrollF2());
+  },
+
+  verificarScrollF2() {
+    const lista = document.getElementById('busca-produtos-lista');
+    if (!lista) return;
+    if (lista.scrollTop + lista.clientHeight >= lista.scrollHeight - 90) {
+      this.carregarMaisF2();
+    }
+  },
+
+  garantirLinhaF2Visivel() {
+    while (this.f2Renderizados <= this.f2HighlightedIndex && this.f2Renderizados < this.f2ProdutosFiltrados.length) {
+      this.carregarMaisF2();
+    }
+  },
+
+  htmlLinhaF2(p, idx) {
+    const controlaEstoque = p.controlarEstoque !== false && p.controlaEstoque !== false;
+    const estoqueNum = parseFloat(p.estoque) || 0;
+    const minNum = parseFloat(p.estoqueMinimo) || 5;
+    const isEstoqueOk = controlaEstoque ? (estoqueNum > minNum) : true;
+    const stockBadge = controlaEstoque
+      ? `<span class="f2-col-stock ${isEstoqueOk ? 'ok' : 'low'}">📦 Estoque: <strong>${estoqueNum} un</strong></span>`
+      : `<span class="f2-col-stock ok" style="background: #e0f2fe; color: #0369a1; border-color: #bae6fd;">♾️ Serviço / Fixo</span>`;
+
+    const isPromo = Boolean(p.emPromocao || (p.precoPromocional && p.precoPromocional < p.precoVenda));
+    const precoOriginalExibir = p.precoOriginal || (isPromo ? (p.precoVenda * 1.25) : p.precoVenda);
+
+    let validadeBadgeF2 = '';
+    if (this._f2ValidadeAtiva && p.dataValidade) {
+      const dataVal = new Date(p.dataValidade + 'T00:00:00');
+      const diffDias = Math.ceil((dataVal - this._f2HojeValidade) / (1000 * 60 * 60 * 24));
+      if (diffDias < 0) {
+        validadeBadgeF2 = `<span style="font-size: 10.5px; color: #dc2626; font-weight: 800;">🚨 Vencido (${dataVal.toLocaleDateString('pt-BR')})</span>`;
+      } else if (diffDias <= 30) {
+        validadeBadgeF2 = `<span style="font-size: 10.5px; color: #d97706; font-weight: 800;">⏳ Val: ${dataVal.toLocaleDateString('pt-BR')} (${diffDias}d)</span>`;
+      }
+    }
+
+    return `
+      <div class="f2-product-row" data-f2-index="${idx}">
+        <div class="f2-item-info">
+          <div class="f2-item-title" style="display: flex; align-items: center; gap: 6px;">
+            <span>${p.nome}</span>
+            ${isPromo ? `<span style="background: #ea580c; color: #ffffff; font-size: 10px; font-weight: 900; padding: 1px 6px; border-radius: 4px;">🔥 PROMO</span>` : ''}
+          </div>
+          <div class="f2-item-sub">
+            <span class="f2-col-code">Cód: <strong class="f2-code">${p.codigoBarras || '--'}</strong></span>
+            <span class="f2-col-cat">🏷️ ${p.categoria || 'Geral'}</span>
+            ${stockBadge}
+            ${validadeBadgeF2}
+          </div>
+        </div>
+        <div class="f2-item-actions">
+          <button type="button" class="f2-btn-unit" onclick="PdvModule.selecionarProdutoBusca('${p.id}', false)" title="Adicionar 1 unidade ao carrinho [Enter]">
+            <span class="f2-btn-tag">${isPromo ? '🔥 Promoção' : '+ Unidade'}</span>
+            ${isPromo ? `<span style="font-size: 10.5px; text-decoration: line-through; opacity: 0.7; line-height: 1;">R$ ${precoOriginalExibir.toFixed(2).replace('.', ',')}</span>` : ''}
+            <strong class="f2-price" style="${isPromo ? 'color: #ea580c; font-size: 15px;' : ''}">R$ ${(parseFloat(p.precoVenda) || 0).toFixed(2).replace('.', ',')}</strong>
+          </button>
+          ${p.precoFardo ? `
+            <button type="button" class="f2-btn-pack" onclick="PdvModule.selecionarProdutoBusca('${p.id}', true)" title="Adicionar pacote/fardo ao carrinho [→ Enter]">
+              <span class="f2-btn-tag">+ ${p.unidadeFracionada || 'Fardo / Kit'}</span>
+              <strong class="f2-price">R$ ${(parseFloat(p.precoFardo) || 0).toFixed(2).replace('.', ',')}</strong>
+            </button>
+          ` : `<div class="f2-empty-slot"></div>`}
+        </div>
+      </div>
+    `;
+  },
+
+  atualizarSentinelaF2(lista) {
+    let sentinela = document.getElementById('f2-scroll-sentinel');
+    if (!sentinela) {
+      sentinela = document.createElement('div');
+      sentinela.id = 'f2-scroll-sentinel';
+      sentinela.style.cssText = 'text-align:center;padding:8px 10px 4px;color:#64748b;font-size:12px;font-weight:600;';
+      lista.appendChild(sentinela);
+    }
+    const total = this.f2ProdutosFiltrados.length;
+    const visiveis = this.f2Renderizados;
+    if (visiveis >= total) {
+      sentinela.textContent = total > this.F2_PAGE_SIZE ? `Todos os ${total} produtos` : '';
+    } else {
+      sentinela.textContent = `Mostrando ${visiveis} de ${total} — role para ver mais`;
+    }
+  },
+
+  carregarMaisF2() {
+    const lista = document.getElementById('busca-produtos-lista');
+    if (!lista) return;
+    const total = this.f2ProdutosFiltrados.length;
+    if (this.f2Renderizados >= total) return;
+
+    const proximo = Math.min(this.f2Renderizados + this.F2_PAGE_SIZE, total);
+    let html = '';
+    for (let i = this.f2Renderizados; i < proximo; i++) {
+      html += this.htmlLinhaF2(this.f2ProdutosFiltrados[i], i);
+    }
+    this.f2Renderizados = proximo;
+
+    const sentinela = document.getElementById('f2-scroll-sentinel');
+    if (sentinela) {
+      sentinela.insertAdjacentHTML('beforebegin', html);
+    } else {
+      lista.insertAdjacentHTML('beforeend', html);
+    }
+    this.atualizarSentinelaF2(lista);
+  },
+
   renderResultadosBusca(termo) {
     const lista = document.getElementById('busca-produtos-lista');
     if (!lista) return;
+    this.garantirScrollF2(lista);
 
     const produtos = StorageService.getProdutos() || [];
     const termoLower = (termo || '').toLowerCase().trim();
 
     let filtrados = produtos.filter(p => {
-      // Filtro por Categoria inclusivo
       if (this.filtroCategoriaBusca !== 'todos') {
         const catProd = (p.categoria || 'Geral').trim().toLowerCase();
         const filtro = this.filtroCategoriaBusca.trim().toLowerCase();
@@ -1541,7 +1664,6 @@ export const PdvModule = {
       return nome.includes(termoLower) || cod.includes(termoLower) || codFardo.includes(termoLower) || cat.includes(termoLower) || id.includes(termoLower);
     });
 
-    // Ordenação inteligente: correspondência de início de nome e ordem alfabética
     filtrados.sort((a, b) => {
       if (termoLower) {
         const aNameStarts = (a.nome || '').toLowerCase().startsWith(termoLower);
@@ -1553,9 +1675,11 @@ export const PdvModule = {
     });
 
     this.f2ProdutosFiltrados = filtrados;
-    if (this.f2HighlightedIndex >= filtrados.length) {
-      this.f2HighlightedIndex = 0;
-    }
+    this.f2Renderizados = 0;
+    this.f2HighlightedIndex = 0;
+    this._f2ValidadeAtiva = StorageService.isModuloAtivo('validadeLotes');
+    this._f2HojeValidade = new Date();
+    this._f2HojeValidade.setHours(0, 0, 0, 0);
 
     if (filtrados.length === 0) {
       const msgCat = this.filtroCategoriaBusca !== 'todos' ? ` na categoria <strong>${this.filtroCategoriaBusca}</strong>` : '';
@@ -1563,63 +1687,11 @@ export const PdvModule = {
       return;
     }
 
-    // Renderiza a lista completa sem cortes
-    lista.innerHTML = filtrados.map((p, idx) => {
-      const controlaEstoque = p.controlarEstoque !== false && p.controlaEstoque !== false;
-      const estoqueNum = parseFloat(p.estoque) || 0;
-      const minNum = parseFloat(p.estoqueMinimo) || 5;
-      const isEstoqueOk = controlaEstoque ? (estoqueNum > minNum) : true;
-      const stockBadge = controlaEstoque
-        ? `<span class="f2-col-stock ${isEstoqueOk ? 'ok' : 'low'}">📦 Estoque: <strong>${estoqueNum} un</strong></span>`
-        : `<span class="f2-col-stock ok" style="background: #e0f2fe; color: #0369a1; border-color: #bae6fd;">♾️ Serviço / Fixo</span>`;
-
-      const isPromo = Boolean(p.emPromocao || (p.precoPromocional && p.precoPromocional < p.precoVenda));
-      const precoOriginalExibir = p.precoOriginal || (isPromo ? (p.precoVenda * 1.25) : p.precoVenda);
-
-      let validadeBadgeF2 = '';
-      if (StorageService.isModuloAtivo('validadeLotes') && p.dataValidade) {
-        const hoje = new Date();
-        hoje.setHours(0, 0, 0, 0);
-        const dataVal = new Date(p.dataValidade + 'T00:00:00');
-        const diffDias = Math.ceil((dataVal - hoje) / (1000 * 60 * 60 * 24));
-        if (diffDias < 0) {
-          validadeBadgeF2 = `<span style="font-size: 10.5px; color: #dc2626; font-weight: 800;">🚨 Vencido (${dataVal.toLocaleDateString('pt-BR')})</span>`;
-        } else if (diffDias <= 30) {
-          validadeBadgeF2 = `<span style="font-size: 10.5px; color: #d97706; font-weight: 800;">⏳ Val: ${dataVal.toLocaleDateString('pt-BR')} (${diffDias}d)</span>`;
-        }
-      }
-
-      return `
-        <div class="f2-product-row" data-f2-index="${idx}">
-          <div class="f2-item-info">
-            <div class="f2-item-title" style="display: flex; align-items: center; gap: 6px;">
-              <span>${p.nome}</span>
-              ${isPromo ? `<span style="background: #ea580c; color: #ffffff; font-size: 10px; font-weight: 900; padding: 1px 6px; border-radius: 4px;">🔥 PROMO</span>` : ''}
-            </div>
-            <div class="f2-item-sub">
-              <span class="f2-col-code">Cód: <strong class="f2-code">${p.codigoBarras || '--'}</strong></span>
-              <span class="f2-col-cat">🏷️ ${p.categoria || 'Geral'}</span>
-              ${stockBadge}
-              ${validadeBadgeF2}
-            </div>
-          </div>
-          <div class="f2-item-actions">
-            <button type="button" class="f2-btn-unit" onclick="PdvModule.selecionarProdutoBusca('${p.id}', false)" title="Adicionar 1 unidade ao carrinho [Enter]">
-              <span class="f2-btn-tag">${isPromo ? '🔥 Promoção' : '+ Unidade'}</span>
-              ${isPromo ? `<span style="font-size: 10.5px; text-decoration: line-through; opacity: 0.7; line-height: 1;">R$ ${precoOriginalExibir.toFixed(2).replace('.', ',')}</span>` : ''}
-              <strong class="f2-price" style="${isPromo ? 'color: #ea580c; font-size: 15px;' : ''}">R$ ${(parseFloat(p.precoVenda) || 0).toFixed(2).replace('.', ',')}</strong>
-            </button>
-            ${p.precoFardo ? `
-              <button type="button" class="f2-btn-pack" onclick="PdvModule.selecionarProdutoBusca('${p.id}', true)" title="Adicionar pacote/fardo ao carrinho [→ Enter]">
-                <span class="f2-btn-tag">+ ${p.unidadeFracionada || 'Fardo / Kit'}</span>
-                <strong class="f2-price">R$ ${(parseFloat(p.precoFardo) || 0).toFixed(2).replace('.', ',')}</strong>
-              </button>
-            ` : `<div class="f2-empty-slot"></div>`}
-          </div>
-        </div>
-      `;
-    }).join('');
-
+    lista.innerHTML = '';
+    this.carregarMaisF2();
+    while (lista.scrollHeight <= lista.clientHeight + 8 && this.f2Renderizados < this.f2ProdutosFiltrados.length) {
+      this.carregarMaisF2();
+    }
     this.atualizarHighlightBuscaRapida();
   },
 

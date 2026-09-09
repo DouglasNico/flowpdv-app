@@ -673,7 +673,7 @@ export const LicencaModule = {
       } else if (diffDias > 3) {
         badgeEl.className = 'license-badge';
         badgeEl.title = `Licença ativa — vence em ${diffDias} dias`;
-        badgeEl.innerHTML = `<span class="license-status-icon">🟢</span> <span class="license-status-days">${diffDias} dias</span>`;
+        badgeEl.innerHTML = `<span class="license-status-icon">🟢</span> <span class="license-status-label">Licença Ativa</span> <span class="license-status-days">${diffDias} dias</span>`;
       } else if (diffDias === 1) {
         badgeEl.className = 'license-badge warning';
         badgeEl.innerHTML = `⚠️ Vence em 1 dia`;

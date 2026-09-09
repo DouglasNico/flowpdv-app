@@ -83,6 +83,7 @@ export const BackupModule = {
         usuarios: usuarios,
         categorias: categorias,
         comandas: comandas,
+        origemTerminal: StorageService.getDeviceId(),
         turnosHistorico: turnosHistorico,
         turnoAtual: StorageService.getTurnoAtual() || null,
         turnosAtivos: {
