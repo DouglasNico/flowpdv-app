@@ -37,10 +37,11 @@ async function api(caminho, opcoes = {}) {
 
 (async () => {
   const releases = await api(`/repos/${owner}/${repo}/releases?per_page=100`);
-  const release = releases.find((r) => r.tag_name === tag);
+  const daVersao = releases.filter((r) => r.tag_name === tag);
+  const release = daVersao.find((r) => esperados.every((nome) => r.assets.some((a) => a.name === nome)));
 
   if (!release) {
-    throw new Error(`Nenhuma release com a tag ${tag} em ${owner}/${repo}.`);
+    throw new Error(`Nenhuma release com a tag ${tag} e os arquivos ${esperados.join(', ')} em ${owner}/${repo}.`);
   }
 
   const enviados = release.assets.map((a) => a.name);
