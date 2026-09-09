@@ -185,7 +185,7 @@ export const TefModule = {
   testarTefConfig() {
     if (!StorageService.isModuloAtivo('tefCartao')) {
       if (window.App && typeof window.App.showToast === 'function') {
-        window.App.showToast('💳 O módulo TEF / Cartão está desativado para esta licença no Master Admin.', 'info');
+        window.App.showToast('💳 O módulo TEF / Cartão está desativado para esta licença pelo administrador.', 'info');
       }
       return;
     }

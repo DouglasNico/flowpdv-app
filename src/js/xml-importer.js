@@ -532,7 +532,15 @@ export const XmlImporterModule = {
           // Atualizar Produto Existente
           const idx = produtosAtuais.findIndex(p => p.id === item.produtoExistenteId);
           if (idx >= 0) {
-            produtosAtuais[idx].estoque = Math.round(((produtosAtuais[idx].estoque || 0) + qtdFinal) * 1000) / 1000;
+            const estoqueAntes = produtosAtuais[idx].estoque || 0;
+            produtosAtuais[idx].estoque = Math.round((estoqueAntes + qtdFinal) * 1000) / 1000;
+            produtosAtuais[idx].atualizadoEm = new Date().toISOString();
+            StorageService.registrarMovimentoEstoque({
+              produtoId: produtosAtuais[idx].id,
+              delta: qtdFinal,
+              origem: 'xml',
+              refId: item.produtoExistenteId
+            });
             produtosAtuais[idx].precoCusto = item.precoCustoFinal;
             if (item.precoVendaFinal > 0) {
               produtosAtuais[idx].precoVenda = item.precoVendaFinal;

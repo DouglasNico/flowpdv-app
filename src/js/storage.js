@@ -2,6 +2,8 @@
  * storage.js - Armazenamento Local (Offline-First) para PDV Adega & Motor SaaS
  */
 
+import { carimbarAlterados } from './merge-core.js';
+
 export const StorageService = {
   init() {
     this.getProdutos();
@@ -15,7 +17,20 @@ export const StorageService = {
     if (window.AuthModule && typeof window.AuthModule.isGerente === 'function') {
       return window.AuthModule.isGerente();
     }
-    return true;
+    return false;
+  },
+
+  parseMoedaBR(valor) {
+    if (typeof valor === 'number') return isNaN(valor) ? 0 : valor;
+    if (!valor) return 0;
+    let str = String(valor).trim();
+    if (str.includes(',') && str.includes('.')) {
+      str = str.replace(/\./g, '').replace(',', '.');
+    } else if (str.includes(',')) {
+      str = str.replace(',', '.');
+    }
+    const limpo = str.replace(/[^\d.-]/g, '');
+    return parseFloat(limpo) || 0;
   },
 
   formatarMoeda(valor) {
@@ -235,7 +250,30 @@ export const StorageService = {
   // Vendas
   getVendas() {
     const saved = localStorage.getItem('adega_vendas');
-    return saved ? JSON.parse(saved) : [];
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) {
+        console.warn('⚠️ Erro ao ler vendas do localStorage:', e);
+      }
+    }
+    return [];
+  },
+
+  getProximoNumeroVenda() {
+    let ultimo = parseInt(localStorage.getItem('flowpdv_ultimo_numero_venda'), 10);
+    if (isNaN(ultimo) || ultimo <= 0) {
+      const vendas = this.getVendas();
+      const maxExistente = vendas.reduce((max, v) => {
+        const num = parseInt(v.numeroVenda, 10);
+        return (!isNaN(num) && num > max) ? num : max;
+      }, 0);
+      ultimo = Math.max(vendas.length, maxExistente);
+    }
+    const proximo = ultimo + 1;
+    localStorage.setItem('flowpdv_ultimo_numero_venda', String(proximo));
+    return proximo;
   },
 
   saveVenda(venda) {
@@ -243,14 +281,29 @@ export const StorageService = {
     vendas.unshift(venda);
     localStorage.setItem('adega_vendas', JSON.stringify(vendas));
 
+    // Vincular venda ao turno atual (para relatórios precisos)
+    const turno = this.getTurnoAtual();
+    if (turno && venda.id) {
+      turno.vendasIds = turno.vendasIds || [];
+      turno.vendasIds.push(venda.id);
+      this.salvarTurno(turno);
+    }
+
     // Abater estoque automaticamente
     const produtos = this.getProdutos();
-    venda.itens.forEach(item => {
+    (venda.itens || []).forEach(item => {
       const prod = produtos.find(p => p.id === item.id || p.codigoBarras === item.id);
       if (prod && prod.controlarEstoque !== false) {
         const fator = item.isFardo ? (prod.fatorConversao || 1) : 1;
-        prod.estoque = Math.max(0, (parseInt(prod.estoque, 10) || 0) - (item.quantidade * fator));
+        const delta = -((parseFloat(item.quantidade) || 0) * fator);
+        prod.estoque = Math.max(0, (parseFloat(prod.estoque) || 0) + delta);
         prod.atualizadoEm = new Date().toISOString();
+        this.registrarMovimentoEstoque({
+          produtoId: prod.id,
+          delta,
+          origem: 'venda',
+          refId: venda.id
+        });
       }
     });
     this.saveProdutos(produtos);
@@ -315,8 +368,13 @@ export const StorageService = {
   getTurnoAtual() {
     const saved = localStorage.getItem('adega_turno_atual');
     if (!saved) return null;
-    const turno = JSON.parse(saved);
-    return turno.status === 'aberto' ? turno : null;
+    try {
+      const turno = JSON.parse(saved);
+      return (turno && turno.status === 'aberto') ? turno : null;
+    } catch (e) {
+      console.warn('⚠️ Erro ao ler turno atual do localStorage:', e);
+      return null;
+    }
   },
 
   salvarTurno(turno) {
@@ -359,7 +417,14 @@ export const StorageService = {
   // Clientes & Fiado
   getClientes() {
     const saved = localStorage.getItem('adega_clientes');
-    if (saved) return JSON.parse(saved);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) {
+        console.warn('⚠️ Erro ao ler clientes do localStorage:', e);
+      }
+    }
     const defaults = [];
     this.saveClientes(defaults);
     return defaults;
@@ -473,7 +538,7 @@ export const StorageService = {
       } catch(e) {}
     }
     return {
-      habilitado: true,
+      habilitado: false,
       provedor: 'simulador',
       tempoLimiteSegundos: 45,
       imprimirComprovanteTef: true,
@@ -524,6 +589,18 @@ export const StorageService = {
       try {
         const parsed = JSON.parse(saved);
         if (parsed && parsed.chaveLicenca && parsed.chaveLicenca.trim().length > 0) {
+          let updated = false;
+          if (parsed.chavePixSuporte === '19999997777' || !parsed.chavePixSuporte) {
+            parsed.chavePixSuporte = '19989632127';
+            updated = true;
+          }
+          if (parsed.whatsappSuporte === '19999997777' || parsed.whatsappSuporte === '(19) 99999-7777') {
+            parsed.whatsappSuporte = '(19) 98963-2127';
+            updated = true;
+          }
+          if (updated) {
+            try { localStorage.setItem('adega_licenca', JSON.stringify(parsed)); } catch(e) {}
+          }
           return parsed;
         }
       } catch(e) {}
@@ -538,7 +615,7 @@ export const StorageService = {
       dataExpiracao: '',
       diasTolerancia: 2,
       valorMensal: 89.90,
-      chavePixSuporte: '19999997777',
+      chavePixSuporte: '19989632127',
       whatsappSuporte: '(19) 98963-2127'
     };
     return defaults;
@@ -558,23 +635,21 @@ export const StorageService = {
       } catch(e) {}
     }
 
-    const pinGerente = localStorage.getItem('flowpdv_pin_gerente') || this.getLicenca()?.pinGerente || '1234';
+    // O primeiro acesso usa exclusivamente o PIN definido no painel admin.
+    // Sem PIN da licença não criamos ninguém: nenhum operador nasce com PIN fixo.
+    const pinGerente = String(
+      localStorage.getItem('flowpdv_pin_gerente') || this.getLicenca()?.pinGerente || ''
+    ).trim();
+
+    if (!pinGerente) return [];
+
     const defaults = [
       {
         id: 'USR-ADMIN',
         nome: 'Dono / Gerente',
         login: 'admin',
-        pin: String(pinGerente).trim(),
+        pin: pinGerente,
         cargo: 'gerente',
-        ativo: true,
-        criadoEm: new Date().toISOString()
-      },
-      {
-        id: 'USR-CAIXA1',
-        nome: 'Operador Caixa',
-        login: 'caixa',
-        pin: '1234',
-        cargo: 'operador',
         ativo: true,
         criadoEm: new Date().toISOString()
       }
@@ -586,6 +661,48 @@ export const StorageService = {
 
   saveUsuarios(usuarios) {
     localStorage.setItem('flowpdv_usuarios', JSON.stringify(usuarios));
+  },
+
+  getMovimentosEstoque() {
+    const saved = localStorage.getItem('flowpdv_estoque_movimentos');
+    if (!saved) return [];
+    try {
+      const parsed = JSON.parse(saved);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      return [];
+    }
+  },
+
+  saveMovimentosEstoque(movimentos) {
+    const lista = Array.isArray(movimentos) ? movimentos.slice(-2500) : [];
+    try {
+      localStorage.setItem('flowpdv_estoque_movimentos', JSON.stringify(lista));
+    } catch (e) {
+      try {
+        localStorage.setItem('flowpdv_estoque_movimentos', JSON.stringify(lista.slice(-800)));
+      } catch (err) {
+        console.warn('[Storage] Sem espaço para movimentos de estoque.', err);
+      }
+    }
+  },
+
+  registrarMovimentoEstoque({ produtoId, delta, origem, refId }) {
+    const qtd = parseFloat(delta);
+    if (!produtoId || !qtd) return null;
+    const mov = {
+      id: 'MOV-' + Date.now() + '-' + Math.random().toString(36).substring(2, 8),
+      produtoId: String(produtoId),
+      delta: qtd,
+      origem: origem || 'ajuste',
+      refId: refId || '',
+      terminalId: this.getDeviceId(),
+      at: new Date().toISOString()
+    };
+    const lista = this.getMovimentosEstoque();
+    lista.push(mov);
+    this.saveMovimentosEstoque(lista);
+    return mov;
   },
 
   // Mesas e Comandas
@@ -602,7 +719,11 @@ export const StorageService = {
 
   saveComandas(comandas) {
     if (!Array.isArray(comandas)) return;
-    localStorage.setItem('flowpdv_comandas_mesas', JSON.stringify(comandas));
+    // Carimbar só o que mudou: é esse horário que decide qual terminal vence
+    // quando duas máquinas mexem em mesas diferentes ao mesmo tempo.
+    const carimbadas = carimbarAlterados(comandas, this.getComandas());
+    localStorage.setItem('flowpdv_comandas_mesas', JSON.stringify(carimbadas));
+    return carimbadas;
   },
 
   // Produtos Padrão
@@ -644,41 +765,56 @@ export const StorageService = {
     return true;
   },
 
+  // Chaves do localStorage que pertencem à loja e não podem sobreviver a uma
+  // troca de licença. O device id fica de fora: ele identifica o computador.
+  CHAVES_DA_LOJA: [
+    'adega_produtos',
+    'adega_produtos_backup_seguranca',
+    'adega_produtos_excluidos_ids',
+    'flowpdv_estoque_movimentos',
+    'adega_vendas',
+    'flowpdv_ultimo_numero_venda',
+    'adega_clientes',
+    'flowpdv_contas_pagar',
+    'adega_turno_atual',
+    'adega_turnos_historico',
+    'adega_turnos_excluidos_ids',
+    'flowpdv_comandas_mesas',
+    'flowpdv_usuarios',
+    'flowpdv_categorias_loja',
+    'adega_categorias_excluidas',
+    'flowpdv_pin_gerente',
+    'flowpdv_modulos_licenca',
+    'flowpdv_ramo_licenca',
+    'adega_config',
+    'flowpdv_fiscal_config',
+    'flowpdv_tef_config',
+    'flowpdv_balanca_config',
+    'flowpdv_ultimo_backup_data',
+    'flowpdv_ultimo_backup_timestamp',
+    'flowpdv_ultimo_backup_info',
+    'flowpdv_ultimo_sync_cloud',
+    'flowpdv_partes_manifesto',
+    'flowpdv_partes_hash',
+    'flowpdv_movimentos_enviados',
+    'flowpdv_ultimo_mov_sync'
+  ],
+
+  PREFIXOS_DA_LOJA: ['flowpdv_logs_auditoria_', 'flowpdv_cache_', 'flowpdv_master_'],
+
   // Limpeza de Isolamento Multi-Tenant ao Trocar de Empresa/Licença
   limparDadosLocaisParaNovaEmpresa(novaLic) {
-    // 1. Limpar produtos, estoque e backups locais da loja antiga
-    localStorage.removeItem('adega_produtos');
-    localStorage.removeItem('adega_produtos_backup_seguranca');
-    localStorage.removeItem('adega_produtos_excluidos_ids');
+    this.CHAVES_DA_LOJA.forEach(chave => localStorage.removeItem(chave));
 
-    // 2. Limpar histórico de vendas, fiados e despesas da loja antiga
-    localStorage.removeItem('adega_vendas');
-    localStorage.removeItem('adega_clientes');
-    localStorage.removeItem('flowpdv_contas_pagar');
+    Object.keys(localStorage)
+      .filter(chave => this.PREFIXOS_DA_LOJA.some(prefixo => chave.startsWith(prefixo)))
+      .forEach(chave => localStorage.removeItem(chave));
 
-    // 3. Limpar turnos e caixas da loja antiga
-    localStorage.removeItem('adega_turno_atual');
-    localStorage.removeItem('adega_turnos_historico');
-    localStorage.removeItem('adega_turnos_excluidos_ids');
-
-    // 4. Limpar operadores, PIN e sessão da loja antiga
-    localStorage.removeItem('flowpdv_usuarios');
-    localStorage.removeItem('flowpdv_categorias_loja');
-    localStorage.removeItem('flowpdv_pin_gerente');
     sessionStorage.removeItem('flowpdv_usuario_logado');
     if (window.AuthModule) {
       window.AuthModule.usuarioAtual = null;
     }
 
-    // 5. Limpar dados do card de backup da loja antiga
-    localStorage.removeItem('flowpdv_ultimo_backup_data');
-    localStorage.removeItem('flowpdv_ultimo_backup_timestamp');
-    localStorage.removeItem('flowpdv_ultimo_backup_info');
-
-    // 6. Limpar configurações locais para assumir as da nova licença
-    localStorage.removeItem('flowpdv_config');
-
-    // 7. Salvar nova licença e novas categorias da empresa
     if (novaLic) {
       this.saveLicenca(novaLic);
       if (Array.isArray(novaLic.categorias) && novaLic.categorias.length > 0) {

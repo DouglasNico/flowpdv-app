@@ -88,7 +88,7 @@ export const ComandasModule = {
   },
 
   salvarComandas(lista) {
-    localStorage.setItem('flowpdv_comandas_mesas', JSON.stringify(lista));
+    StorageService.saveComandas(Array.isArray(lista) ? lista : []);
     if (window.CloudSyncModule && typeof window.CloudSyncModule.enviarAlteracaoNuvem === 'function') {
       window.CloudSyncModule.enviarAlteracaoNuvem('comandas');
     }
@@ -795,7 +795,7 @@ export const ComandasModule = {
 
     c.status = 'ocupada';
     if (!c.abertaEm) c.abertaEm = new Date().toISOString();
-    c.operador = AuthModule.getUsuario().nome;
+    c.operador = AuthModule.getNomeOperador();
     c.total = c.itens.reduce((acc, i) => acc + (parseFloat(i.total) || 0), 0);
 
     this.salvarComandas(comandas);

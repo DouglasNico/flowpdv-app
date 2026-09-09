@@ -99,9 +99,14 @@ export const ThermalPrintModule = {
         ` : `
           <div class="text-center bold">CUPOM NÃO FISCAL</div>
         `}
-        <div>Venda: #${venda.id}</div>
+        <div>Venda: #${venda.numeroVenda ? String(venda.numeroVenda).padStart(6, '0') : (venda.id || '').slice(-6)}</div>
         <div>Data: ${new Date(venda.data).toLocaleString('pt-BR')}</div>
         <div>Operador: ${venda.operador || 'Caixa'}</div>
+        ${venda.cpfCliente ? `
+          <div class="bold" style="font-size: 10.5px; margin-top: 2px;">CONSUMIDOR CPF: ${venda.cpfCliente}</div>
+        ` : (isNfce ? `
+          <div style="font-size: 9.5px; margin-top: 2px; color: #444;">CONSUMIDOR NÃO IDENTIFICADO</div>
+        ` : '')}
         <div class="divider"></div>
 
         <table class="table-items">
@@ -440,7 +445,7 @@ export const ThermalPrintModule = {
         <div class="meta-grid">
           <div class="meta-item">
             <label>Nº da Venda</label>
-            <span>#${venda.id}</span>
+            <span>#${venda.numeroVenda ? String(venda.numeroVenda).padStart(6, '0') : (venda.id || '').slice(-6)}</span>
           </div>
           <div class="meta-item">
             <label>Data / Hora</label>

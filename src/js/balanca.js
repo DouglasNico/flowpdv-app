@@ -37,7 +37,7 @@ export const BalancaModule = {
     if (!display) return;
 
     if (!isBalancaLicenciada) {
-      display.innerHTML = `<span style="color: #94a3b8; font-weight: 700;">⚪ Desativado no Master Admin</span>`;
+      display.innerHTML = `<span style="color: #94a3b8; font-weight: 700;">⚪ Desativado pelo administrador</span>`;
       return;
     }
 
@@ -61,7 +61,7 @@ export const BalancaModule = {
   abrirModalConfig() {
     if (!StorageService.isModuloAtivo('balancaPeso')) {
       if (window.App && typeof window.App.showToast === 'function') {
-        window.App.showToast('⚖️ O módulo Balança está desativado para esta licença no Master Admin.', 'info');
+        window.App.showToast('⚖️ O módulo Balança está desativado para esta licença pelo administrador.', 'info');
       }
       return;
     }
@@ -300,7 +300,7 @@ export const BalancaModule = {
   testarComunicacao() {
     if (!StorageService.isModuloAtivo('balancaPeso')) {
       if (window.App && typeof window.App.showToast === 'function') {
-        window.App.showToast('⚖️ O módulo Balança está desativado para esta licença no Master Admin.', 'info');
+        window.App.showToast('⚖️ O módulo Balança está desativado para esta licença pelo administrador.', 'info');
       }
       return;
     }

@@ -497,7 +497,7 @@ export const GerenciaModule = {
       }
     } else {
       const nova = {
-        id: 'DESP-' + Date.now().toString().slice(-6),
+        id: 'DESP-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
         descricao,
         fornecedor,
         categoria,
@@ -580,7 +580,7 @@ export const GerenciaModule = {
       }
 
       const novaRecorrente = {
-        id: 'DESP-' + Date.now().toString().slice(-6),
+        id: 'DESP-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
         descricao: c.descricao,
         fornecedor: c.fornecedor || '',
         categoria: c.categoria || 'Geral',
@@ -1422,7 +1422,14 @@ export const GerenciaModule = {
     }
 
     produtos[index].estoque = novoEstoque;
+    produtos[index].atualizadoEm = new Date().toISOString();
     StorageService.saveProdutos(produtos);
+    StorageService.registrarMovimentoEstoque({
+      produtoId: p.id,
+      delta: novoEstoque - estoqueAnterior,
+      origem: 'ajuste_gerencia',
+      refId: tipoOperacao
+    });
 
     // Registrar evento oficial na auditoria
     AuditModule.registrarLog('ajuste_estoque', `Ajuste manual de estoque no item "${p.nome}": ${estoqueAnterior} ➔ ${novoEstoque} (${tipoAjuste})`, {

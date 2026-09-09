@@ -8,10 +8,15 @@ const fs = require('fs');
 
 // Prevenir popups de exceções não capturadas no processo principal
 process.on('uncaughtException', (err) => {
-  console.log('[Main uncaughtException ignorada com segurança]:', err?.message || err);
+  console.error('[Main uncaughtException]:', err);
+  try {
+    if (dialog && typeof dialog.showErrorBox === 'function') {
+      dialog.showErrorBox('FlowPDV', 'Ocorreu um erro interno. O caixa continua aberto. Se algo falhar, reinicie o aplicativo.\n\n' + (err && err.message ? err.message : String(err)));
+    }
+  } catch (e) {}
 });
 process.on('unhandledRejection', (reason) => {
-  console.log('[Main unhandledRejection ignorada com segurança]:', reason);
+  console.error('[Main unhandledRejection]:', reason);
 });
 
 // Helper seguro para envio de mensagens IPC (evita erro de Object has been destroyed)
@@ -34,6 +39,9 @@ let mainWindow;
 let isQuiting = false;
 // Forçar identificação e pasta de dados permanente e imutável entre versões
 app.name = 'flowpdv';
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.flowpdv.app');
+}
 try {
   const userDataPath = path.join(app.getPath('appData'), 'flowpdv');
   app.setPath('userData', userDataPath);
@@ -53,6 +61,7 @@ if (!gotTheLock) {
   });
 
   function createWindow() {
+    const icoPath = path.join(__dirname, 'src', 'assets', 'icon.ico');
     const iconPath = path.join(__dirname, 'src', 'assets', 'icon.png');
     
     const windowConfig = {
@@ -73,11 +82,19 @@ if (!gotTheLock) {
       show: false
     };
 
-    if (fs.existsSync(iconPath)) {
-      windowConfig.icon = iconPath;
+    const targetIcon = (process.platform === 'win32' && fs.existsSync(icoPath)) ? icoPath : (fs.existsSync(iconPath) ? iconPath : null);
+    if (targetIcon) {
+      windowConfig.icon = targetIcon;
     }
 
     mainWindow = new BrowserWindow(windowConfig);
+    if (targetIcon) {
+      try {
+        mainWindow.setIcon(targetIcon);
+      } catch (e) {
+        console.log('[Icon Window Warning]:', e?.message || e);
+      }
+    }
 
     // Configurar o corretor ortográfico exclusivamente para Português do Brasil
     try {
@@ -176,11 +193,22 @@ if (!gotTheLock) {
   function setupAutoUpdater() {
     if (!autoUpdater) return;
 
+    // Função auxiliar para evitar poluição do console caso o GitHub retorne página HTML de erro (ex: 500)
+    function sanitizarMsgErro(msg) {
+      if (!msg) return '';
+      const str = typeof msg === 'string' ? msg : (msg?.message || String(msg));
+      if (str.includes('<!DOCTYPE') || str.includes('<html') || str.length > 250) {
+        const primeiraLinha = str.split('\n')[0].trim();
+        return `${primeiraLinha} (Servidor GitHub temporariamente indisponível ou instável)`;
+      }
+      return str;
+    }
+
     // Logger para diagnóstico
     autoUpdater.logger = {
       info: (msg) => console.log('[AutoUpdater INFO]', msg),
       warn: (msg) => console.log('[AutoUpdater WARN]', msg),
-      error: (msg) => console.log('[AutoUpdater ERROR]', msg),
+      error: (msg) => console.log('[AutoUpdater ERROR]', sanitizarMsgErro(msg)),
       debug: (msg) => console.log('[AutoUpdater DEBUG]', msg),
     };
     autoUpdater.logger.transports = undefined;
@@ -252,7 +280,7 @@ if (!gotTheLock) {
     });
 
     autoUpdater.on('error', (err) => {
-      const errMsg = err?.message || String(err);
+      const errMsg = sanitizarMsgErro(err);
       console.log('[AutoUpdater] Erro:', errMsg);
       enviarParaJanela('updater-message', {
         tipo: 'erro',
@@ -264,7 +292,7 @@ if (!gotTheLock) {
     setTimeout(() => {
       if (autoUpdater) {
         autoUpdater.checkForUpdates().catch((err) => {
-          console.log('[AutoUpdater] Verificação inicial:', err?.message);
+          console.log('[AutoUpdater] Verificação inicial:', sanitizarMsgErro(err));
         });
       }
     }, 5000);

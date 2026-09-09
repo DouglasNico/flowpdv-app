@@ -1,0 +1,46 @@
+// Regras que estavam publicadas antes da trava por loja (backup aberto).
+// Rollback de emergencia:
+//   npx firebase deploy --only firestore:rules --project aplicativo-pdv
+// depois de copiar este conteudo por cima de firestore.rules.
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAdmin() {
+      return request.auth != null && (
+        request.auth.token.email == 'dougnvds26@gmail.com'
+        || request.auth.token.email == 'admin@flowpdv.com.br'
+        || request.auth.token.email == 'contato@flowpdv.com.br'
+        || request.auth.token.admin == true
+      );
+    }
+
+    function soCamposDoPdv() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['terminaisAtivos', 'atualizadoEm', 'categorias', 'categoriasExcluidas']);
+    }
+
+    match /licencas/{chave} {
+      allow get: if true;
+      allow list: if isAdmin();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || soCamposDoPdv();
+    }
+
+    match /backups_lojas/{chave} {
+      allow get, write: if true;
+      allow list: if false;
+    }
+
+    match /backups_adegas/{chave} {
+      allow get, write: if true;
+      allow list: if false;
+    }
+
+    match /auditoria_lojas/{id} {
+      allow create: if request.resource.data.keys().hasAny(['chaveLicenca']);
+      allow get, list, update, delete: if isAdmin();
+    }
+  }
+}

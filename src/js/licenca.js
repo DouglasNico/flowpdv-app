@@ -3,10 +3,19 @@
  */
 
 import { StorageService } from './storage.js';
-import { db, doc, getDoc, getDocs, collection, onSnapshot, setDoc, updateDoc } from './firebase-config.js';
+import { db, doc, getDoc, onSnapshot, setDoc, updateDoc, buscarLicencaNuvem, desvincularTerminalNuvem, garantirSessaoLoja } from './firebase-config.js';
 
 export const LicencaModule = {
   modalAtivacaoAbertoManualmente: false,
+
+  // Sem essa sessão o Firestore recusa tudo: é ela que prova para as regras
+  // que este computador pertence a esta loja.
+  async garantirSessaoNuvem(chaveOpcional) {
+    const lic = StorageService.getLicenca() || {};
+    const alvo = String(chaveOpcional || lic.chaveLicenca || lic.clienteId || '').trim().toUpperCase();
+    if (!alvo) return false;
+    return garantirSessaoLoja(alvo, { deviceId: StorageService.getDeviceId() });
+  },
   init() {
     this.sincronizarComNuvem();
     this.iniciarOuvinteNuvemEmTempoReal();
@@ -34,6 +43,8 @@ export const LicencaModule = {
         return false;
       }
 
+      await this.garantirSessaoNuvem(chave || clienteId);
+
       let cloudData = null;
       let docIdFound = null;
       let buscaConcluidaComSucesso = false;
@@ -52,40 +63,18 @@ export const LicencaModule = {
         }
       }
 
-      // 2. Se não encontrou por ID direto da chave, buscar na coleção filtrando estritamente pela chave
-      if (!cloudData && chave) {
+      // 2. Se não achou o documento pelo ID, consulta a Function (sem varrer a coleção no cliente)
+      if (!cloudData && (chave || cnpj || clienteId)) {
         try {
-          const querySnapshot = await getDocs(collection(db, "licencas"));
+          const res = await buscarLicencaNuvem({ chave, cnpj, clienteId });
           buscaConcluidaComSucesso = true;
-          querySnapshot.forEach(d => {
-            const data = d.data();
-            if (data && (
-              (data.chaveLicenca && data.chaveLicenca.trim().toUpperCase() === chave) ||
-              (d.id && d.id.trim().toUpperCase() === chave)
-            )) {
-              cloudData = data;
-              docIdFound = d.id;
-            }
-          });
-        } catch (e) {}
-      }
-
-      // 3. Fallback apenas se NÃO houver chave configurada ainda
-      if (!cloudData && !chave && (clienteId || cnpj)) {
-        try {
-          const querySnapshot = await getDocs(collection(db, "licencas"));
-          buscaConcluidaComSucesso = true;
-          querySnapshot.forEach(d => {
-            const data = d.data();
-            if (data) {
-              const docCnpj = (data.documento || data.cnpj || '').replace(/\D/g, '');
-              if ((clienteId && d.id.toUpperCase() === clienteId) || (cnpj && docCnpj && docCnpj === cnpj && cnpj !== '00000000000100')) {
-                cloudData = data;
-                docIdFound = d.id;
-              }
-            }
-          });
-        } catch (e) {}
+          if (res && res.ok && res.licenca) {
+            cloudData = res.licenca;
+            docIdFound = res.licenca.id || res.licenca.docId || chave || clienteId;
+          }
+        } catch (e) {
+          console.log('[CloudLic] buscarLicenca:', e);
+        }
       }
 
       // 4. Se a busca no Firebase funcionou (com internet ativa) e a chave NÃO existe mais no banco de dados
@@ -289,6 +278,8 @@ export const LicencaModule = {
       const docIds = Array.from(new Set([chave, clienteId].filter(Boolean)));
       if (docIds.length === 0) return;
 
+      await this.garantirSessaoNuvem(chave || clienteId);
+
       for (const tId of docIds) {
         try {
           const docRef = doc(db, "licencas", tId);
@@ -363,7 +354,7 @@ export const LicencaModule = {
       const msgTag = document.getElementById('lock-terminais-msg');
       if (maxTag) maxTag.textContent = `${limite} computador(es)`;
       if (terminaisUnicos.length === 0) {
-        if (msgTag) msgTag.innerHTML = `⚠️ <strong>Terminal Desvinculado:</strong> Este computador foi desvinculado no Painel Master. Clique em <strong>Reconectar Este Computador</strong> abaixo para registrar o acesso.`;
+        if (msgTag) msgTag.innerHTML = `⚠️ <strong>Terminal Desvinculado:</strong> Este computador foi desvinculado pelo administrador. Clique em <strong>Reconectar Este Computador</strong> abaixo para registrar o acesso.`;
       } else {
         if (msgTag) msgTag.innerHTML = `Esta licença permite o uso em até <strong style="color: #0284c7;">${limite} computador(es)</strong> simultâneo(s) (já existem <strong>${terminaisUnicos.length}</strong> computador(es) ativo(s) vinculado(s)).`;
       }
@@ -392,6 +383,8 @@ export const LicencaModule = {
       const targetDocId = localLic.docIdNuvem || chave || clienteId;
       if (!targetDocId) return;
 
+      await this.garantirSessaoNuvem(chave || clienteId);
+
       const excluidas = Array.isArray(categoriasExcluidas) 
         ? categoriasExcluidas 
         : (StorageService.getCategoriasExcluidas() || []);
@@ -412,7 +405,7 @@ export const LicencaModule = {
     }
   },
 
-  iniciarOuvinteNuvemEmTempoReal() {
+  async iniciarOuvinteNuvemEmTempoReal() {
     this.pararOuvinteNuvem();
 
     try {
@@ -422,6 +415,8 @@ export const LicencaModule = {
       const docId = chaveAtual || clienteIdAtual;
 
       if (!docId) return;
+
+      await this.garantirSessaoNuvem(docId);
 
       console.log('[CloudLicListener] Iniciando ouvinte realtime exclusivo para:', docId);
 
@@ -714,11 +709,11 @@ export const LicencaModule = {
     }
 
     if (nomeEl) nomeEl.textContent = (lic && lic.razaoSocial) ? lic.razaoSocial : 'Empresa';
-    if (pixKeyEl) pixKeyEl.textContent = (lic && lic.chavePixSuporte) ? lic.chavePixSuporte : '19989632127';
+    if (pixKeyEl) pixKeyEl.textContent = (lic && lic.chavePixSuporte && lic.chavePixSuporte !== '19999997777') ? lic.chavePixSuporte : '19989632127';
     if (valorEl) valorEl.textContent = `R$ ${((lic && lic.valorMensal) || 89.90).toFixed(2).replace('.', ',')}`;
 
     if (whatsappLink) {
-      const numClean = ((lic && lic.whatsappSuporte) || '19989632127').replace(/\D/g, '');
+      const numClean = ((lic && lic.whatsappSuporte && lic.whatsappSuporte !== '19999997777' && lic.whatsappSuporte !== '(19) 99999-7777') ? lic.whatsappSuporte : '19989632127').replace(/\D/g, '');
       const msg = encodeURIComponent(`Olá Douglas, preciso de suporte para liberar meu caixa da empresa "${(lic && lic.razaoSocial) || 'Empresa'}" (Chave: ${(lic && lic.chaveLicenca) || ''}).`);
       whatsappLink.href = `https://wa.me/55${numClean}?text=${msg}`;
     }
@@ -746,43 +741,25 @@ export const LicencaModule = {
     let licEncontrada = null;
     const chaveClean = chave.replace(/\D/g, '');
 
+    // A chave digitada vira sessão de loja: sem isso o Firestore nem devolve
+    // o documento da licença.
+    await this.garantirSessaoNuvem(chave);
+
     try {
       let snap = await getDoc(doc(db, "licencas", chave));
       if (snap && snap.exists()) {
-        licEncontrada = snap.data();
+        licEncontrada = { id: snap.id, docId: snap.id, ...snap.data() };
       } else {
-        const querySnapshot = await getDocs(collection(db, "licencas"));
-        querySnapshot.forEach(d => {
-          const data = d.data();
-          if (data) {
-            const docCnpj = (data.documento || data.cnpj || '').replace(/\D/g, '');
-            if (
-              d.id.toUpperCase() === chave ||
-              (data.chaveLicenca && data.chaveLicenca.toUpperCase() === chave) ||
-              (chaveClean && docCnpj === chaveClean)
-            ) {
-              licEncontrada = { id: d.id, ...data };
-            }
-          }
-        });
+        const res = await buscarLicencaNuvem({ chave, cnpj: chaveClean, clienteId: chave });
+        if (res && res.ok && res.licenca) {
+          licEncontrada = res.licenca;
+        }
       }
     } catch (e) {
       console.log('[CloudLic] Erro Firestore:', e);
     }
 
-    if (!licEncontrada) {
-      const masterSaved = localStorage.getItem('flowpdv_master_clientes');
-      if (masterSaved) {
-        const clientes = JSON.parse(masterSaved);
-        licEncontrada = clientes.find(c => 
-          (c.chaveLicenca && c.chaveLicenca.toUpperCase() === chave) ||
-          (c.id && c.id.toUpperCase() === chave) ||
-          (chaveClean && c.documento && c.documento.replace(/\D/g, '') === chaveClean)
-        );
-      }
-    }
-
-    // Se a licença não foi encontrada na nuvem nem localmente, NÃO ativa e não cria mock
+    // Se a licença não foi encontrada na nuvem, NÃO ativa e não cria mock
     if (!licEncontrada) {
       if (btnAtivar) {
         btnAtivar.disabled = false;
@@ -808,7 +785,7 @@ export const LicencaModule = {
         }
         const limite = licEncontrada.limiteTerminais || 1;
         if (erroEl) {
-          erroEl.innerHTML = '🛑 <strong>Limite de Computadores Atingido:</strong> Esta licença já está em uso em ' + limite + ' computador(es). Desvincule no Painel Master ou adquira mais acessos.';
+          erroEl.innerHTML = '🛑 <strong>Limite de Computadores Atingido:</strong> Esta licença já está em uso em ' + limite + ' computador(es). Peça ao administrador para desvincular um computador ou adquirir mais acessos.';
           erroEl.style.display = 'block';
         }
         if (window.App && typeof window.App.showToast === 'function') {
@@ -841,40 +818,14 @@ export const LicencaModule = {
       // 🛡️ DESVINCULAÇÃO UNIVERSAL ABSOLUTA:
       // O computador (myDevId) só pode pertencer à nova licença ativada.
       // Em qualquer outro documento da coleção 'licencas' no Firestore que contenha este terminal (myDevId),
-      // removemos ele imediatamente para liberar a vaga no Painel Master!
+      // removemos ele imediatamente para liberar a vaga na nuvem
       try {
-        console.log('[Desvinculação Universal] Removendo terminal', myDevId, 'de todas as outras licenças no Firestore...');
-        const todasLicsSnap = await getDocs(collection(db, "licencas"));
-        const idsNovaLicenca = new Set([
-          licEncontrada.id,
-          licEncontrada.docId,
-          licEncontrada.chaveLicenca,
-          licEncontrada.clienteId,
-          chave
-        ].filter(Boolean).map(s => String(s).trim().toUpperCase()));
-
-        for (const dLic of todasLicsSnap.docs) {
-          const dData = dLic.data() || {};
-          const dChave = (dData.chaveLicenca || '').trim().toUpperCase();
-          const dId = dLic.id.trim().toUpperCase();
-
-          // Se este documento NÃO pertence à nova licença que estamos ativando agora:
-          if (!idsNovaLicenca.has(dId) && !idsNovaLicenca.has(dChave)) {
-            let termList = this.limparTerminaisDuplicados(dData.terminaisAtivos);
-            const contemTerminal = termList.some(t => t.id === myDevId);
-            if (contemTerminal) {
-              const termAtualizados = termList.filter(t => t.id !== myDevId);
-              console.log(`[Desvinculação Universal] Removendo terminal ${myDevId} do doc "${dLic.id}" (${dData.nome || dData.razaoSocial})`);
-              await setDoc(doc(db, "licencas", dLic.id), { 
-                terminaisAtivos: termAtualizados,
-                atualizadoEm: new Date().toISOString()
-              }, { merge: true });
-            }
-          }
-        }
-      } catch (errDesvinc) {
-        console.warn('[Desvinculação Universal] Erro na varredura:', errDesvinc);
+        await desvincularTerminalNuvem({ deviceId: myDevId, chaveManter: novaChaveFinal });
+      } catch (e) {
+        console.warn('[Desvinculação] Falha ao limpar terminal em outras licenças:', e);
       }
+
+      await this.garantirSessaoNuvem(novaChaveFinal);
 
       const docIds = Array.from(new Set([licEncontrada.docId, licEncontrada.chaveLicenca, licEncontrada.id, chave].filter(Boolean)));
       for (const tId of docIds) {
@@ -916,7 +867,7 @@ export const LicencaModule = {
           btnAtivar.innerHTML = '🚀 Ativar e Entrar no Sistema';
         }
         if (erroEl) {
-          erroEl.innerHTML = `🛑 <strong>Licença Bloqueada:</strong> O acesso da empresa "<strong>${licEncontrada.nome || licEncontrada.razaoSocial || 'Minha Loja'}</strong>" está suspenso pelo administrador no Painel Master.`;
+          erroEl.innerHTML = `🛑 <strong>Licença Bloqueada:</strong> O acesso da empresa "<strong>${licEncontrada.nome || licEncontrada.razaoSocial || 'Minha Loja'}</strong>" está suspenso pelo administrador.`;
           erroEl.style.display = 'block';
         }
         if (window.App && typeof window.App.showToast === 'function') {
@@ -931,7 +882,7 @@ export const LicencaModule = {
           btnAtivar.innerHTML = '🚀 Ativar e Entrar no Sistema';
         }
         if (erroEl) {
-          erroEl.innerHTML = `⚠️ <strong>Licença Vencida:</strong> A licença da empresa "<strong>${licEncontrada.nome || licEncontrada.razaoSocial || 'Minha Loja'}</strong>" venceu em <strong>${expiraEm.toLocaleDateString('pt-BR')}</strong>. Renove a mensalidade no Painel Master para liberar.`;
+          erroEl.innerHTML = `⚠️ <strong>Licença Vencida:</strong> A licença da empresa "<strong>${licEncontrada.nome || licEncontrada.razaoSocial || 'Minha Loja'}</strong>" venceu em <strong>${expiraEm.toLocaleDateString('pt-BR')}</strong>. Renove a mensalidade com o administrador para liberar.`;
           erroEl.style.display = 'block';
         }
         if (window.App && typeof window.App.showToast === 'function') {
@@ -950,7 +901,7 @@ export const LicencaModule = {
         dataExpiracao: dataExpiracaoFinal,
         vencimento: dataNuvem ? dataNuvem.split('T')[0] : '',
         valorMensal: licEncontrada.valorMensal || 89.90,
-        chavePixSuporte: '19999997777',
+        chavePixSuporte: '19989632127',
         whatsappSuporte: '(19) 98963-2127',
         diasTolerancia: 2,
         chaveLicenca: licEncontrada.chaveLicenca || chave,
@@ -1090,19 +1041,21 @@ export const LicencaModule = {
     }
 
     try {
-      const querySnapshot = await getDocs(collection(db, "licencas"));
-      const cloudDocs = [];
-      querySnapshot.forEach(d => {
-        const data = d.data();
-        if (data) cloudDocs.push({ docId: d.id, ...data });
-      });
+      await this.garantirSessaoNuvem(chave || clienteId);
 
-      const cloudData = cloudDocs.find(c =>
-        (chave && c.chaveLicenca && c.chaveLicenca.toUpperCase() === chave) ||
-        (chave && c.docId && c.docId.toUpperCase() === chave) ||
-        (clienteId && c.docId && c.docId.toUpperCase() === clienteId) ||
-        (cnpj && (c.documento || c.cnpj || '').replace(/\D/g, '') === cnpj)
-      );
+      let cloudData = null;
+      if (chave) {
+        const snap = await getDoc(doc(db, "licencas", chave));
+        if (snap && snap.exists()) {
+          cloudData = { docId: snap.id, ...snap.data() };
+        }
+      }
+      if (!cloudData) {
+        const res = await buscarLicencaNuvem({ chave, cnpj, clienteId });
+        if (res && res.ok && res.licenca) {
+          cloudData = { docId: res.licenca.id || res.licenca.docId, ...res.licenca };
+        }
+      }
 
       if (!cloudData) {
         if (feedbackEl) {
@@ -1166,7 +1119,7 @@ export const LicencaModule = {
         feedbackEl.innerHTML = `🛑 Limite de ${limite} computador(es) atingido! (${terminais.length} em uso).`;
       }
       if (window.App && typeof window.App.showToast === 'function') {
-        window.App.showToast('🛑 Limite atingido! Desvincule no Master ou adquira mais acessos.', 'error');
+        window.App.showToast('🛑 Limite atingido! Peça ao administrador para desvincular um computador.', 'error');
       }
     } catch (err) {
       console.log('Erro ao rechecar:', err);
@@ -1234,11 +1187,11 @@ export const LicencaModule = {
         : `Sua licença vence hoje (${expiraEm.toLocaleDateString('pt-BR')}).`;
     }
 
-    if (pixKeyEl) pixKeyEl.textContent = lic.chavePixSuporte || '19989632127';
+    if (pixKeyEl) pixKeyEl.textContent = (lic && lic.chavePixSuporte && lic.chavePixSuporte !== '19999997777') ? lic.chavePixSuporte : '19989632127';
     if (valorEl) valorEl.textContent = `R$ ${(lic.valorMensal || 89.90).toFixed(2).replace('.', ',')}`;
 
     if (whatsappLink) {
-      const numClean = (lic.whatsappSuporte || '19989632127').replace(/\D/g, '');
+      const numClean = ((lic && lic.whatsappSuporte && lic.whatsappSuporte !== '19999997777' && lic.whatsappSuporte !== '(19) 99999-7777') ? lic.whatsappSuporte : '19989632127').replace(/\D/g, '');
       const msg = encodeURIComponent(`Olá Douglas, segue o comprovante de pagamento da mensalidade do FlowPDV da empresa "${lic.razaoSocial || 'Minha Loja'}" (Licença: ${lic.chaveLicenca || ''}).`);
       whatsappLink.href = `https://wa.me/55${numClean}?text=${msg}`;
     }

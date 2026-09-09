@@ -2,6 +2,7 @@
  * backup.js - Backup Diário em Nuvem & Recuperação de Desastre (Cloud Safe)
  */
 import { StorageService } from './storage.js';
+import { CloudSyncModule } from './cloud-sync.js';
 import { db, doc, getDoc, setDoc } from './firebase-config.js';
 
 const COLECAO_BACKUPS = "backups_lojas";
@@ -94,12 +95,13 @@ export const BackupModule = {
         totalProdutos: produtos.length,
         totalClientes: clientes.length,
         totalUsuarios: usuarios.length,
-        versaoApp: '1.8.0',
+        versaoApp: '3.1.0',
         atualizadoEm: new Date().toISOString()
       };
 
-      // Gravar na chave da loja com merge seguro
-      await setDoc(doc(db, COLECAO_BACKUPS, chave), backupData, { merge: true });
+      // Mesma gravação particionada do CloudSync: um backup manual não pode
+      // recriar o documento gigante que estoura o limite do Firestore.
+      await CloudSyncModule.gravarPacote(chave, backupData, StorageService.getMovimentosEstoque());
 
       const hoje = new Date().toISOString().split('T')[0];
       localStorage.setItem('flowpdv_ultimo_backup_data', hoje);
@@ -140,17 +142,12 @@ export const BackupModule = {
     try {
       if (window.App) window.App.showToast('🔄 Buscando backup na nuvem...', 'info');
 
-      let docSnap = await getDoc(doc(db, COLECAO_BACKUPS, chave));
-      if (!docSnap.exists()) {
-        const snapLegado = await getDoc(doc(db, COLECAO_LEGADA, chave));
-        if (snapLegado.exists()) docSnap = snapLegado;
-      }
-      if (!docSnap.exists()) {
+      const data = await CloudSyncModule.lerPacote(chave);
+      if (!data) {
         if (window.App) window.App.showToast('⚠️ Nenhum backup encontrado na nuvem para esta licença.', 'warning');
         return;
       }
 
-      const data = docSnap.data();
       const qtdProd = Array.isArray(data.produtos) ? data.produtos.length : 0;
       const qtdCli = Array.isArray(data.clientes) ? data.clientes.length : 0;
       const dataBkp = data.dataBackupFormatada || 'Recente';
@@ -259,6 +256,7 @@ export const BackupModule = {
 
     // Consulta de garantia no Firestore em segundo plano para refletir dados reais da licença ativa
     try {
+      await CloudSyncModule.garantirSessao(chave);
       let docSnap = await getDoc(doc(db, COLECAO_BACKUPS, chave));
       if (!docSnap.exists()) {
         const snapLegado = await getDoc(doc(db, COLECAO_LEGADA, chave));
@@ -267,8 +265,9 @@ export const BackupModule = {
       if (docSnap && docSnap.exists()) {
         const data = docSnap.data() || {};
         const bkpData = data.dataBackupFormatada || data.dataBackup || 'Recente';
-        const totalP = Array.isArray(data.produtos) ? data.produtos.length : 0;
-        const totalC = Array.isArray(data.clientes) ? data.clientes.length : 0;
+        // Os totais vêm do resumo: as listas agora moram nas partes.
+        const totalP = Array.isArray(data.produtos) ? data.produtos.length : (parseInt(data.totalProdutos, 10) || 0);
+        const totalC = Array.isArray(data.clientes) ? data.clientes.length : (parseInt(data.totalClientes, 10) || 0);
         localStorage.setItem('flowpdv_ultimo_backup_timestamp', bkpData);
         localStorage.setItem('flowpdv_ultimo_backup_info', JSON.stringify({
           data: bkpData,

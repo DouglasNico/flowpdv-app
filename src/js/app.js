@@ -5,7 +5,6 @@ import { EstoqueModule } from './estoque.js';
 import { CaixaModule } from './caixa.js';
 import { ClientesModule } from './clientes.js';
 import { LicencaModule } from './licenca.js';
-import { AdminMasterModule } from './admin-master.js';
 import { ThermalPrintModule } from './thermal-print.js';
 import { BackupModule } from './backup.js';
 import { CloudSyncModule } from './cloud-sync.js';
@@ -29,7 +28,6 @@ export const App = {
     window.CaixaModule = CaixaModule;
     window.ClientesModule = ClientesModule;
     window.LicencaModule = LicencaModule;
-    window.AdminMasterModule = AdminMasterModule;
     window.BackupModule = BackupModule;
     window.CloudSyncModule = CloudSyncModule;
     window.ThermalPrintModule = ThermalPrintModule;
@@ -58,7 +56,6 @@ export const App = {
     ComandasModule.init();
     LicencaModule.init();
     this.aplicarLayoutPdv(StorageService.getLicenca()?.layoutPdv);
-    AdminMasterModule.init();
     BackupModule.init();
     CloudSyncModule.init();
 
@@ -84,6 +81,7 @@ export const App = {
     if (!tabPdv) return;
     const classico = layout === 'classico';
     tabPdv.classList.toggle('pdv-layout-classico', classico);
+    document.body.classList.toggle('pdv-layout-classico', classico);
     
     const moderno = tabPdv.querySelector('.pdv-layout');
     const shell = document.getElementById('classic-pdv-shell');
@@ -99,7 +97,7 @@ export const App = {
   },
 
   entrarPorPerfil(usuario) {
-    const ehGerente = usuario && ['gerente', 'superadmin', 'admin'].includes(usuario.cargo);
+    const ehGerente = usuario && (usuario.cargo === 'gerente' || usuario.cargo === 'superadmin' || usuario.cargo === 'admin');
     const licenca = StorageService.getLicenca() || {};
     if (!licenca.chaveLicenca || licenca.status === 'pendente_ativacao' || licenca.status === 'bloqueada') {
       return;
@@ -112,7 +110,12 @@ export const App = {
       document.exitFullscreen().catch(() => {});
     }
     document.body.classList.toggle('pdv-operador-restrito', !ehGerente);
-    this.trocarAba(ehGerente ? 'gerencia' : 'pdv');
+
+    // No modo Clássico: Gerente abre na Gerência ('gerencia') e Operador abre no PDV ('pdv')
+    // No modo Moderno: Tanto Gerente quanto Operador abrem no Frente de Caixa F1 ('pdv')
+    const isClassico = (licenca.layoutPdv === 'classico');
+    const abaDestino = (isClassico && ehGerente) ? 'gerencia' : 'pdv';
+    this.trocarAba(abaDestino);
   },
 
   verificarValidadesAoIniciar() {
@@ -161,7 +164,12 @@ export const App = {
 
     // Refresh específico por tela
     if (nomeAba === 'pdv') {
-      PdvModule.focarInputLeitor();
+      setTimeout(() => {
+        PdvModule.focarInputLeitor();
+      }, 50);
+      setTimeout(() => {
+        PdvModule.focarInputLeitor();
+      }, 200);
     } else if (nomeAba === 'estoque') {
       EstoqueModule.renderBarraCategorias();
       EstoqueModule.renderTabelaProdutos();
@@ -177,37 +185,27 @@ export const App = {
       this.verificarAcessoGerencia();
     } else if (nomeAba === 'config') {
       this.verificarAcessoConfiguracoes();
-    } else if (nomeAba === 'master') {
-      AdminMasterModule.renderListaAdegas();
     }
   },
 
   atualizarPermissoesUsuario() {
-    let u = null;
-    try {
-      if (window.AuthModule && typeof window.AuthModule.getUsuario === 'function') {
-        u = window.AuthModule.getUsuario();
-      } else if (window.AuthModule && window.AuthModule.usuarioAtual) {
-        u = window.AuthModule.usuarioAtual;
-      }
-      if (!u) {
-        const saved = sessionStorage.getItem('flowpdv_usuario_logado');
-        if (saved) u = JSON.parse(saved);
-      }
-    } catch(e) {}
-
-    const isGerente = !!(u && (u.cargo === 'gerente' || u.cargo === 'admin' || u.cargo === 'superadmin' || u.login === 'admin'));
+    const isGerente = !!(window.AuthModule && typeof window.AuthModule.isGerente === 'function' && window.AuthModule.isGerente());
 
     const navGerenciaBtn = document.getElementById('nav-btn-gerencia');
     if (navGerenciaBtn) {
       navGerenciaBtn.style.display = isGerente ? 'flex' : 'none';
     }
 
+    const classicBtnAdmin = document.getElementById('classic-btn-painel-gerente');
+    if (classicBtnAdmin) {
+      classicBtnAdmin.style.display = isGerente ? 'inline-flex' : 'none';
+    }
+
     document.querySelectorAll('.nav-btn').forEach(btn => {
       if (btn.dataset.tab === 'pdv') return;
       if (!isGerente) {
         btn.style.display = 'none';
-      } else if (btn.id !== 'nav-btn-gerencia' && btn.id !== 'nav-btn-master') {
+      } else if (btn.id !== 'nav-btn-gerencia') {
         btn.style.display = 'flex';
       }
     });
@@ -332,6 +330,12 @@ export const App = {
 
       const modalPerguntaClube = document.getElementById('modal-pergunta-clube');
       if (modalPerguntaClube && modalPerguntaClube.classList.contains('active')) {
+        // Ignora qualquer Enter imediato vindo da seleção do produto no F2 (< 350ms)
+        if (Date.now() - (PdvModule._aberturaPerguntaClubeTimestamp || 0) < 350) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
         if (e.key === 'Enter') {
           e.preventDefault();
           e.stopPropagation();
@@ -343,6 +347,68 @@ export const App = {
           e.stopPropagation();
           PdvModule.responderPerguntaClube(false);
           return;
+        }
+      }
+
+      // 2.8 Se o modal de pergunta de CPF na Nota estiver ativo:
+      const modalPerguntaCpf = document.getElementById('modal-pergunta-cpf-nota');
+      if (modalPerguntaCpf && modalPerguntaCpf.classList.contains('active')) {
+        const fasePergunta = document.getElementById('cpf-nota-fase-pergunta');
+        const isFasePergunta = fasePergunta && fasePergunta.style.display !== 'none';
+
+        if (isFasePergunta) {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            e.stopPropagation();
+            PdvModule.responderPerguntaCpfNota(true);
+            return;
+          }
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            e.stopPropagation();
+            PdvModule.responderPerguntaCpfNota(false);
+            return;
+          }
+        } else {
+          // Fase 2: Digitação do CPF
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            e.stopPropagation();
+            PdvModule.confirmarCpfNotaDigitado();
+            return;
+          }
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            e.stopPropagation();
+            PdvModule.cancelarDigitacaoCpfNota();
+            return;
+          }
+        }
+      }
+
+      // 2.9 Se modal de busca rápida [F2] estiver ativo, repassa teclado mesmo se input perder foco
+      const modalBuscaF2 = document.getElementById('modal-busca-produtos');
+      if (modalBuscaF2 && modalBuscaF2.classList.contains('active')) {
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Enter' || e.key === 'Escape') {
+          if (document.activeElement?.id !== 'busca-rapida-input') {
+            e.preventDefault();
+            e.stopPropagation();
+            PdvModule.handleBuscaRapidaKeydown(e);
+            return;
+          }
+        }
+      }
+
+      // 2.10 Se modal de reimpressão de cupons [F12] estiver ativo, repassa teclado mesmo se input perder foco
+      const modalReimpressaoF12 = document.getElementById('modal-reimpressao-cupom-pdv');
+      if (modalReimpressaoF12 && modalReimpressaoF12.classList.contains('active')) {
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter' || e.key === 'Escape') {
+          if (document.activeElement?.id !== 'reimpressao-busca-input') {
+            e.preventDefault();
+            e.stopPropagation();
+            PdvModule.handleReimpressaoKeydown(e);
+            return;
+          }
         }
       }
 
@@ -374,15 +440,41 @@ export const App = {
           // Se for o modal de categoria rápida do XML, fecha através do módulo para resetar o estado
           if (modalAberto.id === 'modal-criar-categoria-rapida-xml' && window.XmlImporterModule) {
             window.XmlImporterModule.fecharModalCriarCategoriaRapida();
+            window._ultimoModalFechadoTimestamp = Date.now();
+            return;
+          }
+
+          // Se for o modal de busca rápida [F2], fecha através do método do PDV
+          if (modalAberto.id === 'modal-busca-produtos' && window.PdvModule) {
+            window.PdvModule.fecharBuscaProdutos();
+            window._ultimoModalFechadoTimestamp = Date.now();
+            return;
+          }
+
+          // Se for o modal de reimpressão de cupons [F12], fecha através do método do PDV
+          if (modalAberto.id === 'modal-reimpressao-cupom-pdv' && window.PdvModule) {
+            window.PdvModule.fecharModalReimpressaoCupom();
+            window._ultimoModalFechadoTimestamp = Date.now();
             return;
           }
 
           modalAberto.classList.remove('active');
-          if (this.abaAtiva === 'pdv') PdvModule.focarInputLeitor();
+          window._ultimoModalFechadoTimestamp = Date.now();
+          if (this.abaAtiva === 'pdv') {
+            setTimeout(() => {
+              PdvModule.focarInputLeitor();
+            }, 50);
+          }
           return;
         }
 
         if (this.abaAtiva === 'pdv') {
+          // BLINDAGEM: se qualquer modal acabou de ser fechado nos últimos 400ms, jamais cancela o carrinho
+          if (window._ultimoModalFechadoTimestamp && (Date.now() - window._ultimoModalFechadoTimestamp < 400)) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
           e.preventDefault();
           PdvModule.solicitarCancelarCarrinho();
           return;
@@ -394,6 +486,22 @@ export const App = {
       if (modalPagamento && modalPagamento.classList.contains('active')) {
         const modalTipoVoucher = document.getElementById('modal-tipo-voucher');
         if (modalTipoVoucher && modalTipoVoucher.classList.contains('active')) {
+          // Teclas numéricas 1 ou 2 (Refeição / Alimentação)
+          const numKey = (e.code && e.code.startsWith('Digit')) ? parseInt(e.code.replace('Digit', ''), 10) :
+                         (e.code && e.code.startsWith('Numpad')) ? parseInt(e.code.replace('Numpad', ''), 10) :
+                         !isNaN(parseInt(e.key, 10)) ? parseInt(e.key, 10) : null;
+
+          if (numKey !== null && numKey >= 1) {
+            const index = numKey - 1;
+            const opcoes = PdvModule.voucherTipoOpcoes || [];
+            if (index < opcoes.length) {
+              e.preventDefault();
+              e.stopPropagation();
+              PdvModule.confirmarTipoVoucherSelecionado(index);
+              return;
+            }
+          }
+
           if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
             e.preventDefault();
             e.stopPropagation();
@@ -421,6 +529,22 @@ export const App = {
         }
         const modalVoucher = document.getElementById('modal-selecao-voucher');
         if (modalVoucher && modalVoucher.classList.contains('active')) {
+          // Teclas numéricas 1..9 (VR, Alelo, Pluxee, Ticket, Outros)
+          const numKey = (e.code && e.code.startsWith('Digit')) ? parseInt(e.code.replace('Digit', ''), 10) :
+                         (e.code && e.code.startsWith('Numpad')) ? parseInt(e.code.replace('Numpad', ''), 10) :
+                         !isNaN(parseInt(e.key, 10)) ? parseInt(e.key, 10) : null;
+
+          if (numKey !== null && numKey >= 1) {
+            const index = numKey - 1;
+            const opcoes = PdvModule.voucherOpcoesAtuais || [];
+            if (index < opcoes.length) {
+              e.preventDefault();
+              e.stopPropagation();
+              PdvModule.confirmarVoucherSelecionado(index);
+              return;
+            }
+          }
+
           if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
             e.preventDefault();
             e.stopPropagation();
@@ -450,6 +574,10 @@ export const App = {
         const barcodeInput = document.getElementById('pdv-barcode-input');
         if (barcodeInput && document.activeElement === barcodeInput) {
           barcodeInput.blur();
+        }
+        const classicBarcodeInput = document.getElementById('classic-pdv-barcode-input');
+        if (classicBarcodeInput && document.activeElement === classicBarcodeInput) {
+          classicBarcodeInput.blur();
         }
 
         // ATALHOS DEDICADOS F1..F6 (Exclusivos desta tela de finalizar venda!)
@@ -739,7 +867,7 @@ export const App = {
         brandIcon.innerHTML = `<span style="font-size: 56px; pointer-events: none; user-select: none; display: block; margin: 0 auto;">${(lic && lic.icone) ? lic.icone : ((cfg && cfg.icone ? cfg.icone : "🏪"))}</span>`;
         const classicLogo = document.getElementById('classic-client-logo');
         if (classicLogo) {
-          classicLogo.src = 'src/assets/icon.png';
+          classicLogo.src = 'src/assets/flow-logo-premium-cart-transparent.png';
         }
       }
     }
@@ -1283,24 +1411,11 @@ export const App = {
     const erroMsg = document.getElementById('pin-login-erro-msg');
 
     if (erroMsg) erroMsg.style.display = 'none';
-
-    if (cargo === 'operador') {
-      const userOperador = { id: 'USR-001', nome: 'Operador Caixa 01', cargo: 'operador', pin: '1234' };
-      AuthModule.usuarioAtual = userOperador;
-      sessionStorage.setItem('adega_usuario_logado', JSON.stringify(userOperador));
-      AuthModule.atualizarHeaderUsuario();
-
-      if (window.CaixaModule) {
-        window.CaixaModule.renderHistoricoTurnosFechados();
-        window.CaixaModule.renderHistoricoVendasTurno();
-      }
-
-      this.fecharModalTrocarUsuario();
-      this.showToast('👤 Perfil alterado para Operador de Caixa!', 'success');
-      return;
+    if (label) {
+      label.textContent = cargo === 'operador'
+        ? 'Digite o PIN do Operador de Caixa:'
+        : 'Digite o PIN de Acesso do Gerente:';
     }
-
-    if (label) label.textContent = 'Digite o PIN de Acesso do Gerente:';
     if (pinInput) {
       pinInput.value = '';
       setTimeout(() => pinInput.focus(), 100);
@@ -1311,39 +1426,24 @@ export const App = {
     const pinInput = document.getElementById('pin-login-input');
     const erroMsg = document.getElementById('pin-login-erro-msg');
     const pin = pinInput ? pinInput.value.trim() : '';
-
     const cargoAlvo = this.perfilPendenteTroca || 'gerente';
-
-    if (cargoAlvo === 'operador') {
-      const userOperador = { id: 'USR-001', nome: 'Operador Caixa 01', cargo: 'operador' };
-      AuthModule.usuarioAtual = userOperador;
-      sessionStorage.setItem('adega_usuario_logado', JSON.stringify(userOperador));
-      AuthModule.atualizarHeaderUsuario();
-      this.fecharModalTrocarUsuario();
-      this.showToast('🔓 Perfil alterado com sucesso!', 'success');
-      return;
-    }
 
     if (!pin) {
       if (erroMsg) {
-        erroMsg.textContent = '⚠️ Digite o PIN de Acesso!';
+        erroMsg.textContent = 'Digite o PIN de acesso.';
         erroMsg.style.display = 'block';
       }
       return;
     }
 
-    const res = AuthModule.trocarUsuario(pin);
+    const res = AuthModule.trocarUsuario(pin, cargoAlvo);
     if (res.success) {
       if (erroMsg) erroMsg.style.display = 'none';
-      if (window.CaixaModule) {
-        window.CaixaModule.renderHistoricoTurnosFechados();
-        window.CaixaModule.renderHistoricoVendasTurno();
-      }
       this.fecharModalTrocarUsuario();
-      this.showToast('🔓 Perfil alterado com sucesso!', 'success');
+      this.showToast('Perfil alterado com sucesso!', 'success');
     } else {
       if (erroMsg) {
-        erroMsg.textContent = '❌ PIN de acesso incorreto!';
+        erroMsg.textContent = res.erro || 'PIN de acesso incorreto.';
         erroMsg.style.display = 'block';
       }
       if (pinInput) {
@@ -1444,11 +1544,13 @@ export const App = {
       return;
     }
 
-    const pinGerente = localStorage.getItem('flowpdv_pin_gerente') || StorageService.getLicenca()?.pinGerente || '1234';
+    const pinGerente = String(
+      localStorage.getItem('flowpdv_pin_gerente') || StorageService.getLicenca()?.pinGerente || ''
+    ).trim();
     const usuarios = StorageService.getUsuarios() || [];
     const gerenteObj = usuarios.find(u => u.cargo === 'gerente' && String(u.pin).trim() === pin);
 
-    if (pin === String(pinGerente).trim() || gerenteObj) {
+    if ((pinGerente && pin === pinGerente) || gerenteObj) {
       this.gerenciaDesbloqueadaTemp = true;
       if (overlay) overlay.style.display = 'none';
       if (erroMsg) erroMsg.style.display = 'none';
@@ -1806,7 +1908,6 @@ window.EstoqueModule = EstoqueModule;
 window.CaixaModule = CaixaModule;
 window.ClientesModule = ClientesModule;
 window.LicencaModule = LicencaModule;
-window.AdminMasterModule = AdminMasterModule;
 window.ThermalPrintModule = ThermalPrintModule;
 
 if (document.readyState === 'loading') {

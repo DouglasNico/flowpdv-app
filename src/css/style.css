@@ -118,8 +118,8 @@ body {
 }
 
 .header-brand-logo-img {
-  height: 42px;
-  max-height: 42px;
+  height: 44px;
+  max-height: 48px;
   width: auto;
   object-fit: contain;
   display: block;
@@ -351,20 +351,22 @@ body {
   left: 0;
   width: 100vw;
   height: 100vh;
-  z-index: 50; /* Baixado para 50 para modais (100) abrirem na frente! */
-  background: #cce0ff;
+  z-index: 50;
+  background: #e2e8f0; /* Tom Slate Suave Oficial do Sistema Moderno */
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   box-sizing: border-box;
 }
 
-/* Header */
+/* Header Clean */
 .classic-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: #002366; /* Azul Escuro */
-  color: white;
-  padding: 10px 20px;
+  background: #ffffff;
+  border-bottom: 1.5px solid #cbd5e1;
+  color: #0f172a;
+  padding: 10px 24px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
 }
 .classic-logo-title {
   display: flex;
@@ -373,61 +375,116 @@ body {
 }
 .classic-title-text {
   font-size: 26px;
-  font-weight: 600;
-  letter-spacing: 1px;
+  letter-spacing: 0.5px;
 }
 .classic-header-info {
   display: flex;
   align-items: center;
-  gap: 15px;
-  font-size: 16px;
-  font-weight: 500;
+  gap: 16px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
 }
 .classic-header-info .divider {
-  opacity: 0.5;
+  opacity: 0.35;
+  color: #94a3b8;
+}
+#classic-clock {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 15px;
+  font-weight: 900;
+  color: #0f172a;
+  background: #f1f5f9;
+  border: 1.5px solid #cbd5e1;
+  padding: 3px 10px;
+  border-radius: 6px;
 }
 #classic-btn-trocar-operador {
-  background: transparent;
-  color: #fff;
-  border: 1px solid rgba(255,255,255,0.5);
-  border-radius: 4px;
-  padding: 4px 10px;
+  background: #f1f5f9;
+  color: #334155;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 5px 14px;
   cursor: pointer;
-  font-size: 13px;
-  transition: 0.2s;
+  font-size: 12.5px;
+  font-weight: 700;
+  transition: all 0.2s ease;
 }
 #classic-btn-trocar-operador:hover {
-  background: rgba(255,255,255,0.1);
+  background: #e2e8f0;
+  border-color: #94a3b8;
+  color: #0f172a;
+}
+#classic-btn-painel-gerente {
+  display: none;
+  align-items: center;
+  gap: 7px;
+  background: linear-gradient(135deg, #0f172a, #1e293b);
+  color: #ffffff;
+  border: 1.5px solid #334155;
+  border-radius: 6px;
+  padding: 5px 14px;
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 800;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.2);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  white-space: nowrap;
+}
+#classic-btn-painel-gerente:hover {
+  background: linear-gradient(135deg, #1e293b, #334155);
+  border-color: #64748b;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.35);
+}
+#classic-btn-painel-gerente:active {
+  transform: translateY(0);
+}
+.classic-header-logo {
+  height: 48px;
+  max-height: 48px;
+  width: auto;
+  object-fit: contain;
+  display: block;
 }
 .classic-window-controls {
   display: flex;
-  gap: 12px;
-  font-size: 20px;
+  align-items: center;
+  justify-content: flex-end;
 }
 .classic-window-controls span {
   width: 32px;
   height: 32px;
-  border: 1px solid white;
-  border-radius: 50%;
+  border: 1.5px solid #0f172a;
+  background: #0f172a;
+  border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 900;
+  transition: all 0.15s ease;
+}
+.classic-window-controls span:hover {
+  border-color: #dc2626;
+  color: #ffffff;
+  background: #dc2626;
 }
 
-/* Status Bar */
+/* Status Bar Clean */
 .classic-status-bar {
-  background: #f1f5fb;
+  background: #f8fafc;
   text-align: center;
-  padding: 15px 0;
-  border-bottom: 3px solid #002366;
-  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  padding: 10px 0;
+  border-bottom: 1.5px solid #cbd5e1;
 }
 .classic-status-bar h2 {
   margin: 0;
-  font-size: 32px;
-  color: #002366;
-  font-weight: 700;
+  font-size: 26px;
+  color: #16a34a;
+  font-weight: 900;
   letter-spacing: 2px;
 }
 
@@ -435,8 +492,8 @@ body {
 .classic-main-content {
   display: flex;
   flex: 1;
-  padding: 15px 25px;
-  gap: 25px;
+  padding: 14px 20px;
+  gap: 16px;
   min-height: 0;
 }
 
@@ -444,94 +501,170 @@ body {
 .classic-left-pane {
   display: flex;
   flex-direction: column;
-  width: 650px;
-  min-width: 650px;
+  width: 580px;
+  min-width: 580px;
   flex-shrink: 0;
   gap: 10px;
+  height: 100%;
 }
 .classic-cart-img {
-  background: transparent;
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 180px;
+  flex: 1;
+  min-height: 260px;
+  padding: 16px;
+  overflow: hidden;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
+}
+.classic-cart-img img {
+  max-width: 94%;
+  max-height: 94%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
 }
 .classic-field-box {
-  background: #002366;
-  border-radius: 6px;
-  padding: 10px 14px;
-  color: white;
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 10px 18px;
+  color: #0f172a;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 2px;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
+  transition: all 0.15s ease;
 }
 .classic-field-box label {
-  font-size: 15px;
-  font-weight: bold;
+  font-size: 11.5px;
+  font-weight: 800;
+  color: #475569; /* Slate escuro neutro, descansado para a vista */
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
 }
 .classic-field-box .classic-value {
   text-align: right;
-  font-size: 28px;
-  font-weight: bold;
+  font-size: 30px;
+  font-weight: 900;
+  font-family: 'JetBrains Mono', monospace;
   background: transparent;
-  color: white;
-  min-height: 32px;
+  color: #0f172a;
+  min-height: 36px;
 }
 
-/* Right Pane (Table) */
+/* Right Pane (Tabela Estilo Cupom Térmico com Guilhotina Slate) */
 .classic-right-pane {
   flex: 1;
   display: flex;
   flex-direction: column;
 }
 .classic-table-container {
-  flex: 1; /* Ocupa todo o espaço vertical disponível (sem ficar cortado) */
-  background: #e3efff;
-  border: 2px solid #002366;
-  border-radius: 6px;
+  flex: 1;
+  background: #fafaf9; /* Papel de cupom térmico fosco neutro - 100% UNIFORME SEM EMENDA */
+  border: 1.5px solid #cbd5e1;
+  border-radius: 10px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
 }
 .classic-table-header {
-  background: #002366;
-  color: white;
+  background: #0f172a;
+  color: #f8fafc;
   text-align: center;
-  font-size: 16px;
-  font-weight: bold;
-  padding: 8px;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 2.5px;
+  padding: 8px 18px;
+  border-bottom: 1px dashed #334155;
+  text-transform: uppercase;
 }
 .classic-pdv-table {
   width: 100%;
   border-collapse: collapse;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: #fafaf9;
 }
 .classic-pdv-table thead {
   display: block;
-  width: calc(100% - 8px); /* Compensa a scrollbar do tbody */
+  width: 100%;
+  flex-shrink: 0;
+}
+.classic-pdv-table thead tr {
+  display: grid;
+  grid-template-columns: 60px 140px minmax(0, 1fr) 70px 110px 110px;
+  width: 100%;
+  background: #0f172a; /* Tom unificado com a barra de título */
+  border-bottom: 2px solid #334155;
 }
 .classic-pdv-table thead th {
-  background: #e3efff;
-  color: #002366;
-  border-bottom: 2px solid #002366;
-  padding: 6px 8px;
-  font-size: 14px;
+  background: transparent;
+  color: #94a3b8; /* Slate claro de alta legibilidade */
+  font-weight: 800;
+  padding: 7px 10px;
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
   text-align: left;
+  border-bottom: none;
 }
 .classic-pdv-table tbody {
   display: block;
   overflow-y: auto;
-  height: calc(100vh - 580px); /* Ajusta barra de rolagem */
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+  background: #fafaf9; /* Papel de cupom térmico fosco neutro */
 }
-.classic-pdv-table thead tr, .classic-pdv-table tbody tr {
+.classic-pdv-table tbody tr {
   display: grid;
-  grid-template-columns: 60px 140px 1fr 70px 100px 100px;
+  grid-template-columns: 60px 140px minmax(0, 1fr) 70px 110px 110px;
   width: 100%;
+  border-bottom: 1.5px dashed #cbd5e1; /* Linha pontilhada / tracejada entre produtos */
+  background: transparent;
+  transition: background 0.1s ease;
+}
+.classic-pdv-table tbody tr:hover {
+  background: #f1f5f9;
 }
 .classic-pdv-table tbody td {
-  padding: 6px 8px;
-  font-size: 14px;
-  color: #002366;
-  border-bottom: 1px solid rgba(0,35,102,0.2);
+  padding: 9px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a; /* Tinta nítida de cupom */
+  border-bottom: none;
+}
+.classic-pdv-table tbody td:first-child,
+.classic-pdv-table tbody td:nth-child(2),
+.classic-pdv-table tbody td:nth-child(4),
+.classic-pdv-table tbody td:nth-child(5),
+.classic-pdv-table tbody td:nth-child(6) {
+  font-family: 'JetBrains Mono', monospace;
+}
+.classic-pdv-table tbody tr.classic-tr-desconto {
+  background: #fef2f2;
+  border-bottom: 1.5px dashed #fca5a5;
+}
+.classic-pdv-table tbody tr.classic-tr-desconto td.classic-desconto-label {
+  grid-column: 1 / 6;
+  text-align: right;
+  font-weight: 800;
+  color: #dc2626;
+  padding-right: 12px;
+  white-space: nowrap;
+}
+.classic-pdv-table tbody tr.classic-tr-desconto td.classic-desconto-valor {
+  grid-column: 6 / 7;
+  text-align: right;
+  font-weight: 800;
+  color: #dc2626;
+  white-space: nowrap;
 }
 
 /* Bottom Panel */
@@ -539,57 +672,78 @@ body {
   display: flex;
   flex-direction: row;
   flex-wrap: nowrap;
-  padding: 0 25px 40px 25px; /* Adicionado respiro no final (40px) */
-  gap: 25px;
-  min-height: 180px;
+  padding: 0 20px 20px 20px;
+  gap: 16px;
+  min-height: 170px;
   height: auto;
 }
 .classic-bottom-left {
-  width: 650px;
-  min-width: 650px;
+  width: 580px;
+  min-width: 580px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 .classic-input-group {
-  background: #002366;
-  padding: 12px;
-  border-radius: 6px;
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  padding: 10px 16px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   gap: 15px;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
 }
 .classic-input-group label {
-  color: white;
-  font-weight: bold;
-  font-size: 24px;
+  color: #0f172a;
+  font-weight: 900;
+  font-size: 18px;
+  letter-spacing: 0.5px;
 }
 .classic-input-group input {
   flex: 1;
   min-width: 0;
-  height: 60px;
-  font-size: 32px;
-  font-weight: bold;
-  background: white;
-  color: black;
-  border: none;
+  height: 50px;
+  font-size: 26px;
+  font-weight: 900;
+  font-family: 'JetBrains Mono', monospace;
+  background: #f8fafc;
+  color: #0f172a;
+  border: 1.5px solid #94a3b8;
   padding: 0 15px;
   outline: none;
-  border-radius: 4px;
+  border-radius: 8px;
+  transition: all 0.15s ease;
+}
+.classic-input-group input:focus {
+  background: #ffffff;
+  border-color: #f97316;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.2);
 }
 .classic-shortcuts {
   flex: 1;
-  background: #e3efff;
-  border: 1px solid #002366;
-  border-radius: 6px;
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 10px;
   display: flex;
-  padding: 10px 20px;
+  padding: 10px 18px;
   font-size: 12px;
-  font-weight: 500;
-  color: #002366;
-  gap: 60px;
+  font-weight: 600;
+  color: #475569;
+  gap: 30px;
   justify-content: center;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
+}
+.classic-shortcuts strong {
+  color: #0f172a;
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 900;
+  font-family: 'JetBrains Mono', monospace;
 }
 .shortcut-col {
   display: flex;
@@ -597,7 +751,7 @@ body {
   gap: 6px;
 }
 
-/* Bottom Right Totals */
+/* Bottom Right Totals Clean */
 .classic-bottom-right {
   flex: 1;
   min-width: 0;
@@ -613,22 +767,27 @@ body {
   flex: 1;
 }
 .classic-total-box {
-  background: #002366;
-  color: white;
-  border-radius: 8px;
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  color: #0f172a;
+  border-radius: 10px;
   padding: 12px 20px;
   display: flex;
   flex-direction: column;
   justify-content: center;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
 }
 .classic-total-box.subtotal {
   width: 100%;
-  align-items: space-between;
+  align-items: center;
   flex-direction: row;
   justify-content: space-between;
 }
 .classic-total-box.subtotal .val {
-  font-size: 28px;
+  font-size: 26px;
+  font-weight: 900;
+  color: #0f172a;
+  font-family: 'JetBrains Mono', monospace;
   line-height: 1;
 }
 .classic-total-box.sm {
@@ -638,20 +797,39 @@ body {
   justify-content: space-between;
   align-items: center;
 }
+.classic-total-box.sm:last-child {
+  /* TOTAL DA VENDA: CARD ELEGANTE COM VALOR EM VERDE ESMERALDA DO SISTEMA MODERNO */
+  background: #ffffff;
+  border: 2px solid #cbd5e1;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+}
+.classic-total-box.sm:last-child label {
+  color: #475569 !important;
+  font-size: 13px !important;
+  font-weight: 800 !important;
+}
+.classic-total-box.sm:last-child .val {
+  color: #047857 !important; /* Verde Esmeralda oficial do Total Moderno */
+  font-size: 28px !important;
+  font-weight: 900 !important;
+}
 .classic-total-box label {
-  font-size: 18px;
-  font-weight: bold;
+  font-size: 12px;
+  font-weight: 800;
+  color: #475569;
   align-self: flex-start;
-  margin-top: 5px;
+  margin-top: 2px;
 }
 .classic-total-box.sm label {
   margin-top: 0;
-  font-size: 16px;
+  font-size: 12px;
 }
 .classic-total-box .val {
-  font-size: 32px; /* Diminuído */
-  font-weight: bold;
+  font-size: 24px;
+  font-weight: 900;
+  font-family: 'JetBrains Mono', monospace;
   text-align: right;
+  color: #0f172a;
 }
 
 #tab-pdv.pdv-layout-classico .pdv-actions-top-group > .btn-finalize-sale {
@@ -4621,7 +4799,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
 .clube-question-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   margin-top: 20px;
 }
@@ -4874,41 +5052,81 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
 .clube-cpf-actions {
   display: flex;
-  gap: 9px;
+  gap: 10px;
   margin-top: 18px;
 }
 
 .clube-cpf-submit,
 .clube-cpf-remove {
-  min-height: 44px;
-  border: 0;
-  border-radius: 9px;
+  min-height: 48px;
+  border-radius: 10px;
   cursor: pointer;
   font-family: inherit;
-  font-weight: 900;
+  font-weight: 800;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
 }
 
 .clube-cpf-submit {
   flex: 1;
+  flex-direction: column;
   background: linear-gradient(135deg, #f59e0b, #d97706);
+  border: 1px solid #d97706;
   color: #ffffff;
-  font-size: 13px;
-  box-shadow: 0 5px 12px rgba(217, 119, 6, 0.2);
+  font-size: 13.5px;
+  box-shadow: 0 4px 14px rgba(217, 119, 6, 0.25);
+  padding: 6px 16px;
+}
+
+.clube-cpf-submit:hover {
+  background: linear-gradient(135deg, #fbbf24, #b45309);
+  border-color: #b45309;
+  transform: translateY(-1.5px);
+  box-shadow: 0 8px 20px rgba(217, 119, 6, 0.38);
+}
+
+.clube-cpf-submit:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 6px rgba(217, 119, 6, 0.2);
 }
 
 .clube-cpf-submit span {
-  display: block;
-  margin-top: 1px;
+  display: inline-block;
+  margin-top: 2px;
   font-size: 10px;
-  opacity: 0.85;
+  letter-spacing: 0.5px;
+  opacity: 0.95;
+  font-weight: 800;
+  background: rgba(0, 0, 0, 0.18);
+  padding: 1px 7px;
+  border-radius: 4px;
 }
 
 .clube-cpf-remove {
   display: none;
-  padding: 0 14px;
-  background: #f1f5f9;
-  color: #64748b;
-  font-size: 12px;
+  padding: 0 18px;
+  background: #fff1f2;
+  border: 1.5px solid #fecdd3;
+  color: #e11d48;
+  font-size: 13px;
+  box-shadow: 0 2px 6px rgba(225, 29, 72, 0.08);
+  white-space: nowrap;
+}
+
+.clube-cpf-remove:hover {
+  background: #e11d48;
+  border-color: #be123c;
+  color: #ffffff;
+  transform: translateY(-1.5px);
+  box-shadow: 0 6px 18px rgba(225, 29, 72, 0.32);
+}
+
+.clube-cpf-remove:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 6px rgba(225, 29, 72, 0.15);
 }
 
 .payment-methods-grid {
@@ -5349,7 +5567,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     flex-shrink: 0 !important;
   }
   .header-brand-logo-img {
-    height: 38px !important;
+    height: 40px !important;
   }
   .app-nav {
     gap: 3px !important;
@@ -5411,7 +5629,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     gap: 6px !important;
   }
   .header-brand-logo-img {
-    height: 34px !important;
+    height: 36px !important;
   }
   .app-nav .nav-btn {
     padding: 5px 8px !important;
@@ -5440,3 +5658,714 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
 #pdv-desconto-box span { color: #dc2626 !important; }
 #pdv-desconto-box strong { color: #b91c1c !important; }
+
+/* ==========================================================================
+   TEMA CLÁSSICO PARA MODAIS DE ATALHO (F2, F4, DEL, F12, F8, F7)
+   Ativado exclusivamente quando body tem a classe .pdv-layout-classico
+   ========================================================================== */
+
+/* Backdrop Clássico Clean */
+body.pdv-layout-classico .modal-overlay {
+  background: rgba(15, 23, 42, 0.6) !important;
+  backdrop-filter: blur(4px) !important;
+  -webkit-backdrop-filter: blur(4px) !important;
+}
+
+/* Base Comum dos Modais no Modo Clássico */
+body.pdv-layout-classico .modal-content-box {
+  border: 1.5px solid #cbd5e1 !important;
+  border-radius: 6px !important; /* Visual mais quadrado e padronizado */
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.2) !important;
+  background: #ffffff !important;
+  overflow: hidden !important;
+}
+
+/* Fundo do Cabeçalho Padrão Escuro (#0f172a) em Todos os Modais Clássicos */
+body.pdv-layout-classico .modal-header-bar,
+body.pdv-layout-classico .modal-header {
+  background: #0f172a !important;
+  color: #ffffff !important;
+  border-bottom: 1.5px solid #1e293b !important;
+  border-radius: 5px 5px 0 0 !important;
+  padding: 13px 20px !important;
+}
+
+body.pdv-layout-classico .modal-header-bar h2,
+body.pdv-layout-classico .modal-header-bar h3,
+body.pdv-layout-classico .modal-header h2,
+body.pdv-layout-classico .modal-header h3 {
+  color: #ffffff !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.5px !important;
+}
+
+body.pdv-layout-classico .modal-header-bar span,
+body.pdv-layout-classico .modal-header-bar p,
+body.pdv-layout-classico .modal-header span,
+body.pdv-layout-classico .modal-header p {
+  color: #94a3b8 !important;
+}
+
+body.pdv-layout-classico .modal-header-bar .payment-modal-icon-badge,
+body.pdv-layout-classico .modal-header-bar svg {
+  color: #94a3b8 !important;
+}
+
+/* Botão [X] de Fechar Modal em Harmonia com o Cabeçalho */
+body.pdv-layout-classico .btn-close-modal,
+body.pdv-layout-classico .modal-close-btn {
+  background: #1e293b !important;
+  color: #cbd5e1 !important;
+  border: 1px solid #334155 !important;
+  border-radius: 6px !important;
+  font-weight: 800 !important;
+  font-size: 14px !important;
+  width: 30px !important;
+  height: 30px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transition: all 0.15s ease !important;
+  cursor: pointer !important;
+}
+
+body.pdv-layout-classico .btn-close-modal:hover,
+body.pdv-layout-classico .modal-close-btn:hover {
+  background: #dc2626 !important;
+  color: #ffffff !important;
+  border-color: #b91c1c !important;
+}
+
+/* --------------------------------------------------------------------------
+   1. MODAL F2: BUSCA RÁPIDA DE PRODUTOS (#modal-busca-produtos)
+   -------------------------------------------------------------------------- */
+body.pdv-layout-classico #busca-rapida-input {
+  border: 2px solid #cbd5e1 !important;
+  border-radius: 6px !important;
+  font-weight: 700 !important;
+  color: #0f172a !important;
+  background: #ffffff !important;
+}
+
+body.pdv-layout-classico #busca-rapida-input:focus {
+  border-color: #0f172a !important;
+  box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.2) !important;
+}
+
+body.pdv-layout-classico .f2-chips-wrapper {
+  background: #f8fafc !important;
+  border: 1.5px solid #e2e8f0 !important;
+  border-radius: 6px !important;
+  padding: 4px 6px !important;
+}
+
+body.pdv-layout-classico .btn-f2-chip-scroll {
+  background: #f1f5f9 !important;
+  color: #0f172a !important;
+  border: 1px solid #cbd5e1 !important;
+  border-radius: 6px !important;
+}
+
+body.pdv-layout-classico .f2-cat-chip {
+  background: #ffffff !important;
+  color: #0f172a !important;
+  border: 1.5px solid #cbd5e1 !important;
+  border-radius: 6px !important;
+  font-weight: 700 !important;
+}
+
+body.pdv-layout-classico .f2-cat-chip.active {
+  background: #0f172a !important;
+  color: #ffffff !important;
+  border-color: #334155 !important;
+}
+
+body.pdv-layout-classico #busca-produtos-lista {
+  background: #f8fafc !important;
+  border: 1.5px solid #e2e8f0 !important;
+  border-radius: 6px !important;
+  padding: 8px !important;
+}
+
+body.pdv-layout-classico .f2-product-row {
+  background: #ffffff !important;
+  border: 1.5px solid #e2e8f0 !important;
+  border-radius: 6px !important;
+  margin-bottom: 6px !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04) !important;
+  transition: all 0.12s ease !important;
+}
+
+body.pdv-layout-classico .f2-product-row:hover {
+  background: #f1f5f9 !important;
+  border-color: #0f172a !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+body.pdv-layout-classico .f2-product-row.selected {
+  background: #f8fafc !important;
+  border: 2px solid #0f172a !important;
+  box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.15) !important;
+}
+
+body.pdv-layout-classico .f2-item-title {
+  color: #0f172a !important;
+  font-weight: 800 !important;
+}
+
+body.pdv-layout-classico .f2-code {
+  color: #0f172a !important;
+  background: #f1f5f9 !important;
+  border: 1px solid #cbd5e1 !important;
+  padding: 2px 6px !important;
+  border-radius: 4px !important;
+  font-family: 'JetBrains Mono', monospace !important;
+}
+
+body.pdv-layout-classico .f2-col-cat {
+  color: #64748b !important;
+  font-weight: 700 !important;
+}
+
+/* Botões do F2 Padronizados na Cor do Cabeçalho (#0f172a) */
+body.pdv-layout-classico .f2-btn-unit,
+body.pdv-layout-classico .f2-btn-pack {
+  background: #0f172a !important;
+  color: #ffffff !important;
+  border: 1.5px solid #334155 !important;
+  border-radius: 6px !important;
+  font-weight: 800 !important;
+  transition: all 0.12s ease !important;
+}
+
+body.pdv-layout-classico .f2-btn-unit:hover,
+body.pdv-layout-classico .f2-btn-pack:hover {
+  background: #1e293b !important;
+  border-color: #475569 !important;
+}
+
+/* Destaque visual com setas do teclado */
+body.pdv-layout-classico .f2-btn-focused {
+  box-shadow: 0 0 0 3px #0f172a, 0 4px 12px rgba(15, 23, 42, 0.45) !important;
+  border-color: #0f172a !important;
+  transform: scale(1.03) !important;
+}
+
+body.pdv-layout-classico .f2-price {
+  color: #ffffff !important;
+  font-family: 'JetBrains Mono', monospace !important;
+  font-weight: 800 !important;
+}
+
+body.pdv-layout-classico .f2-btn-tag {
+  color: #94a3b8 !important;
+  font-weight: 700 !important;
+}
+
+/* --------------------------------------------------------------------------
+   2. MODAL F4: FINALIZAR VENDA / PAGAMENTO (#modal-pagamento)
+   -------------------------------------------------------------------------- */
+body.pdv-layout-classico #modal-pagamento .modal-content-box {
+  max-width: 780px !important; /* Espaço amplo para cards lado a lado */
+  border-radius: 6px !important;
+}
+
+/* Topo Resumo: Total da Venda e Falta Pagar Lado a Lado */
+.payment-top-summary-grid {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+  margin-bottom: 14px !important;
+  align-items: stretch !important;
+}
+
+body.pdv-layout-classico .payment-total-hero {
+  background: #ffffff !important;
+  border: 2px solid #e2e8f0 !important;
+  border-radius: 6px !important; /* Mais quadrado */
+  color: #0f172a !important;
+  padding: 12px 18px !important;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04) !important;
+  margin-bottom: 0 !important;
+  height: 100% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  box-sizing: border-box !important;
+}
+
+body.pdv-layout-classico .payment-total-hero-label {
+  color: #64748b !important;
+  font-weight: 800 !important;
+  font-size: 11.5px !important;
+  letter-spacing: 0.8px !important;
+}
+
+/* TOTAL DA VENDA na cor VERDE solicitada pelo usuário */
+body.pdv-layout-classico .payment-total-hero-val {
+  color: #16a34a !important; /* VERDE Oficial do Total */
+  font-family: 'JetBrains Mono', monospace !important;
+  font-size: 28px !important;
+  font-weight: 900 !important;
+  line-height: 1.1 !important;
+}
+
+body.pdv-layout-classico .payment-total-hero-badge {
+  background: #f1f5f9 !important;
+  color: #334155 !important;
+  border: 1px solid #cbd5e1 !important;
+  border-radius: 6px !important;
+  font-weight: 700 !important;
+  font-size: 11px !important;
+}
+
+body.pdv-layout-classico #pag-total-lancado-mini {
+  color: #64748b !important;
+}
+
+body.pdv-layout-classico #pag-total-pago-display {
+  color: #16a34a !important;
+  font-weight: 900 !important;
+}
+
+/* Banner de Status (Falta Pagar / Troco / Quitado) ao Lado do Total */
+.payment-top-summary-grid #pag-status-banner-box {
+  height: 100% !important;
+  display: flex !important;
+  align-items: stretch !important;
+}
+
+.payment-top-summary-grid #pag-status-banner-box > div {
+  margin-bottom: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  box-sizing: border-box !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  border-radius: 6px !important;
+  padding: 12px 16px !important;
+}
+
+body.pdv-layout-classico .pag-status-banner-danger,
+body.pdv-layout-classico .pag-status-banner-troco,
+body.pdv-layout-classico .pag-status-banner-success {
+  border-radius: 6px !important; /* Mais quadrado */
+}
+
+body.pdv-layout-classico .payment-methods-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 8px !important;
+}
+
+body.pdv-layout-classico .forma-pag-card {
+  background: #ffffff !important;
+  border: 2px solid #e2e8f0 !important;
+  border-radius: 6px !important; /* Mais quadrado */
+  color: #0f172a !important;
+  font-weight: 800 !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04) !important;
+  transition: all 0.12s ease !important;
+}
+
+body.pdv-layout-classico .forma-pag-card-badge {
+  background: #f1f5f9 !important;
+  color: #334155 !important;
+  border-radius: 4px !important;
+  font-weight: 900 !important;
+  font-size: 11px !important;
+  border: 1px solid #cbd5e1 !important;
+}
+
+body.pdv-layout-classico .forma-pag-card:hover {
+  background: #f8fafc !important;
+  border-color: #0f172a !important;
+  transform: none !important;
+}
+
+body.pdv-layout-classico .forma-pag-card.active {
+  background: #f8fafc !important;
+  color: #0f172a !important;
+  border-color: #0f172a !important;
+  box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.25) !important;
+}
+
+body.pdv-layout-classico .forma-pag-card.active .forma-pag-card-badge {
+  background: #0f172a !important;
+  color: #ffffff !important;
+  border-color: #1e293b !important;
+}
+
+body.pdv-layout-classico .forma-pag-card.active .forma-pag-name {
+  color: #0f172a !important;
+  font-weight: 900 !important;
+}
+
+body.pdv-layout-classico #pag-box-entrada-valor {
+  background: #f8fafc !important;
+  border: 2px solid #e2e8f0 !important;
+  border-radius: 6px !important; /* Mais quadrado */
+}
+
+body.pdv-layout-classico #pag-forma-ativa-titulo {
+  color: #0f172a !important;
+  font-weight: 900 !important;
+}
+
+body.pdv-layout-classico #pag-valor-pago-input {
+  background: #ffffff !important;
+  border: 2px solid #cbd5e1 !important;
+  border-radius: 6px !important; /* Mais quadrado */
+  color: #0f172a !important;
+  font-family: 'JetBrains Mono', monospace !important;
+  font-weight: 900 !important;
+}
+
+body.pdv-layout-classico #pag-valor-pago-input:focus {
+  border-color: #0f172a !important;
+  box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.2) !important;
+}
+
+body.pdv-layout-classico #btn-lancar-valor-enter {
+  background: #0f172a !important;
+  border: 2px solid #1e293b !important;
+  border-radius: 6px !important; /* Mais quadrado */
+  color: #ffffff !important;
+  font-weight: 800 !important;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.2) !important;
+}
+
+body.pdv-layout-classico #btn-lancar-valor-enter:hover {
+  background: #1e293b !important;
+}
+
+body.pdv-layout-classico #pag-contexto-detalhe button {
+  background: #ffffff !important;
+  border: 1.5px solid #cbd5e1 !important;
+  color: #0f172a !important;
+  border-radius: 6px !important;
+  font-weight: 800 !important;
+  font-family: 'JetBrains Mono', monospace !important;
+}
+
+body.pdv-layout-classico #pag-contexto-detalhe button:hover {
+  background: #0f172a !important;
+  color: #ffffff !important;
+  border-color: #1e293b !important;
+}
+
+/* Seção Fiscal / CPF na Nota é solicitada após a conclusão (ou via PINPad/modal dedicado) */
+body.pdv-layout-classico #pag-secao-fiscal-opcoes,
+#pag-secao-fiscal-opcoes {
+  display: none !important;
+}
+
+body.pdv-layout-classico #btn-confirmar-pagamento-modal {
+  background: #16a34a !important;
+  border: 2px solid #15803d !important;
+  border-radius: 6px !important; /* Mais quadrado */
+  color: #ffffff !important;
+  font-weight: 900 !important;
+  box-shadow: 0 4px 12px rgba(22, 163, 74, 0.3) !important;
+}
+
+body.pdv-layout-classico #btn-confirmar-pagamento-modal:hover {
+  background: #15803d !important;
+}
+
+body.pdv-layout-classico #modal-pagamento button[onclick*="fecharModalPagamento"] {
+  background: #f1f5f9 !important;
+  border: 2px solid #cbd5e1 !important;
+  border-radius: 6px !important;
+  color: #0f172a !important;
+  font-weight: 800 !important;
+}
+
+/* --------------------------------------------------------------------------
+   3. MODAL DEL: CANCELAR ITEM DO CARRINHO (#modal-cancelar-item-carrinho)
+   -------------------------------------------------------------------------- */
+body.pdv-layout-classico #modal-cancelar-item-carrinho .modal-content-box {
+  border: 1.5px solid #cbd5e1 !important;
+  border-radius: 6px !important;
+  background: #ffffff !important;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.2) !important;
+}
+
+body.pdv-layout-classico #modal-cancelar-item-carrinho .modal-body-content > div:first-child {
+  background: #fef2f2 !important;
+  border: 2px solid #f87171 !important;
+  border-radius: 6px !important;
+}
+
+body.pdv-layout-classico #input-cancelar-item-num,
+body.pdv-layout-classico #input-cancelar-item-qtd {
+  border: 2px solid #dc2626 !important;
+  border-radius: 6px !important;
+  color: #991b1b !important;
+  font-weight: 900 !important;
+  background: #ffffff !important;
+}
+
+body.pdv-layout-classico #modal-cancelar-item-carrinho button[onclick*="confirmarExclusaoItemPorNumero"] {
+  background: #dc2626 !important;
+  border: 2px solid #b91c1c !important;
+  border-radius: 6px !important;
+  color: #ffffff !important;
+  font-weight: 800 !important;
+  box-shadow: none !important;
+}
+
+body.pdv-layout-classico #modal-cancelar-item-carrinho button[onclick*="confirmarExclusaoItemPorNumero"]:hover {
+  background: #b91c1c !important;
+}
+
+body.pdv-layout-classico #cancelar-item-lista-tbody {
+  background: #f8fafc !important;
+  border: 2px solid #cbd5e1 !important;
+  border-radius: 6px !important;
+  padding: 6px !important;
+}
+
+body.pdv-layout-classico #cancelar-item-lista-tbody > div {
+  background: #ffffff !important;
+  border: 1.5px solid #e2e8f0 !important;
+  border-radius: 6px !important;
+  margin-bottom: 4px !important;
+  box-shadow: none !important;
+}
+
+body.pdv-layout-classico #cancelar-item-lista-tbody > div:hover {
+  background: #fef2f2 !important;
+  border-color: #dc2626 !important;
+}
+
+body.pdv-layout-classico #modal-cancelar-item-carrinho .modal-footer-bar {
+  background: #ffffff !important;
+  border-top: 2px solid #e2e8f0 !important;
+}
+
+body.pdv-layout-classico #modal-cancelar-item-carrinho .modal-footer-bar button {
+  background: #f1f5f9 !important;
+  border: 2px solid #cbd5e1 !important;
+  border-radius: 6px !important;
+  color: #0f172a !important;
+  font-weight: 800 !important;
+}
+
+/* --------------------------------------------------------------------------
+   4. MODAL F12: REIMPRESSÃO DE CUPOM (#modal-reimpressao-cupom-pdv)
+   -------------------------------------------------------------------------- */
+body.pdv-layout-classico #reimpressao-busca-input {
+  border: 2px solid #cbd5e1 !important;
+  border-radius: 6px !important;
+  background: #ffffff !important;
+  color: #0f172a !important;
+  font-weight: 700 !important;
+}
+
+body.pdv-layout-classico #reimpressao-busca-input:focus {
+  border-color: #0f172a !important;
+  box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.2) !important;
+}
+
+body.pdv-layout-classico .reimpressao-venda-card {
+  background: #ffffff !important;
+  border: 1.5px solid #e2e8f0 !important;
+  border-radius: 6px !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04) !important;
+  transition: all 0.12s ease !important;
+}
+
+body.pdv-layout-classico .reimpressao-venda-card:hover {
+  background: #f8fafc !important;
+  border-color: #0f172a !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+body.pdv-layout-classico .reimpressao-venda-card.selected {
+  background: #f8fafc !important;
+  border: 2px solid #0f172a !important;
+  box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.15) !important;
+}
+
+body.pdv-layout-classico .reimpressao-card-id {
+  color: #0f172a !important;
+  font-weight: 900 !important;
+}
+
+/* Botão Reimprimir Padronizado na Cor do Cabeçalho (#0f172a) */
+body.pdv-layout-classico .btn-reimprimir-cupom-action {
+  background: #0f172a !important;
+  border: 1.5px solid #334155 !important;
+  border-radius: 6px !important;
+  color: #ffffff !important;
+  font-weight: 800 !important;
+  transition: all 0.12s ease !important;
+}
+
+body.pdv-layout-classico .btn-reimprimir-cupom-action:hover {
+  background: #1e293b !important;
+  border-color: #475569 !important;
+}
+
+/* Foco do teclado em reimprimir */
+body.pdv-layout-classico .reimpressao-venda-card.selected .btn-reimprimir-cupom-action,
+body.pdv-layout-classico .btn-reimprimir-cupom-action.btn-focused {
+  box-shadow: 0 0 0 3px #0f172a, 0 4px 10px rgba(15, 23, 42, 0.4) !important;
+  border-color: #0f172a !important;
+  transform: scale(1.04) !important;
+}
+
+body.pdv-layout-classico #modal-reimpressao-cupom-pdv button[onclick*="fecharModalReimpressaoCupom"] {
+  background: #f1f5f9 !important;
+  border: 2px solid #cbd5e1 !important;
+  border-radius: 6px !important;
+  color: #0f172a !important;
+  font-weight: 800 !important;
+}
+
+/* --------------------------------------------------------------------------
+   5. MODAIS COMPLEMENTARES: F8 (DESCONTO), F7 (CORTESIA), F6 (CLUBE)
+   -------------------------------------------------------------------------- */
+body.pdv-layout-classico #modal-desconto-pdv .modal-content-box,
+body.pdv-layout-classico #modal-cortesia .modal-content-box,
+body.pdv-layout-classico #modal-clube-fidelidade .modal-content-box,
+body.pdv-layout-classico #modal-clube-fidelidade .clube-cpf-card {
+  border: 1.5px solid #cbd5e1 !important;
+  border-radius: 6px !important;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.2) !important;
+  background: #ffffff !important;
+}
+
+body.pdv-layout-classico #modal-clube-fidelidade .clube-cpf-header {
+  background: #0f172a !important;
+  border-bottom: 2px solid #1e293b !important;
+}
+
+body.pdv-layout-classico #modal-clube-fidelidade .clube-cpf-header h3 {
+  color: #ffffff !important;
+}
+
+body.pdv-layout-classico #modal-clube-fidelidade .clube-cpf-eyebrow {
+  color: #94a3b8 !important;
+}
+
+body.pdv-layout-classico #modal-clube-fidelidade .clube-cpf-icon {
+  background: #1e293b !important;
+  border: 1px solid #334155 !important;
+}
+
+body.pdv-layout-classico #modal-clube-fidelidade .clube-cpf-close {
+  background: #1e293b !important;
+  color: #ffffff !important;
+  border: 1px solid #334155 !important;
+  border-radius: 4px !important;
+}
+
+body.pdv-layout-classico #modal-clube-fidelidade .clube-cpf-close:hover {
+  background: #dc2626 !important;
+  border-color: #b91c1c !important;
+  color: #ffffff !important;
+}
+
+body.pdv-layout-classico #modal-desconto-pdv input,
+body.pdv-layout-classico #modal-cortesia input,
+body.pdv-layout-classico #modal-clube-fidelidade input {
+  border: 2px solid #cbd5e1 !important;
+  border-radius: 6px !important;
+  color: #0f172a !important;
+  font-weight: 800 !important;
+}
+
+body.pdv-layout-classico #modal-desconto-pdv input:focus,
+body.pdv-layout-classico #modal-cortesia input:focus,
+body.pdv-layout-classico #modal-clube-fidelidade input:focus {
+  border-color: #0f172a !important;
+  box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.2) !important;
+}
+
+body.pdv-layout-classico #modal-desconto-pdv .btn-primary-action,
+body.pdv-layout-classico #modal-cortesia .btn-primary-action,
+body.pdv-layout-classico #modal-clube-fidelidade .btn-primary-action,
+body.pdv-layout-classico #modal-clube-fidelidade .clube-cpf-submit {
+  background: #0f172a !important;
+  border: 2px solid #1e293b !important;
+  border-radius: 6px !important;
+  color: #ffffff !important;
+  font-weight: 800 !important;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.25) !important;
+}
+
+body.pdv-layout-classico #modal-desconto-pdv .btn-primary-action:hover,
+body.pdv-layout-classico #modal-cortesia .btn-primary-action:hover,
+body.pdv-layout-classico #modal-clube-fidelidade .btn-primary-action:hover,
+body.pdv-layout-classico #modal-clube-fidelidade .clube-cpf-submit:hover {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  transform: translateY(-1px) !important;
+}
+
+body.pdv-layout-classico #modal-clube-fidelidade .clube-cpf-remove {
+  background: #fff1f2 !important;
+  border: 2px solid #fecdd3 !important;
+  border-radius: 6px !important;
+  color: #dc2626 !important;
+  font-weight: 800 !important;
+}
+
+body.pdv-layout-classico #modal-clube-fidelidade .clube-cpf-remove:hover {
+  background: #dc2626 !important;
+  border-color: #b91c1c !important;
+  color: #ffffff !important;
+  transform: translateY(-1px) !important;
+}
+
+/* --------------------------------------------------------------------------
+   6. MODAL PERGUNTA CPF NA NOTA (NFC-e)
+   -------------------------------------------------------------------------- */
+body.pdv-layout-classico #modal-pergunta-cpf-nota .modal-content-box {
+  border: 1.5px solid #cbd5e1 !important;
+  border-radius: 6px !important;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.2) !important;
+  background: #ffffff !important;
+}
+
+body.pdv-layout-classico #modal-pergunta-cpf-nota input {
+  border: 2px solid #cbd5e1 !important;
+  border-radius: 6px !important;
+  color: #0f172a !important;
+  font-weight: 800 !important;
+}
+
+body.pdv-layout-classico #modal-pergunta-cpf-nota input:focus {
+  border-color: #0f172a !important;
+  box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.2) !important;
+}
+
+body.pdv-layout-classico #btn-cpf-nota-sim,
+body.pdv-layout-classico #btn-confirmar-cpf-nota-digitado {
+  background: #0f172a !important;
+  border: 2px solid #1e293b !important;
+  border-radius: 6px !important;
+  color: #ffffff !important;
+  font-weight: 800 !important;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.3) !important;
+}
+
+body.pdv-layout-classico #btn-cpf-nota-sim:hover,
+body.pdv-layout-classico #btn-confirmar-cpf-nota-digitado:hover {
+  background: #1e293b !important;
+}
+
+body.pdv-layout-classico #btn-cpf-nota-nao {
+  background: #64748b !important;
+  border: 2px solid #475569 !important;
+  border-radius: 6px !important;
+  color: #ffffff !important;
+  font-weight: 800 !important;
+}
+
+
+

@@ -1,0 +1,80 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAdmin() {
+      return request.auth != null && (
+        request.auth.token.email == 'dougnvds26@gmail.com'
+        || request.auth.token.email == 'admin@flowpdv.com.br'
+        || request.auth.token.email == 'contato@flowpdv.com.br'
+        || request.auth.token.admin == true
+      );
+    }
+
+    // Conta de maquina do PDV: a chave da licenca vira o e-mail de acesso, entao
+    // uma loja nunca consegue ler nem escrever no espaco da outra.
+    function emailDaLoja(chave) {
+      return 'loja_' + chave.lower() + '@pdv.flowpdv.com.br';
+    }
+
+    function isLoja(chave) {
+      return request.auth != null
+        && request.auth.token.email == emailDaLoja(chave);
+    }
+
+    // A loja mexe só no que é operação dela. Plano, vencimento, status e limite
+    // de terminais continuam sendo exclusividade do painel admin.
+    function soCamposDoPdv() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['terminaisAtivos', 'atualizadoEm', 'categorias', 'categoriasExcluidas', 'modulos'])
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['modulos'])
+          || soModulosOperacionais()
+        );
+    }
+
+    // Módulos cobrados (NFC-e, TEF, balança) não entram nesta lista: a loja não
+    // pode se liberar recurso pago pelo app do gestor.
+    function soModulosOperacionais() {
+      return resource.data.keys().hasAll(['modulos'])
+        && request.resource.data.modulos.diff(resource.data.modulos).affectedKeys()
+          .hasOnly(['validadeLotes', 'fiadoWhatsApp', 'comandasMesas', 'descontoMaximo']);
+    }
+
+    // O id do documento nem sempre e a chave da licenca; aceitamos os dois.
+    function isLojaDaLicenca(chave) {
+      return isLoja(chave)
+        || (resource != null && isLoja(resource.data.get('chaveLicenca', chave)));
+    }
+
+    match /licencas/{chave} {
+      allow get: if isAdmin() || isLojaDaLicenca(chave);
+      allow list: if isAdmin();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (isLojaDaLicenca(chave) && soCamposDoPdv());
+    }
+
+    match /backups_lojas/{chave} {
+      allow get, write: if isAdmin() || isLoja(chave);
+      allow list: if false;
+
+      match /partes/{parte} {
+        allow read, write: if isAdmin() || isLoja(chave);
+      }
+
+      match /movimentos/{movimento} {
+        allow read, write: if isAdmin() || isLoja(chave);
+      }
+    }
+
+    match /backups_adegas/{chave} {
+      allow get, write: if isAdmin() || isLoja(chave);
+      allow list: if false;
+    }
+
+    match /auditoria_lojas/{id} {
+      allow create: if isAdmin() || isLoja(request.resource.data.get('chaveLicenca', ''));
+      allow get, list, update, delete: if isAdmin();
+    }
+  }
+}

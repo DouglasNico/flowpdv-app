@@ -5,7 +5,7 @@
  */
 
 import { StorageService } from './storage.js';
-import { db, doc, collection, addDoc, getDocs, query, where, orderBy, limit } from './firebase-config.js';
+import { db, doc, collection, addDoc, getDocs, query, where, orderBy, limit, garantirSessaoLoja } from './firebase-config.js';
 
 export const AuditModule = {
   getChaveLicencaAtual() {
@@ -102,6 +102,7 @@ export const AuditModule = {
             if (info && info.hostname) payload.hostname = info.hostname;
           } catch(e) {}
         }
+        await garantirSessaoLoja(chaveLicenca, { deviceId: myDevId });
         await addDoc(collection(db, "auditoria_lojas"), payload);
       } catch (err) {
         console.warn('[AuditModule] Erro ao sincronizar log na nuvem (salvo localmente):', err);

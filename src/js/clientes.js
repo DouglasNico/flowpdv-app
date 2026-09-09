@@ -462,7 +462,7 @@ export const ClientesModule = {
       }
     } else {
       const novo = {
-        id: 'CLI-' + Date.now().toString().slice(-6),
+        id: 'CLI-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
         nome,
         telefone,
         cpfCnpj,
@@ -718,7 +718,8 @@ export const ClientesModule = {
 
     // Registrar no histórico de vendas/entradas do caixa
     const venda = {
-      id: 'REC-' + Date.now().toString().slice(-6),
+      id: 'REC-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+      numeroVenda: StorageService.getProximoNumeroVenda(),
       data: new Date().toISOString(),
       itens: [{ id: 'FIADO-REC', nome: `Quitação Fiado: ${c.nome}`, quantidade: 1, precoUnitario: valor }],
       subtotal: valor,
@@ -727,7 +728,7 @@ export const ClientesModule = {
       formaPagamento: formaPagto,
       valorPago: valor,
       troco: 0,
-      operador: window.AuthModule ? window.AuthModule.getUsuario().nome : 'Caixa'
+      operador: window.AuthModule ? window.AuthModule.getNomeOperador() : 'Caixa'
     };
 
     StorageService.saveVenda(venda);

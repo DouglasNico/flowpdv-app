@@ -38,6 +38,8 @@ export const AuthModule = {
       // Limpar campo de código de barras imediatamente
       const barcodeInput = document.getElementById('pdv-barcode-input');
       if (barcodeInput) barcodeInput.value = '';
+      const classicBarcodeInput = document.getElementById('classic-pdv-barcode-input');
+      if (classicBarcodeInput) classicBarcodeInput.value = '';
       this.abrirTelaLogin();
     }
 
@@ -73,11 +75,18 @@ export const AuthModule = {
   },
 
   getUsuario() {
-    return this.usuarioAtual || { id: 'USR-CAIXA1', nome: 'Operador Caixa', cargo: 'operador' };
+    return this.usuarioAtual || null;
+  },
+
+  getNomeOperador() {
+    const u = this.getUsuario();
+    return (u && u.nome) ? u.nome : 'Sem operador';
   },
 
   isGerente() {
-    return this.usuarioAtual && (this.usuarioAtual.cargo === 'gerente' || this.usuarioAtual.cargo === 'superadmin');
+    if (!this.usuarioAtual) return false;
+    const cargo = this.usuarioAtual.cargo;
+    return cargo === 'gerente' || cargo === 'superadmin' || cargo === 'admin';
   },
 
   isSuperAdmin() {
@@ -115,11 +124,12 @@ export const AuthModule = {
     const usuarios = StorageService.getUsuarios();
     const gerente = usuarios.find(u => u.cargo === 'gerente' && u.ativo !== false);
     if (gerente && gerente.pin) return String(gerente.pin).trim();
-    return localStorage.getItem('flowpdv_pin_gerente') || '1234';
+    return localStorage.getItem('flowpdv_pin_gerente') || '';
   },
 
   validarPinGerente(pin) {
     const pinStr = String(pin || '').trim();
+    if (!pinStr) return false;
     const pinMaster = localStorage.getItem('flowpdv_pin_gerente') || StorageService.getLicenca()?.pinGerente;
     if (pinMaster && pinStr === String(pinMaster).trim()) return true;
 
@@ -143,6 +153,8 @@ export const AuthModule = {
     // Limpar qualquer caractere que possa ter ido para o leitor de código de barras
     const barcodeInput = document.getElementById('pdv-barcode-input');
     if (barcodeInput) barcodeInput.value = '';
+    const classicBarcodeInput = document.getElementById('classic-pdv-barcode-input');
+    if (classicBarcodeInput) classicBarcodeInput.value = '';
 
     // Garantir foco imediato e persistente no campo de PIN
     this.focarPinLogin();
@@ -255,6 +267,13 @@ export const AuthModule = {
     const pinInput = document.getElementById('login-pin-input');
     const erroEl = document.getElementById('login-erro-msg');
     const pin = pinInput ? pinInput.value.trim() : '';
+    if (!pin) {
+      if (erroEl) {
+        erroEl.textContent = 'Digite o PIN para entrar.';
+        erroEl.style.display = 'block';
+      }
+      return;
+    }
 
     const usuarios = StorageService.getUsuarios();
     const u = usuarios.find(item => item.id === this.usuarioSelecionadoLoginId);
@@ -308,6 +327,8 @@ export const AuthModule = {
       // LIMPAR TOTALMENTE O CAMPO DE CÓDIGO DE BARRAS AO LOGAR
       const barcodeInput = document.getElementById('pdv-barcode-input');
       if (barcodeInput) barcodeInput.value = '';
+      const classicBarcodeInput = document.getElementById('classic-pdv-barcode-input');
+      if (classicBarcodeInput) classicBarcodeInput.value = '';
 
       if (window.LicencaModule && typeof window.LicencaModule.atualizarOperadorTerminalNuvem === 'function') {
         window.LicencaModule.atualizarOperadorTerminalNuvem(u.nome);
@@ -316,8 +337,13 @@ export const AuthModule = {
       setTimeout(() => {
         const bInput = document.getElementById('pdv-barcode-input');
         if (bInput) bInput.value = '';
+        const cInput = document.getElementById('classic-pdv-barcode-input');
+        if (cInput) cInput.value = '';
         if (window.PdvModule) window.PdvModule.focarInputLeitor();
-      }, 50);
+      }, 60);
+      setTimeout(() => {
+        if (window.PdvModule) window.PdvModule.focarInputLeitor();
+      }, 200);
 
       if (window.CaixaModule) window.CaixaModule.renderHistoricoVendasTurno();
       if (window.App && typeof window.App.showToast === 'function') {
@@ -351,22 +377,80 @@ export const AuthModule = {
     this.abrirTelaLogin();
   },
 
+  aplicarSessao(usuario) {
+    this.usuarioAtual = usuario;
+    sessionStorage.setItem('flowpdv_usuario_logado', JSON.stringify(usuario));
+    sessionStorage.removeItem('adega_usuario_logado');
+    this.atualizarHeaderUsuario();
+    if (window.App && typeof window.App.entrarPorPerfil === 'function') {
+      window.App.entrarPorPerfil(usuario);
+    }
+    if (window.PdvModule && typeof window.PdvModule.renderMiniDashboardTurno === 'function') {
+      window.PdvModule.renderMiniDashboardTurno();
+    }
+    if (window.EstoqueModule && typeof window.EstoqueModule.atualizarBotoesPermissaoGerente === 'function') {
+      window.EstoqueModule.atualizarBotoesPermissaoGerente();
+    }
+    if (window.App && typeof window.App.atualizarPermissoesUsuario === 'function') {
+      window.App.atualizarPermissoesUsuario();
+    }
+    if (window.CaixaModule) {
+      if (typeof window.CaixaModule.renderHistoricoTurnosFechados === 'function') {
+        window.CaixaModule.renderHistoricoTurnosFechados();
+      }
+      if (typeof window.CaixaModule.renderHistoricoVendasTurno === 'function') {
+        window.CaixaModule.renderHistoricoVendasTurno();
+      }
+    }
+    if (window.LicencaModule && typeof window.LicencaModule.atualizarOperadorTerminalNuvem === 'function') {
+      window.LicencaModule.atualizarOperadorTerminalNuvem(usuario.nome);
+    }
+  },
+
+  trocarUsuario(pin, cargoAlvo = 'gerente') {
+    const pinStr = String(pin || '').trim();
+    if (!pinStr) return { success: false, erro: 'Digite o PIN de acesso.' };
+
+    const usuarios = StorageService.getUsuarios();
+    const pinMaster = localStorage.getItem('flowpdv_pin_gerente') || StorageService.getLicenca()?.pinGerente;
+    const alvoGerente = cargoAlvo === 'gerente';
+
+    const candidatos = usuarios.filter(u => {
+      if (!u || u.ativo === false) return false;
+      if (alvoGerente) return u.cargo === 'gerente' || u.cargo === 'superadmin' || u.cargo === 'admin';
+      return u.cargo === 'operador';
+    });
+
+    const encontrado = candidatos.find(item => {
+      const pinUser = String(item.pin || '').trim();
+      if (pinUser && pinUser === pinStr) return true;
+      if (alvoGerente && pinMaster && pinStr === String(pinMaster).trim()) return true;
+      return false;
+    });
+
+    if (!encontrado) return { success: false, erro: 'PIN de acesso incorreto.' };
+
+    this.aplicarSessao(encontrado);
+    return { success: true, usuario: encontrado };
+  },
+
   atualizarHeaderUsuario() {
     const nameEl = document.getElementById('header-user-name');
     const roleEl = document.getElementById('header-user-role');
-    const masterTab = document.getElementById('nav-btn-master');
     const classicOperator = document.getElementById('classic-operator-name');
 
     const u = this.getUsuario();
-    if (nameEl) nameEl.textContent = u.nome;
-    if (classicOperator) classicOperator.textContent = `Operador: ${u.nome}`;
+    if (nameEl) nameEl.textContent = u ? u.nome : '—';
+    if (classicOperator) classicOperator.textContent = u ? `Operador: ${u.nome}` : 'Operador: —';
     if (roleEl) {
-      roleEl.textContent = u.cargo === 'gerente' ? 'Gerente' : 'Operador';
-      roleEl.className = `user-role-tag ${u.cargo}`;
+      const cargo = u ? u.cargo : 'operador';
+      roleEl.textContent = this.isGerente() ? 'Gerente' : 'Operador';
+      roleEl.className = `user-role-tag ${cargo}`;
     }
 
-    if (masterTab) {
-      masterTab.style.display = this.isSuperAdmin() ? 'flex' : 'none';
+    const classicBtnAdmin = document.getElementById('classic-btn-painel-gerente');
+    if (classicBtnAdmin) {
+      classicBtnAdmin.style.display = this.isGerente() ? 'inline-flex' : 'none';
     }
 
     // Atualizar telas que dependem de permissão
@@ -609,7 +693,7 @@ export const AuthModule = {
       }
     } else {
       const novo = {
-        id: 'USR-' + Date.now().toString().slice(-4),
+        id: 'USR-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
         nome,
         login: login || nome.toLowerCase().replace(/\s+/g, ''),
         pin,
@@ -648,7 +732,7 @@ export const AuthModule = {
     window.App.confirmarAcao({
       icone: '👥',
       titulo: 'Excluir Funcionário',
-      mensagem: `Tem certeza que deseja excluir o acesso de:<br><strong style="color: #0f172a; font-size: 15px; display: inline-block; margin: 6px 0;">"${u.nome}"</strong><br><span style="font-size: 12px; color: #64748b;">Login: ${u.login || '-'} (${u.perfil})</span>`,
+      mensagem: `Tem certeza que deseja excluir o acesso de:<br><strong style="color: #0f172a; font-size: 15px; display: inline-block; margin: 6px 0;">"${u.nome}"</strong><br><span style="font-size: 12px; color: #64748b;">Login: ${u.login || '-'} (${u.cargo ? (u.cargo.charAt(0).toUpperCase() + u.cargo.slice(1)) : 'Operador'})</span>`,
       textoConfirmar: '🗑️ Sim, Excluir [ENTER]',
       textoCancelar: 'Cancelar [ESC]',
       perigo: true,

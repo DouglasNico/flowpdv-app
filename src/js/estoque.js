@@ -697,10 +697,7 @@ export const EstoqueModule = {
   },
 
   parseMoedaBR(valor) {
-    if (typeof valor === 'number') return valor;
-    if (!valor) return 0;
-    const limpo = String(valor).replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, '');
-    return parseFloat(limpo) || 0;
+    return StorageService.parseMoedaBR(valor);
   },
 
   toggleGradeFracionada(forcarAberto = null) {
@@ -1487,7 +1484,7 @@ export const EstoqueModule = {
       }
 
       const novoProduto = {
-        id: 'PRD-' + Date.now().toString().slice(-4),
+        id: 'PRD-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
         codigoBarras: codFinal,
         nome: nome.toUpperCase(),
         atualizadoEm: new Date().toISOString(),
@@ -1639,14 +1636,24 @@ export const EstoqueModule = {
     }
 
     const estoqueAtual = Number(p.estoque) || 0;
+    let delta = 0;
     if (tipo === 'entrada') {
+      delta = qtd;
       p.estoque = estoqueAtual + qtd;
     } else if (tipo === 'perda') {
+      delta = -Math.min(estoqueAtual, qtd);
       p.estoque = Math.max(0, estoqueAtual - qtd);
     } else if (tipo === 'balanco') {
+      delta = qtd - estoqueAtual;
       p.estoque = qtd;
     }
     p.atualizadoEm = new Date().toISOString();
+    StorageService.registrarMovimentoEstoque({
+      produtoId: p.id,
+      delta,
+      origem: 'ajuste',
+      refId: tipo
+    });
 
     StorageService.saveProdutos(produtos);
     if (window.CloudSyncModule && typeof window.CloudSyncModule.enviarAlteracaoNuvem === 'function') {

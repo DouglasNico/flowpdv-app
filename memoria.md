@@ -56,9 +56,9 @@ Data: 2026-09-04
 
 ## Login e acesso por perfil
 
-- Operador deve entrar direto no PDV.
-- Gerente deve entrar direto na Gerencia.
-- Gerente usa F1 para abrir a Frente Caixa.
+- No Modo Clássico: Operador entra direto no PDV e Gerente entra direto na Gerência.
+- No Modo Moderno: Tanto Gerente quanto Operador abrem direto no Frente de Caixa F1 ('pdv').
+- Gerente pode navegar livremente para Gerência ou qualquer aba a qualquer momento.
 - Operador nao deve acessar outras abas; `trocarAba` bloqueia destinos diferentes de `pdv`.
 - Navegacao administrativa fica oculta para operador.
 - A licenca pendente/bloqueada deve continuar mostrando a tela de ativacao.

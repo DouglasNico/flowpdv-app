@@ -1,6 +1,6 @@
 {
   "name": "flowpdv",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "description": "FlowPDV - Sistema de Gestão Comercial e Ponto de Venda Ágil",
   "main": "main.js",
   "scripts": {
@@ -8,6 +8,8 @@
     "start": "npm run bundle && electron .",
     "build": "npm run bundle && electron-builder --win",
     "dist": "npm run build && powershell -Command \"Copy-Item 'C:/Users/User/AppData/Local/Temp/flowpdv_build/FlowPDV-Setup.exe' dist/ -Force; Copy-Item 'C:/Users/User/AppData/Local/Temp/flowpdv_build/latest.yml' dist/ -Force\"",
+    "release": "npm run bundle && electron-builder --win --publish always",
+    "test": "node test/run-tests.js",
     "watch": "esbuild src/js/app.js --bundle --outfile=src/js/bundle.js --format=iife --platform=browser --watch",
     "chrome": "start chrome index.html"
   },
@@ -45,7 +47,8 @@
       {
         "provider": "github",
         "owner": "DouglasNico",
-        "repo": "flowpdv"
+        "repo": "flowpdv",
+        "releaseType": "release"
       }
     ],
     "directories": {
@@ -74,7 +77,7 @@
           ]
         }
       ],
-      "icon": "src/assets/icon.png"
+      "icon": "src/assets/icon.ico"
     },
     "nsis": {
       "oneClick": true,

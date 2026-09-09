@@ -23702,6 +23702,131 @@
     }
   });
 
+  // src/js/merge-core.js
+  function chaveDoItem(item) {
+    if (!item) return null;
+    const id = item.id || item.codigoBarras;
+    return id ? String(id) : null;
+  }
+  function tempoDe(item) {
+    const raw = item && item.atualizadoEm;
+    if (!raw) return 0;
+    const t = new Date(raw).getTime();
+    return Number.isFinite(t) ? t : 0;
+  }
+  function mesclarItensPorId(baseA = [], baseB = []) {
+    const mapa = /* @__PURE__ */ new Map();
+    (baseA || []).forEach((item) => {
+      const key = chaveDoItem(item);
+      if (key) mapa.set(key, item);
+    });
+    (baseB || []).forEach((item) => {
+      const key = chaveDoItem(item);
+      if (!key) return;
+      const existente = mapa.get(key);
+      if (!existente) {
+        mapa.set(key, item);
+        return;
+      }
+      const tExistente = tempoDe(existente);
+      const tNovo = tempoDe(item);
+      if (tNovo >= tExistente) {
+        mapa.set(key, { ...existente, ...item });
+      } else {
+        mapa.set(key, { ...item, ...existente });
+      }
+    });
+    return Array.from(mapa.values());
+  }
+  function mesclarComandas(nuvem = [], local = []) {
+    const mapa = /* @__PURE__ */ new Map();
+    [...nuvem || [], ...local || []].forEach((item) => {
+      const key = chaveDoItem(item);
+      if (!key) return;
+      const existente = mapa.get(key);
+      if (!existente || tempoDe(item) >= tempoDe(existente)) {
+        mapa.set(key, item);
+      }
+    });
+    return Array.from(mapa.values());
+  }
+  function normalizarMovimentos(raw) {
+    if (!raw) return [];
+    const lista = Array.isArray(raw) ? raw : typeof raw === "object" ? Object.values(raw) : [];
+    return lista.filter((m) => m && m.id);
+  }
+  function mapearMovimentosPorId(lista) {
+    const mapa = {};
+    (lista || []).forEach((m) => {
+      if (m && m.id) mapa[m.id] = m;
+    });
+    return mapa;
+  }
+  function consolidarProdutosComMovimentos({
+    produtosNuvem = [],
+    produtosLocais = [],
+    movimentosNuvem = [],
+    movimentosLocais = []
+  } = {}) {
+    const catalogo = mesclarItensPorId(produtosNuvem, produtosLocais);
+    const mapaLocal = /* @__PURE__ */ new Map();
+    (produtosLocais || []).forEach((item) => {
+      if (item && item.id) mapaLocal.set(String(item.id), item);
+    });
+    const produtos = catalogo.map((merged) => {
+      const local = mapaLocal.get(String(merged.id));
+      if (!local) return merged;
+      return { ...merged, estoque: parseFloat(local.estoque) || 0 };
+    });
+    const idsConhecidos = new Set((movimentosLocais || []).map((m) => m && m.id).filter(Boolean));
+    const novosMovimentos = normalizarMovimentos(movimentosNuvem).filter((m) => !idsConhecidos.has(m.id));
+    novosMovimentos.forEach((mov) => {
+      const produto = produtos.find(
+        (p) => String(p.id) === String(mov.produtoId) || String(p.codigoBarras || "") === String(mov.produtoId)
+      );
+      if (!produto || produto.controlarEstoque === false) return;
+      const eraLocal = mapaLocal.has(String(produto.id));
+      if (!eraLocal) {
+        const saldoDoCatalogo = new Date(produto.atualizadoEm || 0).getTime();
+        const dataDoMovimento = new Date(mov.at || 0).getTime();
+        if (!(dataDoMovimento > saldoDoCatalogo)) return;
+      }
+      produto.estoque = Math.max(0, (parseFloat(produto.estoque) || 0) + (parseFloat(mov.delta) || 0));
+      if (mov.at) produto.atualizadoEm = mov.at;
+    });
+    return { produtos, novosMovimentos };
+  }
+  function dividirEmLotes(lista, tamanhoLote) {
+    const itens = Array.isArray(lista) ? lista : [];
+    const tamanho = Math.max(1, parseInt(tamanhoLote, 10) || 1);
+    const lotes = [];
+    for (let i = 0; i < itens.length; i += tamanho) {
+      lotes.push(itens.slice(i, i + tamanho));
+    }
+    return lotes;
+  }
+  function carimbarAlterados(listaNova, listaAnterior, agora = (/* @__PURE__ */ new Date()).toISOString()) {
+    const anteriores = /* @__PURE__ */ new Map();
+    (listaAnterior || []).forEach((item) => {
+      const key = chaveDoItem(item);
+      if (key) anteriores.set(key, item);
+    });
+    return (listaNova || []).map((item) => {
+      const key = chaveDoItem(item);
+      if (!key) return item;
+      const antigo = anteriores.get(key);
+      if (!antigo) return { ...item, atualizadoEm: item.atualizadoEm || agora };
+      const semCarimbo = (obj) => {
+        const { atualizadoEm, ...resto } = obj || {};
+        return JSON.stringify(resto);
+      };
+      if (semCarimbo(antigo) === semCarimbo(item)) {
+        return { ...item, atualizadoEm: antigo.atualizadoEm || item.atualizadoEm };
+      }
+      return { ...item, atualizadoEm: agora };
+    });
+  }
+
   // src/js/storage.js
   var StorageService = {
     init() {
@@ -23715,7 +23840,19 @@
       if (window.AuthModule && typeof window.AuthModule.isGerente === "function") {
         return window.AuthModule.isGerente();
       }
-      return true;
+      return false;
+    },
+    parseMoedaBR(valor) {
+      if (typeof valor === "number") return isNaN(valor) ? 0 : valor;
+      if (!valor) return 0;
+      let str = String(valor).trim();
+      if (str.includes(",") && str.includes(".")) {
+        str = str.replace(/\./g, "").replace(",", ".");
+      } else if (str.includes(",")) {
+        str = str.replace(",", ".");
+      }
+      const limpo = str.replace(/[^\d.-]/g, "");
+      return parseFloat(limpo) || 0;
     },
     formatarMoeda(valor) {
       const num = parseFloat(valor) || 0;
@@ -23918,19 +24055,54 @@
     // Vendas
     getVendas() {
       const saved = localStorage.getItem("adega_vendas");
-      return saved ? JSON.parse(saved) : [];
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) return parsed;
+        } catch (e) {
+          console.warn("\u26A0\uFE0F Erro ao ler vendas do localStorage:", e);
+        }
+      }
+      return [];
+    },
+    getProximoNumeroVenda() {
+      let ultimo = parseInt(localStorage.getItem("flowpdv_ultimo_numero_venda"), 10);
+      if (isNaN(ultimo) || ultimo <= 0) {
+        const vendas = this.getVendas();
+        const maxExistente = vendas.reduce((max, v) => {
+          const num = parseInt(v.numeroVenda, 10);
+          return !isNaN(num) && num > max ? num : max;
+        }, 0);
+        ultimo = Math.max(vendas.length, maxExistente);
+      }
+      const proximo = ultimo + 1;
+      localStorage.setItem("flowpdv_ultimo_numero_venda", String(proximo));
+      return proximo;
     },
     saveVenda(venda) {
       const vendas = this.getVendas();
       vendas.unshift(venda);
       localStorage.setItem("adega_vendas", JSON.stringify(vendas));
+      const turno = this.getTurnoAtual();
+      if (turno && venda.id) {
+        turno.vendasIds = turno.vendasIds || [];
+        turno.vendasIds.push(venda.id);
+        this.salvarTurno(turno);
+      }
       const produtos = this.getProdutos();
-      venda.itens.forEach((item) => {
+      (venda.itens || []).forEach((item) => {
         const prod = produtos.find((p) => p.id === item.id || p.codigoBarras === item.id);
         if (prod && prod.controlarEstoque !== false) {
           const fator = item.isFardo ? prod.fatorConversao || 1 : 1;
-          prod.estoque = Math.max(0, (parseInt(prod.estoque, 10) || 0) - item.quantidade * fator);
+          const delta = -((parseFloat(item.quantidade) || 0) * fator);
+          prod.estoque = Math.max(0, (parseFloat(prod.estoque) || 0) + delta);
           prod.atualizadoEm = (/* @__PURE__ */ new Date()).toISOString();
+          this.registrarMovimentoEstoque({
+            produtoId: prod.id,
+            delta,
+            origem: "venda",
+            refId: venda.id
+          });
         }
       });
       this.saveProdutos(produtos);
@@ -23991,8 +24163,13 @@
     getTurnoAtual() {
       const saved = localStorage.getItem("adega_turno_atual");
       if (!saved) return null;
-      const turno = JSON.parse(saved);
-      return turno.status === "aberto" ? turno : null;
+      try {
+        const turno = JSON.parse(saved);
+        return turno && turno.status === "aberto" ? turno : null;
+      } catch (e) {
+        console.warn("\u26A0\uFE0F Erro ao ler turno atual do localStorage:", e);
+        return null;
+      }
     },
     salvarTurno(turno) {
       localStorage.setItem("adega_turno_atual", JSON.stringify(turno));
@@ -24031,7 +24208,14 @@
     // Clientes & Fiado
     getClientes() {
       const saved = localStorage.getItem("adega_clientes");
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) return parsed;
+        } catch (e) {
+          console.warn("\u26A0\uFE0F Erro ao ler clientes do localStorage:", e);
+        }
+      }
       const defaults = [];
       this.saveClientes(defaults);
       return defaults;
@@ -24135,7 +24319,7 @@
         }
       }
       return {
-        habilitado: true,
+        habilitado: false,
         provedor: "simulador",
         tempoLimiteSegundos: 45,
         imprimirComprovanteTef: true,
@@ -24183,6 +24367,21 @@
         try {
           const parsed = JSON.parse(saved);
           if (parsed && parsed.chaveLicenca && parsed.chaveLicenca.trim().length > 0) {
+            let updated = false;
+            if (parsed.chavePixSuporte === "19999997777" || !parsed.chavePixSuporte) {
+              parsed.chavePixSuporte = "19989632127";
+              updated = true;
+            }
+            if (parsed.whatsappSuporte === "19999997777" || parsed.whatsappSuporte === "(19) 99999-7777") {
+              parsed.whatsappSuporte = "(19) 98963-2127";
+              updated = true;
+            }
+            if (updated) {
+              try {
+                localStorage.setItem("adega_licenca", JSON.stringify(parsed));
+              } catch (e) {
+              }
+            }
             return parsed;
           }
         } catch (e) {
@@ -24198,7 +24397,7 @@
         dataExpiracao: "",
         diasTolerancia: 2,
         valorMensal: 89.9,
-        chavePixSuporte: "19999997777",
+        chavePixSuporte: "19989632127",
         whatsappSuporte: "(19) 98963-2127"
       };
       return defaults;
@@ -24216,23 +24415,17 @@
         } catch (e) {
         }
       }
-      const pinGerente = localStorage.getItem("flowpdv_pin_gerente") || this.getLicenca()?.pinGerente || "1234";
+      const pinGerente = String(
+        localStorage.getItem("flowpdv_pin_gerente") || this.getLicenca()?.pinGerente || ""
+      ).trim();
+      if (!pinGerente) return [];
       const defaults = [
         {
           id: "USR-ADMIN",
           nome: "Dono / Gerente",
           login: "admin",
-          pin: String(pinGerente).trim(),
+          pin: pinGerente,
           cargo: "gerente",
-          ativo: true,
-          criadoEm: (/* @__PURE__ */ new Date()).toISOString()
-        },
-        {
-          id: "USR-CAIXA1",
-          nome: "Operador Caixa",
-          login: "caixa",
-          pin: "1234",
-          cargo: "operador",
           ativo: true,
           criadoEm: (/* @__PURE__ */ new Date()).toISOString()
         }
@@ -24242,6 +24435,45 @@
     },
     saveUsuarios(usuarios) {
       localStorage.setItem("flowpdv_usuarios", JSON.stringify(usuarios));
+    },
+    getMovimentosEstoque() {
+      const saved = localStorage.getItem("flowpdv_estoque_movimentos");
+      if (!saved) return [];
+      try {
+        const parsed = JSON.parse(saved);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (e) {
+        return [];
+      }
+    },
+    saveMovimentosEstoque(movimentos) {
+      const lista = Array.isArray(movimentos) ? movimentos.slice(-2500) : [];
+      try {
+        localStorage.setItem("flowpdv_estoque_movimentos", JSON.stringify(lista));
+      } catch (e) {
+        try {
+          localStorage.setItem("flowpdv_estoque_movimentos", JSON.stringify(lista.slice(-800)));
+        } catch (err) {
+          console.warn("[Storage] Sem espa\xE7o para movimentos de estoque.", err);
+        }
+      }
+    },
+    registrarMovimentoEstoque({ produtoId, delta, origem, refId }) {
+      const qtd = parseFloat(delta);
+      if (!produtoId || !qtd) return null;
+      const mov = {
+        id: "MOV-" + Date.now() + "-" + Math.random().toString(36).substring(2, 8),
+        produtoId: String(produtoId),
+        delta: qtd,
+        origem: origem || "ajuste",
+        refId: refId || "",
+        terminalId: this.getDeviceId(),
+        at: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      const lista = this.getMovimentosEstoque();
+      lista.push(mov);
+      this.saveMovimentosEstoque(lista);
+      return mov;
     },
     // Mesas e Comandas
     getComandas() {
@@ -24257,7 +24489,9 @@
     },
     saveComandas(comandas) {
       if (!Array.isArray(comandas)) return;
-      localStorage.setItem("flowpdv_comandas_mesas", JSON.stringify(comandas));
+      const carimbadas = carimbarAlterados(comandas, this.getComandas());
+      localStorage.setItem("flowpdv_comandas_mesas", JSON.stringify(carimbadas));
+      return carimbadas;
     },
     // Produtos Padrão
     getDefaultProdutos() {
@@ -24294,28 +24528,49 @@
       URL.revokeObjectURL(url);
       return true;
     },
+    // Chaves do localStorage que pertencem à loja e não podem sobreviver a uma
+    // troca de licença. O device id fica de fora: ele identifica o computador.
+    CHAVES_DA_LOJA: [
+      "adega_produtos",
+      "adega_produtos_backup_seguranca",
+      "adega_produtos_excluidos_ids",
+      "flowpdv_estoque_movimentos",
+      "adega_vendas",
+      "flowpdv_ultimo_numero_venda",
+      "adega_clientes",
+      "flowpdv_contas_pagar",
+      "adega_turno_atual",
+      "adega_turnos_historico",
+      "adega_turnos_excluidos_ids",
+      "flowpdv_comandas_mesas",
+      "flowpdv_usuarios",
+      "flowpdv_categorias_loja",
+      "adega_categorias_excluidas",
+      "flowpdv_pin_gerente",
+      "flowpdv_modulos_licenca",
+      "flowpdv_ramo_licenca",
+      "adega_config",
+      "flowpdv_fiscal_config",
+      "flowpdv_tef_config",
+      "flowpdv_balanca_config",
+      "flowpdv_ultimo_backup_data",
+      "flowpdv_ultimo_backup_timestamp",
+      "flowpdv_ultimo_backup_info",
+      "flowpdv_ultimo_sync_cloud",
+      "flowpdv_partes_manifesto",
+      "flowpdv_partes_hash",
+      "flowpdv_movimentos_enviados",
+      "flowpdv_ultimo_mov_sync"
+    ],
+    PREFIXOS_DA_LOJA: ["flowpdv_logs_auditoria_", "flowpdv_cache_", "flowpdv_master_"],
     // Limpeza de Isolamento Multi-Tenant ao Trocar de Empresa/Licença
     limparDadosLocaisParaNovaEmpresa(novaLic) {
-      localStorage.removeItem("adega_produtos");
-      localStorage.removeItem("adega_produtos_backup_seguranca");
-      localStorage.removeItem("adega_produtos_excluidos_ids");
-      localStorage.removeItem("adega_vendas");
-      localStorage.removeItem("adega_clientes");
-      localStorage.removeItem("flowpdv_contas_pagar");
-      localStorage.removeItem("adega_turno_atual");
-      localStorage.removeItem("adega_turnos_historico");
-      localStorage.removeItem("adega_turnos_excluidos_ids");
-      localStorage.removeItem("flowpdv_usuarios");
-      localStorage.removeItem("flowpdv_categorias_loja");
-      localStorage.removeItem("flowpdv_pin_gerente");
+      this.CHAVES_DA_LOJA.forEach((chave) => localStorage.removeItem(chave));
+      Object.keys(localStorage).filter((chave) => this.PREFIXOS_DA_LOJA.some((prefixo) => chave.startsWith(prefixo))).forEach((chave) => localStorage.removeItem(chave));
       sessionStorage.removeItem("flowpdv_usuario_logado");
       if (window.AuthModule) {
         window.AuthModule.usuarioAtual = null;
       }
-      localStorage.removeItem("flowpdv_ultimo_backup_data");
-      localStorage.removeItem("flowpdv_ultimo_backup_timestamp");
-      localStorage.removeItem("flowpdv_ultimo_backup_info");
-      localStorage.removeItem("flowpdv_config");
       if (novaLic) {
         this.saveLicenca(novaLic);
         if (Array.isArray(novaLic.categorias) && novaLic.categorias.length > 0) {
@@ -24376,6 +24631,8 @@
       } else {
         const barcodeInput = document.getElementById("pdv-barcode-input");
         if (barcodeInput) barcodeInput.value = "";
+        const classicBarcodeInput = document.getElementById("classic-pdv-barcode-input");
+        if (classicBarcodeInput) classicBarcodeInput.value = "";
         this.abrirTelaLogin();
       }
       this.bindListenerTecladoLogin();
@@ -24402,10 +24659,16 @@
       });
     },
     getUsuario() {
-      return this.usuarioAtual || { id: "USR-CAIXA1", nome: "Operador Caixa", cargo: "operador" };
+      return this.usuarioAtual || null;
+    },
+    getNomeOperador() {
+      const u = this.getUsuario();
+      return u && u.nome ? u.nome : "Sem operador";
     },
     isGerente() {
-      return this.usuarioAtual && (this.usuarioAtual.cargo === "gerente" || this.usuarioAtual.cargo === "superadmin");
+      if (!this.usuarioAtual) return false;
+      const cargo = this.usuarioAtual.cargo;
+      return cargo === "gerente" || cargo === "superadmin" || cargo === "admin";
     },
     isSuperAdmin() {
       return this.usuarioAtual && this.usuarioAtual.cargo === "superadmin";
@@ -24436,10 +24699,11 @@
       const usuarios = StorageService.getUsuarios();
       const gerente = usuarios.find((u) => u.cargo === "gerente" && u.ativo !== false);
       if (gerente && gerente.pin) return String(gerente.pin).trim();
-      return localStorage.getItem("flowpdv_pin_gerente") || "1234";
+      return localStorage.getItem("flowpdv_pin_gerente") || "";
     },
     validarPinGerente(pin) {
       const pinStr = String(pin || "").trim();
+      if (!pinStr) return false;
       const pinMaster = localStorage.getItem("flowpdv_pin_gerente") || StorageService.getLicenca()?.pinGerente;
       if (pinMaster && pinStr === String(pinMaster).trim()) return true;
       const usuarios = StorageService.getUsuarios();
@@ -24457,6 +24721,8 @@
       this.limparPinLogin();
       const barcodeInput = document.getElementById("pdv-barcode-input");
       if (barcodeInput) barcodeInput.value = "";
+      const classicBarcodeInput = document.getElementById("classic-pdv-barcode-input");
+      if (classicBarcodeInput) classicBarcodeInput.value = "";
       this.focarPinLogin();
     },
     focarPinLogin() {
@@ -24551,6 +24817,13 @@
       const pinInput = document.getElementById("login-pin-input");
       const erroEl = document.getElementById("login-erro-msg");
       const pin = pinInput ? pinInput.value.trim() : "";
+      if (!pin) {
+        if (erroEl) {
+          erroEl.textContent = "Digite o PIN para entrar.";
+          erroEl.style.display = "block";
+        }
+        return;
+      }
       const usuarios = StorageService.getUsuarios();
       const u = usuarios.find((item) => item.id === this.usuarioSelecionadoLoginId);
       if (!u) {
@@ -24593,14 +24866,21 @@
         }
         const barcodeInput = document.getElementById("pdv-barcode-input");
         if (barcodeInput) barcodeInput.value = "";
+        const classicBarcodeInput = document.getElementById("classic-pdv-barcode-input");
+        if (classicBarcodeInput) classicBarcodeInput.value = "";
         if (window.LicencaModule && typeof window.LicencaModule.atualizarOperadorTerminalNuvem === "function") {
           window.LicencaModule.atualizarOperadorTerminalNuvem(u.nome);
         }
         setTimeout(() => {
           const bInput = document.getElementById("pdv-barcode-input");
           if (bInput) bInput.value = "";
+          const cInput = document.getElementById("classic-pdv-barcode-input");
+          if (cInput) cInput.value = "";
           if (window.PdvModule) window.PdvModule.focarInputLeitor();
-        }, 50);
+        }, 60);
+        setTimeout(() => {
+          if (window.PdvModule) window.PdvModule.focarInputLeitor();
+        }, 200);
         if (window.CaixaModule) window.CaixaModule.renderHistoricoVendasTurno();
         if (window.App && typeof window.App.showToast === "function") {
           window.App.showToast(`\u{1F7E2} Bem-vindo(a), ${u.nome}!`, "success");
@@ -24630,20 +24910,71 @@
     trocarOperador() {
       this.abrirTelaLogin();
     },
+    aplicarSessao(usuario) {
+      this.usuarioAtual = usuario;
+      sessionStorage.setItem("flowpdv_usuario_logado", JSON.stringify(usuario));
+      sessionStorage.removeItem("adega_usuario_logado");
+      this.atualizarHeaderUsuario();
+      if (window.App && typeof window.App.entrarPorPerfil === "function") {
+        window.App.entrarPorPerfil(usuario);
+      }
+      if (window.PdvModule && typeof window.PdvModule.renderMiniDashboardTurno === "function") {
+        window.PdvModule.renderMiniDashboardTurno();
+      }
+      if (window.EstoqueModule && typeof window.EstoqueModule.atualizarBotoesPermissaoGerente === "function") {
+        window.EstoqueModule.atualizarBotoesPermissaoGerente();
+      }
+      if (window.App && typeof window.App.atualizarPermissoesUsuario === "function") {
+        window.App.atualizarPermissoesUsuario();
+      }
+      if (window.CaixaModule) {
+        if (typeof window.CaixaModule.renderHistoricoTurnosFechados === "function") {
+          window.CaixaModule.renderHistoricoTurnosFechados();
+        }
+        if (typeof window.CaixaModule.renderHistoricoVendasTurno === "function") {
+          window.CaixaModule.renderHistoricoVendasTurno();
+        }
+      }
+      if (window.LicencaModule && typeof window.LicencaModule.atualizarOperadorTerminalNuvem === "function") {
+        window.LicencaModule.atualizarOperadorTerminalNuvem(usuario.nome);
+      }
+    },
+    trocarUsuario(pin, cargoAlvo = "gerente") {
+      const pinStr = String(pin || "").trim();
+      if (!pinStr) return { success: false, erro: "Digite o PIN de acesso." };
+      const usuarios = StorageService.getUsuarios();
+      const pinMaster = localStorage.getItem("flowpdv_pin_gerente") || StorageService.getLicenca()?.pinGerente;
+      const alvoGerente = cargoAlvo === "gerente";
+      const candidatos = usuarios.filter((u) => {
+        if (!u || u.ativo === false) return false;
+        if (alvoGerente) return u.cargo === "gerente" || u.cargo === "superadmin" || u.cargo === "admin";
+        return u.cargo === "operador";
+      });
+      const encontrado = candidatos.find((item) => {
+        const pinUser = String(item.pin || "").trim();
+        if (pinUser && pinUser === pinStr) return true;
+        if (alvoGerente && pinMaster && pinStr === String(pinMaster).trim()) return true;
+        return false;
+      });
+      if (!encontrado) return { success: false, erro: "PIN de acesso incorreto." };
+      this.aplicarSessao(encontrado);
+      return { success: true, usuario: encontrado };
+    },
     atualizarHeaderUsuario() {
       const nameEl = document.getElementById("header-user-name");
       const roleEl = document.getElementById("header-user-role");
-      const masterTab = document.getElementById("nav-btn-master");
       const classicOperator = document.getElementById("classic-operator-name");
       const u = this.getUsuario();
-      if (nameEl) nameEl.textContent = u.nome;
-      if (classicOperator) classicOperator.textContent = `Operador: ${u.nome}`;
+      if (nameEl) nameEl.textContent = u ? u.nome : "\u2014";
+      if (classicOperator) classicOperator.textContent = u ? `Operador: ${u.nome}` : "Operador: \u2014";
       if (roleEl) {
-        roleEl.textContent = u.cargo === "gerente" ? "Gerente" : "Operador";
-        roleEl.className = `user-role-tag ${u.cargo}`;
+        const cargo = u ? u.cargo : "operador";
+        roleEl.textContent = this.isGerente() ? "Gerente" : "Operador";
+        roleEl.className = `user-role-tag ${cargo}`;
       }
-      if (masterTab) {
-        masterTab.style.display = this.isSuperAdmin() ? "flex" : "none";
+      const classicBtnAdmin = document.getElementById("classic-btn-painel-gerente");
+      if (classicBtnAdmin) {
+        classicBtnAdmin.style.display = this.isGerente() ? "inline-flex" : "none";
       }
       if (window.CaixaModule && typeof window.CaixaModule.renderHistoricoVendasTurno === "function") {
         window.CaixaModule.renderHistoricoVendasTurno();
@@ -24861,7 +25192,7 @@
         }
       } else {
         const novo = {
-          id: "USR-" + Date.now().toString().slice(-4),
+          id: "USR-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
           nome,
           login: login || nome.toLowerCase().replace(/\s+/g, ""),
           pin,
@@ -24895,7 +25226,7 @@
       window.App.confirmarAcao({
         icone: "\u{1F465}",
         titulo: "Excluir Funcion\xE1rio",
-        mensagem: `Tem certeza que deseja excluir o acesso de:<br><strong style="color: #0f172a; font-size: 15px; display: inline-block; margin: 6px 0;">"${u.nome}"</strong><br><span style="font-size: 12px; color: #64748b;">Login: ${u.login || "-"} (${u.perfil})</span>`,
+        mensagem: `Tem certeza que deseja excluir o acesso de:<br><strong style="color: #0f172a; font-size: 15px; display: inline-block; margin: 6px 0;">"${u.nome}"</strong><br><span style="font-size: 12px; color: #64748b;">Login: ${u.login || "-"} (${u.cargo ? u.cargo.charAt(0).toUpperCase() + u.cargo.slice(1) : "Operador"})</span>`,
         textoConfirmar: "\u{1F5D1}\uFE0F Sim, Excluir [ENTER]",
         textoCancelar: "Cancelar [ESC]",
         perigo: true,
@@ -25002,9 +25333,14 @@
         ` : `
           <div class="text-center bold">CUPOM N\xC3O FISCAL</div>
         `}
-        <div>Venda: #${venda.id}</div>
+        <div>Venda: #${venda.numeroVenda ? String(venda.numeroVenda).padStart(6, "0") : (venda.id || "").slice(-6)}</div>
         <div>Data: ${new Date(venda.data).toLocaleString("pt-BR")}</div>
         <div>Operador: ${venda.operador || "Caixa"}</div>
+        ${venda.cpfCliente ? `
+          <div class="bold" style="font-size: 10.5px; margin-top: 2px;">CONSUMIDOR CPF: ${venda.cpfCliente}</div>
+        ` : isNfce ? `
+          <div style="font-size: 9.5px; margin-top: 2px; color: #444;">CONSUMIDOR N\xC3O IDENTIFICADO</div>
+        ` : ""}
         <div class="divider"></div>
 
         <table class="table-items">
@@ -25334,7 +25670,7 @@
         <div class="meta-grid">
           <div class="meta-item">
             <label>N\xBA da Venda</label>
-            <span>#${venda.id}</span>
+            <span>#${venda.numeroVenda ? String(venda.numeroVenda).padStart(6, "0") : (venda.id || "").slice(-6)}</span>
           </div>
           <div class="meta-item">
             <label>Data / Hora</label>
@@ -25739,6 +26075,10 @@
     var _a;
     return (_a = getDefaults()) === null || _a === void 0 ? void 0 : _a.config;
   };
+  var getExperimentalSetting = (name5) => {
+    var _a;
+    return (_a = getDefaults()) === null || _a === void 0 ? void 0 : _a[`_${name5}`];
+  };
   var Deferred = class {
     constructor() {
       this.reject = () => {
@@ -25849,12 +26189,12 @@
     return { created, element: parentDiv };
   }
   var previouslyDismissed = false;
-  function updateEmulatorBanner(name3, isRunningEmulator) {
-    if (typeof window === "undefined" || typeof document === "undefined" || !isCloudWorkstation(window.location.host) || emulatorStatus[name3] === isRunningEmulator || emulatorStatus[name3] || // If already set to use emulator, can't go back to prod.
+  function updateEmulatorBanner(name5, isRunningEmulator) {
+    if (typeof window === "undefined" || typeof document === "undefined" || !isCloudWorkstation(window.location.host) || emulatorStatus[name5] === isRunningEmulator || emulatorStatus[name5] || // If already set to use emulator, can't go back to prod.
     previouslyDismissed) {
       return;
     }
-    emulatorStatus[name3] = isRunningEmulator;
+    emulatorStatus[name5] = isRunningEmulator;
     function prefixedId(id) {
       return `__firebase__banner__${id}`;
     }
@@ -25958,6 +26298,11 @@
       return "";
     }
   }
+  function isMobileCordova() {
+    return typeof window !== "undefined" && // @ts-ignore Setting up an broadly applicable index signature for Window
+    // just to deal with this case would probably be a bad idea.
+    !!(window["cordova"] || window["phonegap"] || window["PhoneGap"]) && /ios|iphone|ipod|ipad|android|blackberry|iemobile/i.test(getUA());
+  }
   function isNode() {
     var _a;
     const forceEnvironment = (_a = getDefaults()) === null || _a === void 0 ? void 0 : _a.forceEnvironment;
@@ -25971,6 +26316,20 @@
     } catch (e) {
       return false;
     }
+  }
+  function isCloudflareWorker() {
+    return typeof navigator !== "undefined" && navigator.userAgent === "Cloudflare-Workers";
+  }
+  function isBrowserExtension() {
+    const runtime = typeof chrome === "object" ? chrome.runtime : typeof browser === "object" ? browser.runtime : void 0;
+    return typeof runtime === "object" && runtime.id !== void 0;
+  }
+  function isReactNative() {
+    return typeof navigator === "object" && navigator["product"] === "ReactNative";
+  }
+  function isIE() {
+    const ua = getUA();
+    return ua.indexOf("MSIE ") >= 0 || ua.indexOf("Trident/") >= 0;
   }
   function isSafari() {
     return !isNode() && !!navigator.userAgent && navigator.userAgent.includes("Safari") && !navigator.userAgent.includes("Chrome");
@@ -26043,6 +26402,14 @@
     });
   }
   var PATTERN = /\{\$([^}]+)}/g;
+  function isEmpty(obj) {
+    for (const key in obj) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
+        return false;
+      }
+    }
+    return true;
+  }
   function deepEqual(a, b) {
     if (a === b) {
       return true;
@@ -26073,6 +26440,191 @@
   function isObject(thing) {
     return thing !== null && typeof thing === "object";
   }
+  function querystring(querystringParams) {
+    const params = [];
+    for (const [key, value] of Object.entries(querystringParams)) {
+      if (Array.isArray(value)) {
+        value.forEach((arrayVal) => {
+          params.push(encodeURIComponent(key) + "=" + encodeURIComponent(arrayVal));
+        });
+      } else {
+        params.push(encodeURIComponent(key) + "=" + encodeURIComponent(value));
+      }
+    }
+    return params.length ? "&" + params.join("&") : "";
+  }
+  function querystringDecode(querystring2) {
+    const obj = {};
+    const tokens = querystring2.replace(/^\?/, "").split("&");
+    tokens.forEach((token) => {
+      if (token) {
+        const [key, value] = token.split("=");
+        obj[decodeURIComponent(key)] = decodeURIComponent(value);
+      }
+    });
+    return obj;
+  }
+  function extractQuerystring(url) {
+    const queryStart = url.indexOf("?");
+    if (!queryStart) {
+      return "";
+    }
+    const fragmentStart = url.indexOf("#", queryStart);
+    return url.substring(queryStart, fragmentStart > 0 ? fragmentStart : void 0);
+  }
+  function createSubscribe(executor, onNoObservers) {
+    const proxy = new ObserverProxy(executor, onNoObservers);
+    return proxy.subscribe.bind(proxy);
+  }
+  var ObserverProxy = class {
+    /**
+     * @param executor Function which can make calls to a single Observer
+     *     as a proxy.
+     * @param onNoObservers Callback when count of Observers goes to zero.
+     */
+    constructor(executor, onNoObservers) {
+      this.observers = [];
+      this.unsubscribes = [];
+      this.observerCount = 0;
+      this.task = Promise.resolve();
+      this.finalized = false;
+      this.onNoObservers = onNoObservers;
+      this.task.then(() => {
+        executor(this);
+      }).catch((e) => {
+        this.error(e);
+      });
+    }
+    next(value) {
+      this.forEachObserver((observer) => {
+        observer.next(value);
+      });
+    }
+    error(error) {
+      this.forEachObserver((observer) => {
+        observer.error(error);
+      });
+      this.close(error);
+    }
+    complete() {
+      this.forEachObserver((observer) => {
+        observer.complete();
+      });
+      this.close();
+    }
+    /**
+     * Subscribe function that can be used to add an Observer to the fan-out list.
+     *
+     * - We require that no event is sent to a subscriber synchronously to their
+     *   call to subscribe().
+     */
+    subscribe(nextOrObserver, error, complete) {
+      let observer;
+      if (nextOrObserver === void 0 && error === void 0 && complete === void 0) {
+        throw new Error("Missing Observer.");
+      }
+      if (implementsAnyMethods(nextOrObserver, [
+        "next",
+        "error",
+        "complete"
+      ])) {
+        observer = nextOrObserver;
+      } else {
+        observer = {
+          next: nextOrObserver,
+          error,
+          complete
+        };
+      }
+      if (observer.next === void 0) {
+        observer.next = noop;
+      }
+      if (observer.error === void 0) {
+        observer.error = noop;
+      }
+      if (observer.complete === void 0) {
+        observer.complete = noop;
+      }
+      const unsub = this.unsubscribeOne.bind(this, this.observers.length);
+      if (this.finalized) {
+        this.task.then(() => {
+          try {
+            if (this.finalError) {
+              observer.error(this.finalError);
+            } else {
+              observer.complete();
+            }
+          } catch (e) {
+          }
+          return;
+        });
+      }
+      this.observers.push(observer);
+      return unsub;
+    }
+    // Unsubscribe is synchronous - we guarantee that no events are sent to
+    // any unsubscribed Observer.
+    unsubscribeOne(i) {
+      if (this.observers === void 0 || this.observers[i] === void 0) {
+        return;
+      }
+      delete this.observers[i];
+      this.observerCount -= 1;
+      if (this.observerCount === 0 && this.onNoObservers !== void 0) {
+        this.onNoObservers(this);
+      }
+    }
+    forEachObserver(fn) {
+      if (this.finalized) {
+        return;
+      }
+      for (let i = 0; i < this.observers.length; i++) {
+        this.sendOne(i, fn);
+      }
+    }
+    // Call the Observer via one of it's callback function. We are careful to
+    // confirm that the observe has not been unsubscribed since this asynchronous
+    // function had been queued.
+    sendOne(i, fn) {
+      this.task.then(() => {
+        if (this.observers !== void 0 && this.observers[i] !== void 0) {
+          try {
+            fn(this.observers[i]);
+          } catch (e) {
+            if (typeof console !== "undefined" && console.error) {
+              console.error(e);
+            }
+          }
+        }
+      });
+    }
+    close(err) {
+      if (this.finalized) {
+        return;
+      }
+      this.finalized = true;
+      if (err !== void 0) {
+        this.finalError = err;
+      }
+      this.task.then(() => {
+        this.observers = void 0;
+        this.onNoObservers = void 0;
+      });
+    }
+  };
+  function implementsAnyMethods(obj, methods) {
+    if (typeof obj !== "object" || obj === null) {
+      return false;
+    }
+    for (const method of methods) {
+      if (method in obj && typeof obj[method] === "function") {
+        return true;
+      }
+    }
+    return false;
+  }
+  function noop() {
+  }
   var MAX_VALUE_MILLIS = 4 * 60 * 60 * 1e3;
   function getModularInstance(service) {
     if (service && service._delegate) {
@@ -26090,8 +26642,8 @@
      * @param instanceFactory Service factory responsible for creating the public interface
      * @param type whether the service provided by the component is public or private
      */
-    constructor(name3, instanceFactory, type) {
-      this.name = name3;
+    constructor(name5, instanceFactory, type) {
+      this.name = name5;
       this.instanceFactory = instanceFactory;
       this.type = type;
       this.multipleInstances = false;
@@ -26118,8 +26670,8 @@
   };
   var DEFAULT_ENTRY_NAME = "[DEFAULT]";
   var Provider = class {
-    constructor(name3, container) {
-      this.name = name3;
+    constructor(name5, container) {
+      this.name = name5;
       this.container = container;
       this.component = null;
       this.instances = /* @__PURE__ */ new Map();
@@ -26324,8 +26876,8 @@
     return component.instantiationMode === "EAGER";
   }
   var ComponentContainer = class {
-    constructor(name3) {
-      this.name = name3;
+    constructor(name5) {
+      this.name = name5;
       this.providers = /* @__PURE__ */ new Map();
     }
     /**
@@ -26358,12 +26910,12 @@
      * Firebase SDKs providing services should extend NameServiceMapping interface to register
      * themselves.
      */
-    getProvider(name3) {
-      if (this.providers.has(name3)) {
-        return this.providers.get(name3);
+    getProvider(name5) {
+      if (this.providers.has(name5)) {
+        return this.providers.get(name5);
       }
-      const provider = new Provider(name3, this);
-      this.providers.set(name3, provider);
+      const provider = new Provider(name5, this);
+      this.providers.set(name5, provider);
       return provider;
     }
     getProviders() {
@@ -26417,8 +26969,8 @@
      *
      * @param name The name that the logs will be associated with
      */
-    constructor(name3) {
-      this.name = name3;
+    constructor(name5) {
+      this.name = name5;
       this._logLevel = defaultLogLevel;
       this._logHandler = defaultLogHandler;
       this._userLogHandler = null;
@@ -26621,8 +27173,8 @@
   var unwrap = (value) => reverseTransformCache.get(value);
 
   // node_modules/idb/build/index.js
-  function openDB(name3, version3, { blocked, upgrade, blocking, terminated } = {}) {
-    const request = indexedDB.open(name3, version3);
+  function openDB(name5, version5, { blocked, upgrade, blocking, terminated } = {}) {
+    const request = indexedDB.open(name5, version5);
     const openPromise = wrap(request);
     if (upgrade) {
       request.addEventListener("upgradeneeded", (event) => {
@@ -26794,12 +27346,12 @@
     }
     return true;
   }
-  function _getProvider(app2, name3) {
+  function _getProvider(app2, name5) {
     const heartbeatController = app2.container.getProvider("heartbeat").getImmediate({ optional: true });
     if (heartbeatController) {
       void heartbeatController.triggerHeartbeat();
     }
-    return app2.container.getProvider(name3);
+    return app2.container.getProvider(name5);
   }
   function _isFirebaseServerApp(obj) {
     if (obj === null || obj === void 0) {
@@ -26924,14 +27476,14 @@
   function initializeApp(_options, rawConfig = {}) {
     let options = _options;
     if (typeof rawConfig !== "object") {
-      const name4 = rawConfig;
-      rawConfig = { name: name4 };
+      const name6 = rawConfig;
+      rawConfig = { name: name6 };
     }
     const config = Object.assign({ name: DEFAULT_ENTRY_NAME2, automaticDataCollectionEnabled: true }, rawConfig);
-    const name3 = config.name;
-    if (typeof name3 !== "string" || !name3) {
+    const name5 = config.name;
+    if (typeof name5 !== "string" || !name5) {
       throw ERROR_FACTORY.create("bad-app-name", {
-        appName: String(name3)
+        appName: String(name5)
       });
     }
     options || (options = getDefaultAppConfig());
@@ -26941,43 +27493,43 @@
         /* AppError.NO_OPTIONS */
       );
     }
-    const existingApp = _apps.get(name3);
+    const existingApp = _apps.get(name5);
     if (existingApp) {
       if (deepEqual(options, existingApp.options) && deepEqual(config, existingApp.config)) {
         return existingApp;
       } else {
-        throw ERROR_FACTORY.create("duplicate-app", { appName: name3 });
+        throw ERROR_FACTORY.create("duplicate-app", { appName: name5 });
       }
     }
-    const container = new ComponentContainer(name3);
+    const container = new ComponentContainer(name5);
     for (const component of _components.values()) {
       container.addComponent(component);
     }
     const newApp = new FirebaseAppImpl(options, config, container);
-    _apps.set(name3, newApp);
+    _apps.set(name5, newApp);
     return newApp;
   }
-  function getApp(name3 = DEFAULT_ENTRY_NAME2) {
-    const app2 = _apps.get(name3);
-    if (!app2 && name3 === DEFAULT_ENTRY_NAME2 && getDefaultAppConfig()) {
+  function getApp(name5 = DEFAULT_ENTRY_NAME2) {
+    const app2 = _apps.get(name5);
+    if (!app2 && name5 === DEFAULT_ENTRY_NAME2 && getDefaultAppConfig()) {
       return initializeApp();
     }
     if (!app2) {
-      throw ERROR_FACTORY.create("no-app", { appName: name3 });
+      throw ERROR_FACTORY.create("no-app", { appName: name5 });
     }
     return app2;
   }
-  function registerVersion(libraryKeyOrName, version3, variant) {
+  function registerVersion(libraryKeyOrName, version5, variant) {
     var _a;
     let library = (_a = PLATFORM_LOG_STRING[libraryKeyOrName]) !== null && _a !== void 0 ? _a : libraryKeyOrName;
     if (variant) {
       library += `-${variant}`;
     }
     const libraryMismatch = library.match(/\s|\//);
-    const versionMismatch = version3.match(/\s|\//);
+    const versionMismatch = version5.match(/\s|\//);
     if (libraryMismatch || versionMismatch) {
       const warning = [
-        `Unable to register library "${library}" with version "${version3}":`
+        `Unable to register library "${library}" with version "${version5}":`
       ];
       if (libraryMismatch) {
         warning.push(`library name "${library}" contains illegal characters (whitespace or "/")`);
@@ -26986,14 +27538,14 @@
         warning.push("and");
       }
       if (versionMismatch) {
-        warning.push(`version name "${version3}" contains illegal characters (whitespace or "/")`);
+        warning.push(`version name "${version5}" contains illegal characters (whitespace or "/")`);
       }
       logger.warn(warning.join(" "));
       return;
     }
     _registerComponent(new Component(
       `${library}-version`,
-      () => ({ library, version: version3 }),
+      () => ({ library, version: version5 }),
       "VERSION"
       /* ComponentType.VERSION */
     ));
@@ -30997,7 +31549,7 @@
   function forEach(e, t) {
     for (const n in e) Object.prototype.hasOwnProperty.call(e, n) && t(n, e[n]);
   }
-  function isEmpty(e) {
+  function isEmpty2(e) {
     for (const t in e) if (Object.prototype.hasOwnProperty.call(e, t)) return false;
     return true;
   }
@@ -32551,7 +33103,7 @@
       }));
     }
     isEmpty() {
-      return isEmpty(this.inner);
+      return isEmpty2(this.inner);
     }
     size() {
       return this.innerSize;
@@ -38969,6 +39521,15 @@ This typically indicates that your device does not have a healthy Internet conne
     } else a = null, u = o.fieldTransforms;
     return new ParsedSetData(new ObjectValue(_), a, u);
   }
+  var __PRIVATE_DeleteFieldValueImpl = class ___PRIVATE_DeleteFieldValueImpl extends FieldValue {
+    _toFieldTransform(e) {
+      if (2 !== e.Ec) throw 1 === e.Ec ? e.wc(`${this._methodName}() can only appear at the top level of your update data`) : e.wc(`${this._methodName}() cannot be used with set() unless you pass {merge:true}`);
+      return e.fieldMask.push(e.path), null;
+    }
+    isEqual(e) {
+      return e instanceof ___PRIVATE_DeleteFieldValueImpl;
+    }
+  };
   function __PRIVATE_parseQueryValue(e, t, n, r = false) {
     return __PRIVATE_parseData(n, e.Dc(r ? 4 : 3, t));
   }
@@ -39076,7 +39637,7 @@ This typically indicates that your device does not have a healthy Internet conne
   }
   function __PRIVATE_parseObject(e, t) {
     const n = {};
-    return isEmpty(e) ? (
+    return isEmpty2(e) ? (
       // If we encounter an empty object, we explicitly add it to the update
       // mask to ensure that the server creates a map entry.
       t.path && t.path.length > 0 && t.fieldMask.push(t.path)
@@ -39324,6 +39885,34 @@ This typically indicates that your device does not have a healthy Internet conne
       return "and" === this.type ? "and" : "or";
     }
   };
+  var QueryOrderByConstraint = class _QueryOrderByConstraint extends QueryConstraint {
+    /**
+     * @internal
+     */
+    constructor(e, t) {
+      super(), this._field = e, this._direction = t, /** The type of this query constraint */
+      this.type = "orderBy";
+    }
+    static _create(e, t) {
+      return new _QueryOrderByConstraint(e, t);
+    }
+    _apply(e) {
+      const t = (function __PRIVATE_newQueryOrderBy(e2, t2, n) {
+        if (null !== e2.startAt) throw new FirestoreError(N.INVALID_ARGUMENT, "Invalid query. You must not call startAt() or startAfter() before calling orderBy().");
+        if (null !== e2.endAt) throw new FirestoreError(N.INVALID_ARGUMENT, "Invalid query. You must not call endAt() or endBefore() before calling orderBy().");
+        const r = new OrderBy(t2, n);
+        return r;
+      })(e._query, this._field, this._direction);
+      return new Query(e.firestore, e.converter, (function __PRIVATE_queryWithAddedOrderBy(e2, t2) {
+        const n = e2.explicitOrderBy.concat([t2]);
+        return new __PRIVATE_QueryImpl(e2.path, e2.collectionGroup, n, e2.filters.slice(), e2.limit, e2.limitType, e2.startAt, e2.endAt);
+      })(e._query, t));
+    }
+  };
+  function orderBy(e, t = "asc") {
+    const n = t, r = __PRIVATE_fieldPathFromArgument("orderBy", e);
+    return QueryOrderByConstraint._create(r, n);
+  }
   var QueryLimitConstraint = class _QueryLimitConstraint extends QueryConstraint {
     /**
      * @internal
@@ -39740,6 +40329,9 @@ This typically indicates that your device does not have a healthy Internet conne
     const r = __PRIVATE_cast(e.firestore, Firestore), i = __PRIVATE_applyFirestoreDataConverter(e.converter, t, n);
     return executeWrite(r, [__PRIVATE_parseSetData(__PRIVATE_newUserDataReader(r), "setDoc", e._key, i, null !== e.converter, n).toMutation(e._key, Precondition.none())]);
   }
+  function deleteDoc(e) {
+    return executeWrite(__PRIVATE_cast(e.firestore, Firestore), [new __PRIVATE_DeleteMutation(e._key, Precondition.none())]);
+  }
   function addDoc(e, t) {
     const n = __PRIVATE_cast(e.firestore, Firestore), r = doc(e), i = __PRIVATE_applyFirestoreDataConverter(e.converter, t);
     return executeWrite(n, [__PRIVATE_parseSetData(__PRIVATE_newUserDataReader(e.firestore), "addDoc", r._key, i, null !== e.converter, {}).toMutation(r._key, Precondition.exists(false))]).then((() => r));
@@ -39797,6 +40389,9 @@ This typically indicates that your device does not have a healthy Internet conne
     const r = n.docs.get(t._key), i = new __PRIVATE_ExpUserDataWriter(e);
     return new DocumentSnapshot(e, i, t._key, r, new SnapshotMetadata(n.hasPendingWrites, n.fromCache), t.converter);
   }
+  function deleteField() {
+    return new __PRIVATE_DeleteFieldValueImpl("deleteField");
+  }
   !(function __PRIVATE_registerFirestore(e, t = true) {
     !(function __PRIVATE_setSDKVersion(e2) {
       x = e2;
@@ -39812,6 +40407,6646 @@ This typically indicates that your device does not have a healthy Internet conne
     registerVersion(F, M, "esm2017");
   })();
 
+  // node_modules/@firebase/functions/dist/esm/index.esm2017.js
+  var LONG_TYPE = "type.googleapis.com/google.protobuf.Int64Value";
+  var UNSIGNED_LONG_TYPE = "type.googleapis.com/google.protobuf.UInt64Value";
+  function mapValues(o, f) {
+    const result = {};
+    for (const key in o) {
+      if (o.hasOwnProperty(key)) {
+        result[key] = f(o[key]);
+      }
+    }
+    return result;
+  }
+  function encode(data) {
+    if (data == null) {
+      return null;
+    }
+    if (data instanceof Number) {
+      data = data.valueOf();
+    }
+    if (typeof data === "number" && isFinite(data)) {
+      return data;
+    }
+    if (data === true || data === false) {
+      return data;
+    }
+    if (Object.prototype.toString.call(data) === "[object String]") {
+      return data;
+    }
+    if (data instanceof Date) {
+      return data.toISOString();
+    }
+    if (Array.isArray(data)) {
+      return data.map((x2) => encode(x2));
+    }
+    if (typeof data === "function" || typeof data === "object") {
+      return mapValues(data, (x2) => encode(x2));
+    }
+    throw new Error("Data cannot be encoded in JSON: " + data);
+  }
+  function decode(json) {
+    if (json == null) {
+      return json;
+    }
+    if (json["@type"]) {
+      switch (json["@type"]) {
+        case LONG_TYPE:
+        // Fall through and handle this the same as unsigned.
+        case UNSIGNED_LONG_TYPE: {
+          const value = Number(json["value"]);
+          if (isNaN(value)) {
+            throw new Error("Data cannot be decoded from JSON: " + json);
+          }
+          return value;
+        }
+        default: {
+          throw new Error("Data cannot be decoded from JSON: " + json);
+        }
+      }
+    }
+    if (Array.isArray(json)) {
+      return json.map((x2) => decode(x2));
+    }
+    if (typeof json === "function" || typeof json === "object") {
+      return mapValues(json, (x2) => decode(x2));
+    }
+    return json;
+  }
+  var FUNCTIONS_TYPE = "functions";
+  var errorCodeMap = {
+    OK: "ok",
+    CANCELLED: "cancelled",
+    UNKNOWN: "unknown",
+    INVALID_ARGUMENT: "invalid-argument",
+    DEADLINE_EXCEEDED: "deadline-exceeded",
+    NOT_FOUND: "not-found",
+    ALREADY_EXISTS: "already-exists",
+    PERMISSION_DENIED: "permission-denied",
+    UNAUTHENTICATED: "unauthenticated",
+    RESOURCE_EXHAUSTED: "resource-exhausted",
+    FAILED_PRECONDITION: "failed-precondition",
+    ABORTED: "aborted",
+    OUT_OF_RANGE: "out-of-range",
+    UNIMPLEMENTED: "unimplemented",
+    INTERNAL: "internal",
+    UNAVAILABLE: "unavailable",
+    DATA_LOSS: "data-loss"
+  };
+  var FunctionsError = class _FunctionsError extends FirebaseError {
+    /**
+     * Constructs a new instance of the `FunctionsError` class.
+     */
+    constructor(code, message, details) {
+      super(`${FUNCTIONS_TYPE}/${code}`, message || "");
+      this.details = details;
+      Object.setPrototypeOf(this, _FunctionsError.prototype);
+    }
+  };
+  function codeForHTTPStatus(status) {
+    if (status >= 200 && status < 300) {
+      return "ok";
+    }
+    switch (status) {
+      case 0:
+        return "internal";
+      case 400:
+        return "invalid-argument";
+      case 401:
+        return "unauthenticated";
+      case 403:
+        return "permission-denied";
+      case 404:
+        return "not-found";
+      case 409:
+        return "aborted";
+      case 429:
+        return "resource-exhausted";
+      case 499:
+        return "cancelled";
+      case 500:
+        return "internal";
+      case 501:
+        return "unimplemented";
+      case 503:
+        return "unavailable";
+      case 504:
+        return "deadline-exceeded";
+    }
+    return "unknown";
+  }
+  function _errorForResponse(status, bodyJSON) {
+    let code = codeForHTTPStatus(status);
+    let description = code;
+    let details = void 0;
+    try {
+      const errorJSON = bodyJSON && bodyJSON.error;
+      if (errorJSON) {
+        const status2 = errorJSON.status;
+        if (typeof status2 === "string") {
+          if (!errorCodeMap[status2]) {
+            return new FunctionsError("internal", "internal");
+          }
+          code = errorCodeMap[status2];
+          description = status2;
+        }
+        const message = errorJSON.message;
+        if (typeof message === "string") {
+          description = message;
+        }
+        details = errorJSON.details;
+        if (details !== void 0) {
+          details = decode(details);
+        }
+      }
+    } catch (e) {
+    }
+    if (code === "ok") {
+      return null;
+    }
+    return new FunctionsError(code, description, details);
+  }
+  var ContextProvider = class {
+    constructor(app2, authProvider, messagingProvider, appCheckProvider) {
+      this.app = app2;
+      this.auth = null;
+      this.messaging = null;
+      this.appCheck = null;
+      this.serverAppAppCheckToken = null;
+      if (_isFirebaseServerApp(app2) && app2.settings.appCheckToken) {
+        this.serverAppAppCheckToken = app2.settings.appCheckToken;
+      }
+      this.auth = authProvider.getImmediate({ optional: true });
+      this.messaging = messagingProvider.getImmediate({
+        optional: true
+      });
+      if (!this.auth) {
+        authProvider.get().then((auth2) => this.auth = auth2, () => {
+        });
+      }
+      if (!this.messaging) {
+        messagingProvider.get().then((messaging) => this.messaging = messaging, () => {
+        });
+      }
+      if (!this.appCheck) {
+        appCheckProvider === null || appCheckProvider === void 0 ? void 0 : appCheckProvider.get().then((appCheck) => this.appCheck = appCheck, () => {
+        });
+      }
+    }
+    async getAuthToken() {
+      if (!this.auth) {
+        return void 0;
+      }
+      try {
+        const token = await this.auth.getToken();
+        return token === null || token === void 0 ? void 0 : token.accessToken;
+      } catch (e) {
+        return void 0;
+      }
+    }
+    async getMessagingToken() {
+      if (!this.messaging || !("Notification" in self) || Notification.permission !== "granted") {
+        return void 0;
+      }
+      try {
+        return await this.messaging.getToken();
+      } catch (e) {
+        return void 0;
+      }
+    }
+    async getAppCheckToken(limitedUseAppCheckTokens) {
+      if (this.serverAppAppCheckToken) {
+        return this.serverAppAppCheckToken;
+      }
+      if (this.appCheck) {
+        const result = limitedUseAppCheckTokens ? await this.appCheck.getLimitedUseToken() : await this.appCheck.getToken();
+        if (result.error) {
+          return null;
+        }
+        return result.token;
+      }
+      return null;
+    }
+    async getContext(limitedUseAppCheckTokens) {
+      const authToken = await this.getAuthToken();
+      const messagingToken = await this.getMessagingToken();
+      const appCheckToken = await this.getAppCheckToken(limitedUseAppCheckTokens);
+      return { authToken, messagingToken, appCheckToken };
+    }
+  };
+  var DEFAULT_REGION = "us-central1";
+  var responseLineRE = /^data: (.*?)(?:\n|$)/;
+  function failAfter(millis) {
+    let timer = null;
+    return {
+      promise: new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          reject(new FunctionsError("deadline-exceeded", "deadline-exceeded"));
+        }, millis);
+      }),
+      cancel: () => {
+        if (timer) {
+          clearTimeout(timer);
+        }
+      }
+    };
+  }
+  var FunctionsService = class {
+    /**
+     * Creates a new Functions service for the given app.
+     * @param app - The FirebaseApp to use.
+     */
+    constructor(app2, authProvider, messagingProvider, appCheckProvider, regionOrCustomDomain = DEFAULT_REGION, fetchImpl = (...args) => fetch(...args)) {
+      this.app = app2;
+      this.fetchImpl = fetchImpl;
+      this.emulatorOrigin = null;
+      this.contextProvider = new ContextProvider(app2, authProvider, messagingProvider, appCheckProvider);
+      this.cancelAllRequests = new Promise((resolve) => {
+        this.deleteService = () => {
+          return Promise.resolve(resolve());
+        };
+      });
+      try {
+        const url = new URL(regionOrCustomDomain);
+        this.customDomain = url.origin + (url.pathname === "/" ? "" : url.pathname);
+        this.region = DEFAULT_REGION;
+      } catch (e) {
+        this.customDomain = null;
+        this.region = regionOrCustomDomain;
+      }
+    }
+    _delete() {
+      return this.deleteService();
+    }
+    /**
+     * Returns the URL for a callable with the given name.
+     * @param name - The name of the callable.
+     * @internal
+     */
+    _url(name5) {
+      const projectId = this.app.options.projectId;
+      if (this.emulatorOrigin !== null) {
+        const origin = this.emulatorOrigin;
+        return `${origin}/${projectId}/${this.region}/${name5}`;
+      }
+      if (this.customDomain !== null) {
+        return `${this.customDomain}/${name5}`;
+      }
+      return `https://${this.region}-${projectId}.cloudfunctions.net/${name5}`;
+    }
+  };
+  function connectFunctionsEmulator$1(functionsInstance, host, port) {
+    const useSsl = isCloudWorkstation(host);
+    functionsInstance.emulatorOrigin = `http${useSsl ? "s" : ""}://${host}:${port}`;
+    if (useSsl) {
+      void pingServer(functionsInstance.emulatorOrigin);
+      updateEmulatorBanner("Functions", true);
+    }
+  }
+  function httpsCallable$1(functionsInstance, name5, options) {
+    const callable = (data) => {
+      return call(functionsInstance, name5, data, options || {});
+    };
+    callable.stream = (data, options2) => {
+      return stream(functionsInstance, name5, data, options2);
+    };
+    return callable;
+  }
+  async function postJSON(url, body, headers, fetchImpl) {
+    headers["Content-Type"] = "application/json";
+    let response;
+    try {
+      response = await fetchImpl(url, {
+        method: "POST",
+        body: JSON.stringify(body),
+        headers
+      });
+    } catch (e) {
+      return {
+        status: 0,
+        json: null
+      };
+    }
+    let json = null;
+    try {
+      json = await response.json();
+    } catch (e) {
+    }
+    return {
+      status: response.status,
+      json
+    };
+  }
+  async function makeAuthHeaders(functionsInstance, options) {
+    const headers = {};
+    const context = await functionsInstance.contextProvider.getContext(options.limitedUseAppCheckTokens);
+    if (context.authToken) {
+      headers["Authorization"] = "Bearer " + context.authToken;
+    }
+    if (context.messagingToken) {
+      headers["Firebase-Instance-ID-Token"] = context.messagingToken;
+    }
+    if (context.appCheckToken !== null) {
+      headers["X-Firebase-AppCheck"] = context.appCheckToken;
+    }
+    return headers;
+  }
+  function call(functionsInstance, name5, data, options) {
+    const url = functionsInstance._url(name5);
+    return callAtURL(functionsInstance, url, data, options);
+  }
+  async function callAtURL(functionsInstance, url, data, options) {
+    data = encode(data);
+    const body = { data };
+    const headers = await makeAuthHeaders(functionsInstance, options);
+    const timeout = options.timeout || 7e4;
+    const failAfterHandle = failAfter(timeout);
+    const response = await Promise.race([
+      postJSON(url, body, headers, functionsInstance.fetchImpl),
+      failAfterHandle.promise,
+      functionsInstance.cancelAllRequests
+    ]);
+    failAfterHandle.cancel();
+    if (!response) {
+      throw new FunctionsError("cancelled", "Firebase Functions instance was deleted.");
+    }
+    const error = _errorForResponse(response.status, response.json);
+    if (error) {
+      throw error;
+    }
+    if (!response.json) {
+      throw new FunctionsError("internal", "Response is not valid JSON object.");
+    }
+    let responseData = response.json.data;
+    if (typeof responseData === "undefined") {
+      responseData = response.json.result;
+    }
+    if (typeof responseData === "undefined") {
+      throw new FunctionsError("internal", "Response is missing data field.");
+    }
+    const decodedData = decode(responseData);
+    return { data: decodedData };
+  }
+  function stream(functionsInstance, name5, data, options) {
+    const url = functionsInstance._url(name5);
+    return streamAtURL(functionsInstance, url, data, options || {});
+  }
+  async function streamAtURL(functionsInstance, url, data, options) {
+    var _a;
+    data = encode(data);
+    const body = { data };
+    const headers = await makeAuthHeaders(functionsInstance, options);
+    headers["Content-Type"] = "application/json";
+    headers["Accept"] = "text/event-stream";
+    let response;
+    try {
+      response = await functionsInstance.fetchImpl(url, {
+        method: "POST",
+        body: JSON.stringify(body),
+        headers,
+        signal: options === null || options === void 0 ? void 0 : options.signal
+      });
+    } catch (e) {
+      if (e instanceof Error && e.name === "AbortError") {
+        const error2 = new FunctionsError("cancelled", "Request was cancelled.");
+        return {
+          data: Promise.reject(error2),
+          stream: {
+            [Symbol.asyncIterator]() {
+              return {
+                next() {
+                  return Promise.reject(error2);
+                }
+              };
+            }
+          }
+        };
+      }
+      const error = _errorForResponse(0, null);
+      return {
+        data: Promise.reject(error),
+        // Return an empty async iterator
+        stream: {
+          [Symbol.asyncIterator]() {
+            return {
+              next() {
+                return Promise.reject(error);
+              }
+            };
+          }
+        }
+      };
+    }
+    let resultResolver;
+    let resultRejecter;
+    const resultPromise = new Promise((resolve, reject) => {
+      resultResolver = resolve;
+      resultRejecter = reject;
+    });
+    (_a = options === null || options === void 0 ? void 0 : options.signal) === null || _a === void 0 ? void 0 : _a.addEventListener("abort", () => {
+      const error = new FunctionsError("cancelled", "Request was cancelled.");
+      resultRejecter(error);
+    });
+    const reader = response.body.getReader();
+    const rstream = createResponseStream(reader, resultResolver, resultRejecter, options === null || options === void 0 ? void 0 : options.signal);
+    return {
+      stream: {
+        [Symbol.asyncIterator]() {
+          const rreader = rstream.getReader();
+          return {
+            async next() {
+              const { value, done } = await rreader.read();
+              return { value, done };
+            },
+            async return() {
+              await rreader.cancel();
+              return { done: true, value: void 0 };
+            }
+          };
+        }
+      },
+      data: resultPromise
+    };
+  }
+  function createResponseStream(reader, resultResolver, resultRejecter, signal) {
+    const processLine = (line, controller) => {
+      const match = line.match(responseLineRE);
+      if (!match) {
+        return;
+      }
+      const data = match[1];
+      try {
+        const jsonData = JSON.parse(data);
+        if ("result" in jsonData) {
+          resultResolver(decode(jsonData.result));
+          return;
+        }
+        if ("message" in jsonData) {
+          controller.enqueue(decode(jsonData.message));
+          return;
+        }
+        if ("error" in jsonData) {
+          const error = _errorForResponse(0, jsonData);
+          controller.error(error);
+          resultRejecter(error);
+          return;
+        }
+      } catch (error) {
+        if (error instanceof FunctionsError) {
+          controller.error(error);
+          resultRejecter(error);
+          return;
+        }
+      }
+    };
+    const decoder = new TextDecoder();
+    return new ReadableStream({
+      start(controller) {
+        let currentText = "";
+        return pump();
+        async function pump() {
+          if (signal === null || signal === void 0 ? void 0 : signal.aborted) {
+            const error = new FunctionsError("cancelled", "Request was cancelled");
+            controller.error(error);
+            resultRejecter(error);
+            return Promise.resolve();
+          }
+          try {
+            const { value, done } = await reader.read();
+            if (done) {
+              if (currentText.trim()) {
+                processLine(currentText.trim(), controller);
+              }
+              controller.close();
+              return;
+            }
+            if (signal === null || signal === void 0 ? void 0 : signal.aborted) {
+              const error = new FunctionsError("cancelled", "Request was cancelled");
+              controller.error(error);
+              resultRejecter(error);
+              await reader.cancel();
+              return;
+            }
+            currentText += decoder.decode(value, { stream: true });
+            const lines = currentText.split("\n");
+            currentText = lines.pop() || "";
+            for (const line of lines) {
+              if (line.trim()) {
+                processLine(line.trim(), controller);
+              }
+            }
+            return pump();
+          } catch (error) {
+            const functionsError = error instanceof FunctionsError ? error : _errorForResponse(0, null);
+            controller.error(functionsError);
+            resultRejecter(functionsError);
+          }
+        }
+      },
+      cancel() {
+        return reader.cancel();
+      }
+    });
+  }
+  var name3 = "@firebase/functions";
+  var version3 = "0.12.9";
+  var AUTH_INTERNAL_NAME = "auth-internal";
+  var APP_CHECK_INTERNAL_NAME = "app-check-internal";
+  var MESSAGING_INTERNAL_NAME = "messaging-internal";
+  function registerFunctions(variant) {
+    const factory = (container, { instanceIdentifier: regionOrCustomDomain }) => {
+      const app2 = container.getProvider("app").getImmediate();
+      const authProvider = container.getProvider(AUTH_INTERNAL_NAME);
+      const messagingProvider = container.getProvider(MESSAGING_INTERNAL_NAME);
+      const appCheckProvider = container.getProvider(APP_CHECK_INTERNAL_NAME);
+      return new FunctionsService(app2, authProvider, messagingProvider, appCheckProvider, regionOrCustomDomain);
+    };
+    _registerComponent(new Component(
+      FUNCTIONS_TYPE,
+      factory,
+      "PUBLIC"
+      /* ComponentType.PUBLIC */
+    ).setMultipleInstances(true));
+    registerVersion(name3, version3, variant);
+    registerVersion(name3, version3, "esm2017");
+  }
+  function getFunctions(app2 = getApp(), regionOrCustomDomain = DEFAULT_REGION) {
+    const functionsProvider = _getProvider(getModularInstance(app2), FUNCTIONS_TYPE);
+    const functionsInstance = functionsProvider.getImmediate({
+      identifier: regionOrCustomDomain
+    });
+    const emulator = getDefaultEmulatorHostnameAndPort("functions");
+    if (emulator) {
+      connectFunctionsEmulator(functionsInstance, ...emulator);
+    }
+    return functionsInstance;
+  }
+  function connectFunctionsEmulator(functionsInstance, host, port) {
+    connectFunctionsEmulator$1(getModularInstance(functionsInstance), host, port);
+  }
+  function httpsCallable(functionsInstance, name5, options) {
+    return httpsCallable$1(getModularInstance(functionsInstance), name5, options);
+  }
+  registerFunctions();
+
+  // node_modules/tslib/tslib.es6.mjs
+  function __rest(s, e) {
+    var t = {};
+    for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p) && e.indexOf(p) < 0)
+      t[p] = s[p];
+    if (s != null && typeof Object.getOwnPropertySymbols === "function")
+      for (var i = 0, p = Object.getOwnPropertySymbols(s); i < p.length; i++) {
+        if (e.indexOf(p[i]) < 0 && Object.prototype.propertyIsEnumerable.call(s, p[i]))
+          t[p[i]] = s[p[i]];
+      }
+    return t;
+  }
+
+  // node_modules/@firebase/auth/dist/esm2017/index-35c79a8a.js
+  function _prodErrorMap() {
+    return {
+      [
+        "dependent-sdk-initialized-before-auth"
+        /* AuthErrorCode.DEPENDENT_SDK_INIT_BEFORE_AUTH */
+      ]: "Another Firebase SDK was initialized and is trying to use Auth before Auth is initialized. Please be sure to call `initializeAuth` or `getAuth` before starting any other Firebase SDK."
+    };
+  }
+  var prodErrorMap = _prodErrorMap;
+  var _DEFAULT_AUTH_ERROR_FACTORY = new ErrorFactory("auth", "Firebase", _prodErrorMap());
+  var logClient = new Logger("@firebase/auth");
+  function _logWarn(msg, ...args) {
+    if (logClient.logLevel <= LogLevel.WARN) {
+      logClient.warn(`Auth (${SDK_VERSION}): ${msg}`, ...args);
+    }
+  }
+  function _logError(msg, ...args) {
+    if (logClient.logLevel <= LogLevel.ERROR) {
+      logClient.error(`Auth (${SDK_VERSION}): ${msg}`, ...args);
+    }
+  }
+  function _fail(authOrCode, ...rest) {
+    throw createErrorInternal(authOrCode, ...rest);
+  }
+  function _createError(authOrCode, ...rest) {
+    return createErrorInternal(authOrCode, ...rest);
+  }
+  function _errorWithCustomMessage(auth2, code, message) {
+    const errorMap = Object.assign(Object.assign({}, prodErrorMap()), { [code]: message });
+    const factory = new ErrorFactory("auth", "Firebase", errorMap);
+    return factory.create(code, {
+      appName: auth2.name
+    });
+  }
+  function _serverAppCurrentUserOperationNotSupportedError(auth2) {
+    return _errorWithCustomMessage(auth2, "operation-not-supported-in-this-environment", "Operations that alter the current user are not supported in conjunction with FirebaseServerApp");
+  }
+  function createErrorInternal(authOrCode, ...rest) {
+    if (typeof authOrCode !== "string") {
+      const code = rest[0];
+      const fullParams = [...rest.slice(1)];
+      if (fullParams[0]) {
+        fullParams[0].appName = authOrCode.name;
+      }
+      return authOrCode._errorFactory.create(code, ...fullParams);
+    }
+    return _DEFAULT_AUTH_ERROR_FACTORY.create(authOrCode, ...rest);
+  }
+  function _assert(assertion, authOrCode, ...rest) {
+    if (!assertion) {
+      throw createErrorInternal(authOrCode, ...rest);
+    }
+  }
+  function debugFail(failure) {
+    const message = `INTERNAL ASSERTION FAILED: ` + failure;
+    _logError(message);
+    throw new Error(message);
+  }
+  function debugAssert(assertion, message) {
+    if (!assertion) {
+      debugFail(message);
+    }
+  }
+  function _getCurrentUrl() {
+    var _a;
+    return typeof self !== "undefined" && ((_a = self.location) === null || _a === void 0 ? void 0 : _a.href) || "";
+  }
+  function _isHttpOrHttps() {
+    return _getCurrentScheme() === "http:" || _getCurrentScheme() === "https:";
+  }
+  function _getCurrentScheme() {
+    var _a;
+    return typeof self !== "undefined" && ((_a = self.location) === null || _a === void 0 ? void 0 : _a.protocol) || null;
+  }
+  function _isOnline() {
+    if (typeof navigator !== "undefined" && navigator && "onLine" in navigator && typeof navigator.onLine === "boolean" && // Apply only for traditional web apps and Chrome extensions.
+    // This is especially true for Cordova apps which have unreliable
+    // navigator.onLine behavior unless cordova-plugin-network-information is
+    // installed which overwrites the native navigator.onLine value and
+    // defines navigator.connection.
+    (_isHttpOrHttps() || isBrowserExtension() || "connection" in navigator)) {
+      return navigator.onLine;
+    }
+    return true;
+  }
+  function _getUserLanguage() {
+    if (typeof navigator === "undefined") {
+      return null;
+    }
+    const navigatorLanguage = navigator;
+    return (
+      // Most reliable, but only supported in Chrome/Firefox.
+      navigatorLanguage.languages && navigatorLanguage.languages[0] || // Supported in most browsers, but returns the language of the browser
+      // UI, not the language set in browser settings.
+      navigatorLanguage.language || // Couldn't determine language.
+      null
+    );
+  }
+  var Delay = class {
+    constructor(shortDelay, longDelay) {
+      this.shortDelay = shortDelay;
+      this.longDelay = longDelay;
+      debugAssert(longDelay > shortDelay, "Short delay should be less than long delay!");
+      this.isMobile = isMobileCordova() || isReactNative();
+    }
+    get() {
+      if (!_isOnline()) {
+        return Math.min(5e3, this.shortDelay);
+      }
+      return this.isMobile ? this.longDelay : this.shortDelay;
+    }
+  };
+  function _emulatorUrl(config, path) {
+    debugAssert(config.emulator, "Emulator should always be set here");
+    const { url } = config.emulator;
+    if (!path) {
+      return url;
+    }
+    return `${url}${path.startsWith("/") ? path.slice(1) : path}`;
+  }
+  var FetchProvider = class {
+    static initialize(fetchImpl, headersImpl, responseImpl) {
+      this.fetchImpl = fetchImpl;
+      if (headersImpl) {
+        this.headersImpl = headersImpl;
+      }
+      if (responseImpl) {
+        this.responseImpl = responseImpl;
+      }
+    }
+    static fetch() {
+      if (this.fetchImpl) {
+        return this.fetchImpl;
+      }
+      if (typeof self !== "undefined" && "fetch" in self) {
+        return self.fetch;
+      }
+      if (typeof globalThis !== "undefined" && globalThis.fetch) {
+        return globalThis.fetch;
+      }
+      if (typeof fetch !== "undefined") {
+        return fetch;
+      }
+      debugFail("Could not find fetch implementation, make sure you call FetchProvider.initialize() with an appropriate polyfill");
+    }
+    static headers() {
+      if (this.headersImpl) {
+        return this.headersImpl;
+      }
+      if (typeof self !== "undefined" && "Headers" in self) {
+        return self.Headers;
+      }
+      if (typeof globalThis !== "undefined" && globalThis.Headers) {
+        return globalThis.Headers;
+      }
+      if (typeof Headers !== "undefined") {
+        return Headers;
+      }
+      debugFail("Could not find Headers implementation, make sure you call FetchProvider.initialize() with an appropriate polyfill");
+    }
+    static response() {
+      if (this.responseImpl) {
+        return this.responseImpl;
+      }
+      if (typeof self !== "undefined" && "Response" in self) {
+        return self.Response;
+      }
+      if (typeof globalThis !== "undefined" && globalThis.Response) {
+        return globalThis.Response;
+      }
+      if (typeof Response !== "undefined") {
+        return Response;
+      }
+      debugFail("Could not find Response implementation, make sure you call FetchProvider.initialize() with an appropriate polyfill");
+    }
+  };
+  var SERVER_ERROR_MAP = {
+    // Custom token errors.
+    [
+      "CREDENTIAL_MISMATCH"
+      /* ServerError.CREDENTIAL_MISMATCH */
+    ]: "custom-token-mismatch",
+    // This can only happen if the SDK sends a bad request.
+    [
+      "MISSING_CUSTOM_TOKEN"
+      /* ServerError.MISSING_CUSTOM_TOKEN */
+    ]: "internal-error",
+    // Create Auth URI errors.
+    [
+      "INVALID_IDENTIFIER"
+      /* ServerError.INVALID_IDENTIFIER */
+    ]: "invalid-email",
+    // This can only happen if the SDK sends a bad request.
+    [
+      "MISSING_CONTINUE_URI"
+      /* ServerError.MISSING_CONTINUE_URI */
+    ]: "internal-error",
+    // Sign in with email and password errors (some apply to sign up too).
+    [
+      "INVALID_PASSWORD"
+      /* ServerError.INVALID_PASSWORD */
+    ]: "wrong-password",
+    // This can only happen if the SDK sends a bad request.
+    [
+      "MISSING_PASSWORD"
+      /* ServerError.MISSING_PASSWORD */
+    ]: "missing-password",
+    // Thrown if Email Enumeration Protection is enabled in the project and the email or password is
+    // invalid.
+    [
+      "INVALID_LOGIN_CREDENTIALS"
+      /* ServerError.INVALID_LOGIN_CREDENTIALS */
+    ]: "invalid-credential",
+    // Sign up with email and password errors.
+    [
+      "EMAIL_EXISTS"
+      /* ServerError.EMAIL_EXISTS */
+    ]: "email-already-in-use",
+    [
+      "PASSWORD_LOGIN_DISABLED"
+      /* ServerError.PASSWORD_LOGIN_DISABLED */
+    ]: "operation-not-allowed",
+    // Verify assertion for sign in with credential errors:
+    [
+      "INVALID_IDP_RESPONSE"
+      /* ServerError.INVALID_IDP_RESPONSE */
+    ]: "invalid-credential",
+    [
+      "INVALID_PENDING_TOKEN"
+      /* ServerError.INVALID_PENDING_TOKEN */
+    ]: "invalid-credential",
+    [
+      "FEDERATED_USER_ID_ALREADY_LINKED"
+      /* ServerError.FEDERATED_USER_ID_ALREADY_LINKED */
+    ]: "credential-already-in-use",
+    // This can only happen if the SDK sends a bad request.
+    [
+      "MISSING_REQ_TYPE"
+      /* ServerError.MISSING_REQ_TYPE */
+    ]: "internal-error",
+    // Send Password reset email errors:
+    [
+      "EMAIL_NOT_FOUND"
+      /* ServerError.EMAIL_NOT_FOUND */
+    ]: "user-not-found",
+    [
+      "RESET_PASSWORD_EXCEED_LIMIT"
+      /* ServerError.RESET_PASSWORD_EXCEED_LIMIT */
+    ]: "too-many-requests",
+    [
+      "EXPIRED_OOB_CODE"
+      /* ServerError.EXPIRED_OOB_CODE */
+    ]: "expired-action-code",
+    [
+      "INVALID_OOB_CODE"
+      /* ServerError.INVALID_OOB_CODE */
+    ]: "invalid-action-code",
+    // This can only happen if the SDK sends a bad request.
+    [
+      "MISSING_OOB_CODE"
+      /* ServerError.MISSING_OOB_CODE */
+    ]: "internal-error",
+    // Operations that require ID token in request:
+    [
+      "CREDENTIAL_TOO_OLD_LOGIN_AGAIN"
+      /* ServerError.CREDENTIAL_TOO_OLD_LOGIN_AGAIN */
+    ]: "requires-recent-login",
+    [
+      "INVALID_ID_TOKEN"
+      /* ServerError.INVALID_ID_TOKEN */
+    ]: "invalid-user-token",
+    [
+      "TOKEN_EXPIRED"
+      /* ServerError.TOKEN_EXPIRED */
+    ]: "user-token-expired",
+    [
+      "USER_NOT_FOUND"
+      /* ServerError.USER_NOT_FOUND */
+    ]: "user-token-expired",
+    // Other errors.
+    [
+      "TOO_MANY_ATTEMPTS_TRY_LATER"
+      /* ServerError.TOO_MANY_ATTEMPTS_TRY_LATER */
+    ]: "too-many-requests",
+    [
+      "PASSWORD_DOES_NOT_MEET_REQUIREMENTS"
+      /* ServerError.PASSWORD_DOES_NOT_MEET_REQUIREMENTS */
+    ]: "password-does-not-meet-requirements",
+    // Phone Auth related errors.
+    [
+      "INVALID_CODE"
+      /* ServerError.INVALID_CODE */
+    ]: "invalid-verification-code",
+    [
+      "INVALID_SESSION_INFO"
+      /* ServerError.INVALID_SESSION_INFO */
+    ]: "invalid-verification-id",
+    [
+      "INVALID_TEMPORARY_PROOF"
+      /* ServerError.INVALID_TEMPORARY_PROOF */
+    ]: "invalid-credential",
+    [
+      "MISSING_SESSION_INFO"
+      /* ServerError.MISSING_SESSION_INFO */
+    ]: "missing-verification-id",
+    [
+      "SESSION_EXPIRED"
+      /* ServerError.SESSION_EXPIRED */
+    ]: "code-expired",
+    // Other action code errors when additional settings passed.
+    // MISSING_CONTINUE_URI is getting mapped to INTERNAL_ERROR above.
+    // This is OK as this error will be caught by client side validation.
+    [
+      "MISSING_ANDROID_PACKAGE_NAME"
+      /* ServerError.MISSING_ANDROID_PACKAGE_NAME */
+    ]: "missing-android-pkg-name",
+    [
+      "UNAUTHORIZED_DOMAIN"
+      /* ServerError.UNAUTHORIZED_DOMAIN */
+    ]: "unauthorized-continue-uri",
+    // getProjectConfig errors when clientId is passed.
+    [
+      "INVALID_OAUTH_CLIENT_ID"
+      /* ServerError.INVALID_OAUTH_CLIENT_ID */
+    ]: "invalid-oauth-client-id",
+    // User actions (sign-up or deletion) disabled errors.
+    [
+      "ADMIN_ONLY_OPERATION"
+      /* ServerError.ADMIN_ONLY_OPERATION */
+    ]: "admin-restricted-operation",
+    // Multi factor related errors.
+    [
+      "INVALID_MFA_PENDING_CREDENTIAL"
+      /* ServerError.INVALID_MFA_PENDING_CREDENTIAL */
+    ]: "invalid-multi-factor-session",
+    [
+      "MFA_ENROLLMENT_NOT_FOUND"
+      /* ServerError.MFA_ENROLLMENT_NOT_FOUND */
+    ]: "multi-factor-info-not-found",
+    [
+      "MISSING_MFA_ENROLLMENT_ID"
+      /* ServerError.MISSING_MFA_ENROLLMENT_ID */
+    ]: "missing-multi-factor-info",
+    [
+      "MISSING_MFA_PENDING_CREDENTIAL"
+      /* ServerError.MISSING_MFA_PENDING_CREDENTIAL */
+    ]: "missing-multi-factor-session",
+    [
+      "SECOND_FACTOR_EXISTS"
+      /* ServerError.SECOND_FACTOR_EXISTS */
+    ]: "second-factor-already-in-use",
+    [
+      "SECOND_FACTOR_LIMIT_EXCEEDED"
+      /* ServerError.SECOND_FACTOR_LIMIT_EXCEEDED */
+    ]: "maximum-second-factor-count-exceeded",
+    // Blocking functions related errors.
+    [
+      "BLOCKING_FUNCTION_ERROR_RESPONSE"
+      /* ServerError.BLOCKING_FUNCTION_ERROR_RESPONSE */
+    ]: "internal-error",
+    // Recaptcha related errors.
+    [
+      "RECAPTCHA_NOT_ENABLED"
+      /* ServerError.RECAPTCHA_NOT_ENABLED */
+    ]: "recaptcha-not-enabled",
+    [
+      "MISSING_RECAPTCHA_TOKEN"
+      /* ServerError.MISSING_RECAPTCHA_TOKEN */
+    ]: "missing-recaptcha-token",
+    [
+      "INVALID_RECAPTCHA_TOKEN"
+      /* ServerError.INVALID_RECAPTCHA_TOKEN */
+    ]: "invalid-recaptcha-token",
+    [
+      "INVALID_RECAPTCHA_ACTION"
+      /* ServerError.INVALID_RECAPTCHA_ACTION */
+    ]: "invalid-recaptcha-action",
+    [
+      "MISSING_CLIENT_TYPE"
+      /* ServerError.MISSING_CLIENT_TYPE */
+    ]: "missing-client-type",
+    [
+      "MISSING_RECAPTCHA_VERSION"
+      /* ServerError.MISSING_RECAPTCHA_VERSION */
+    ]: "missing-recaptcha-version",
+    [
+      "INVALID_RECAPTCHA_VERSION"
+      /* ServerError.INVALID_RECAPTCHA_VERSION */
+    ]: "invalid-recaptcha-version",
+    [
+      "INVALID_REQ_TYPE"
+      /* ServerError.INVALID_REQ_TYPE */
+    ]: "invalid-req-type"
+    /* AuthErrorCode.INVALID_REQ_TYPE */
+  };
+  var CookieAuthProxiedEndpoints = [
+    "/v1/accounts:signInWithCustomToken",
+    "/v1/accounts:signInWithEmailLink",
+    "/v1/accounts:signInWithIdp",
+    "/v1/accounts:signInWithPassword",
+    "/v1/accounts:signInWithPhoneNumber",
+    "/v1/token"
+    /* Endpoint.TOKEN */
+  ];
+  var DEFAULT_API_TIMEOUT_MS = new Delay(3e4, 6e4);
+  function _addTidIfNecessary(auth2, request) {
+    if (auth2.tenantId && !request.tenantId) {
+      return Object.assign(Object.assign({}, request), { tenantId: auth2.tenantId });
+    }
+    return request;
+  }
+  async function _performApiRequest(auth2, method, path, request, customErrorMap = {}) {
+    return _performFetchWithErrorHandling(auth2, customErrorMap, async () => {
+      let body = {};
+      let params = {};
+      if (request) {
+        if (method === "GET") {
+          params = request;
+        } else {
+          body = {
+            body: JSON.stringify(request)
+          };
+        }
+      }
+      const query2 = querystring(Object.assign({ key: auth2.config.apiKey }, params)).slice(1);
+      const headers = await auth2._getAdditionalHeaders();
+      headers[
+        "Content-Type"
+        /* HttpHeader.CONTENT_TYPE */
+      ] = "application/json";
+      if (auth2.languageCode) {
+        headers[
+          "X-Firebase-Locale"
+          /* HttpHeader.X_FIREBASE_LOCALE */
+        ] = auth2.languageCode;
+      }
+      const fetchArgs = Object.assign({
+        method,
+        headers
+      }, body);
+      if (!isCloudflareWorker()) {
+        fetchArgs.referrerPolicy = "no-referrer";
+      }
+      if (auth2.emulatorConfig && isCloudWorkstation(auth2.emulatorConfig.host)) {
+        fetchArgs.credentials = "include";
+      }
+      return FetchProvider.fetch()(await _getFinalTarget(auth2, auth2.config.apiHost, path, query2), fetchArgs);
+    });
+  }
+  async function _performFetchWithErrorHandling(auth2, customErrorMap, fetchFn) {
+    auth2._canInitEmulator = false;
+    const errorMap = Object.assign(Object.assign({}, SERVER_ERROR_MAP), customErrorMap);
+    try {
+      const networkTimeout = new NetworkTimeout(auth2);
+      const response = await Promise.race([
+        fetchFn(),
+        networkTimeout.promise
+      ]);
+      networkTimeout.clearNetworkTimeout();
+      const json = await response.json();
+      if ("needConfirmation" in json) {
+        throw _makeTaggedError(auth2, "account-exists-with-different-credential", json);
+      }
+      if (response.ok && !("errorMessage" in json)) {
+        return json;
+      } else {
+        const errorMessage = response.ok ? json.errorMessage : json.error.message;
+        const [serverErrorCode, serverErrorMessage] = errorMessage.split(" : ");
+        if (serverErrorCode === "FEDERATED_USER_ID_ALREADY_LINKED") {
+          throw _makeTaggedError(auth2, "credential-already-in-use", json);
+        } else if (serverErrorCode === "EMAIL_EXISTS") {
+          throw _makeTaggedError(auth2, "email-already-in-use", json);
+        } else if (serverErrorCode === "USER_DISABLED") {
+          throw _makeTaggedError(auth2, "user-disabled", json);
+        }
+        const authError = errorMap[serverErrorCode] || serverErrorCode.toLowerCase().replace(/[_\s]+/g, "-");
+        if (serverErrorMessage) {
+          throw _errorWithCustomMessage(auth2, authError, serverErrorMessage);
+        } else {
+          _fail(auth2, authError);
+        }
+      }
+    } catch (e) {
+      if (e instanceof FirebaseError) {
+        throw e;
+      }
+      _fail(auth2, "network-request-failed", { "message": String(e) });
+    }
+  }
+  async function _performSignInRequest(auth2, method, path, request, customErrorMap = {}) {
+    const serverResponse = await _performApiRequest(auth2, method, path, request, customErrorMap);
+    if ("mfaPendingCredential" in serverResponse) {
+      _fail(auth2, "multi-factor-auth-required", {
+        _serverResponse: serverResponse
+      });
+    }
+    return serverResponse;
+  }
+  async function _getFinalTarget(auth2, host, path, query2) {
+    const base = `${host}${path}?${query2}`;
+    const authInternal = auth2;
+    const finalTarget = authInternal.config.emulator ? _emulatorUrl(auth2.config, base) : `${auth2.config.apiScheme}://${base}`;
+    if (CookieAuthProxiedEndpoints.includes(path)) {
+      await authInternal._persistenceManagerAvailable;
+      if (authInternal._getPersistenceType() === "COOKIE") {
+        const cookiePersistence = authInternal._getPersistence();
+        return cookiePersistence._getFinalTarget(finalTarget).toString();
+      }
+    }
+    return finalTarget;
+  }
+  function _parseEnforcementState(enforcementStateStr) {
+    switch (enforcementStateStr) {
+      case "ENFORCE":
+        return "ENFORCE";
+      case "AUDIT":
+        return "AUDIT";
+      case "OFF":
+        return "OFF";
+      default:
+        return "ENFORCEMENT_STATE_UNSPECIFIED";
+    }
+  }
+  var NetworkTimeout = class {
+    clearNetworkTimeout() {
+      clearTimeout(this.timer);
+    }
+    constructor(auth2) {
+      this.auth = auth2;
+      this.timer = null;
+      this.promise = new Promise((_, reject) => {
+        this.timer = setTimeout(() => {
+          return reject(_createError(
+            this.auth,
+            "network-request-failed"
+            /* AuthErrorCode.NETWORK_REQUEST_FAILED */
+          ));
+        }, DEFAULT_API_TIMEOUT_MS.get());
+      });
+    }
+  };
+  function _makeTaggedError(auth2, code, response) {
+    const errorParams = {
+      appName: auth2.name
+    };
+    if (response.email) {
+      errorParams.email = response.email;
+    }
+    if (response.phoneNumber) {
+      errorParams.phoneNumber = response.phoneNumber;
+    }
+    const error = _createError(auth2, code, errorParams);
+    error.customData._tokenResponse = response;
+    return error;
+  }
+  function isEnterprise(grecaptcha) {
+    return grecaptcha !== void 0 && grecaptcha.enterprise !== void 0;
+  }
+  var RecaptchaConfig = class {
+    constructor(response) {
+      this.siteKey = "";
+      this.recaptchaEnforcementState = [];
+      if (response.recaptchaKey === void 0) {
+        throw new Error("recaptchaKey undefined");
+      }
+      this.siteKey = response.recaptchaKey.split("/")[3];
+      this.recaptchaEnforcementState = response.recaptchaEnforcementState;
+    }
+    /**
+     * Returns the reCAPTCHA Enterprise enforcement state for the given provider.
+     *
+     * @param providerStr - The provider whose enforcement state is to be returned.
+     * @returns The reCAPTCHA Enterprise enforcement state for the given provider.
+     */
+    getProviderEnforcementState(providerStr) {
+      if (!this.recaptchaEnforcementState || this.recaptchaEnforcementState.length === 0) {
+        return null;
+      }
+      for (const recaptchaEnforcementState of this.recaptchaEnforcementState) {
+        if (recaptchaEnforcementState.provider && recaptchaEnforcementState.provider === providerStr) {
+          return _parseEnforcementState(recaptchaEnforcementState.enforcementState);
+        }
+      }
+      return null;
+    }
+    /**
+     * Returns true if the reCAPTCHA Enterprise enforcement state for the provider is set to ENFORCE or AUDIT.
+     *
+     * @param providerStr - The provider whose enablement state is to be returned.
+     * @returns Whether or not reCAPTCHA Enterprise protection is enabled for the given provider.
+     */
+    isProviderEnabled(providerStr) {
+      return this.getProviderEnforcementState(providerStr) === "ENFORCE" || this.getProviderEnforcementState(providerStr) === "AUDIT";
+    }
+    /**
+     * Returns true if reCAPTCHA Enterprise protection is enabled in at least one provider, otherwise
+     * returns false.
+     *
+     * @returns Whether or not reCAPTCHA Enterprise protection is enabled for at least one provider.
+     */
+    isAnyProviderEnabled() {
+      return this.isProviderEnabled(
+        "EMAIL_PASSWORD_PROVIDER"
+        /* RecaptchaAuthProvider.EMAIL_PASSWORD_PROVIDER */
+      ) || this.isProviderEnabled(
+        "PHONE_PROVIDER"
+        /* RecaptchaAuthProvider.PHONE_PROVIDER */
+      );
+    }
+  };
+  async function getRecaptchaConfig(auth2, request) {
+    return _performApiRequest(auth2, "GET", "/v2/recaptchaConfig", _addTidIfNecessary(auth2, request));
+  }
+  async function deleteAccount(auth2, request) {
+    return _performApiRequest(auth2, "POST", "/v1/accounts:delete", request);
+  }
+  async function getAccountInfo(auth2, request) {
+    return _performApiRequest(auth2, "POST", "/v1/accounts:lookup", request);
+  }
+  function utcTimestampToDateString(utcTimestamp) {
+    if (!utcTimestamp) {
+      return void 0;
+    }
+    try {
+      const date = new Date(Number(utcTimestamp));
+      if (!isNaN(date.getTime())) {
+        return date.toUTCString();
+      }
+    } catch (e) {
+    }
+    return void 0;
+  }
+  async function getIdTokenResult(user, forceRefresh = false) {
+    const userInternal = getModularInstance(user);
+    const token = await userInternal.getIdToken(forceRefresh);
+    const claims = _parseToken(token);
+    _assert(
+      claims && claims.exp && claims.auth_time && claims.iat,
+      userInternal.auth,
+      "internal-error"
+      /* AuthErrorCode.INTERNAL_ERROR */
+    );
+    const firebase = typeof claims.firebase === "object" ? claims.firebase : void 0;
+    const signInProvider = firebase === null || firebase === void 0 ? void 0 : firebase["sign_in_provider"];
+    return {
+      claims,
+      token,
+      authTime: utcTimestampToDateString(secondsStringToMilliseconds(claims.auth_time)),
+      issuedAtTime: utcTimestampToDateString(secondsStringToMilliseconds(claims.iat)),
+      expirationTime: utcTimestampToDateString(secondsStringToMilliseconds(claims.exp)),
+      signInProvider: signInProvider || null,
+      signInSecondFactor: (firebase === null || firebase === void 0 ? void 0 : firebase["sign_in_second_factor"]) || null
+    };
+  }
+  function secondsStringToMilliseconds(seconds) {
+    return Number(seconds) * 1e3;
+  }
+  function _parseToken(token) {
+    const [algorithm, payload, signature] = token.split(".");
+    if (algorithm === void 0 || payload === void 0 || signature === void 0) {
+      _logError("JWT malformed, contained fewer than 3 sections");
+      return null;
+    }
+    try {
+      const decoded = base64Decode(payload);
+      if (!decoded) {
+        _logError("Failed to decode base64 JWT payload");
+        return null;
+      }
+      return JSON.parse(decoded);
+    } catch (e) {
+      _logError("Caught error parsing JWT payload as JSON", e === null || e === void 0 ? void 0 : e.toString());
+      return null;
+    }
+  }
+  function _tokenExpiresIn(token) {
+    const parsedToken = _parseToken(token);
+    _assert(
+      parsedToken,
+      "internal-error"
+      /* AuthErrorCode.INTERNAL_ERROR */
+    );
+    _assert(
+      typeof parsedToken.exp !== "undefined",
+      "internal-error"
+      /* AuthErrorCode.INTERNAL_ERROR */
+    );
+    _assert(
+      typeof parsedToken.iat !== "undefined",
+      "internal-error"
+      /* AuthErrorCode.INTERNAL_ERROR */
+    );
+    return Number(parsedToken.exp) - Number(parsedToken.iat);
+  }
+  async function _logoutIfInvalidated(user, promise, bypassAuthState = false) {
+    if (bypassAuthState) {
+      return promise;
+    }
+    try {
+      return await promise;
+    } catch (e) {
+      if (e instanceof FirebaseError && isUserInvalidated(e)) {
+        if (user.auth.currentUser === user) {
+          await user.auth.signOut();
+        }
+      }
+      throw e;
+    }
+  }
+  function isUserInvalidated({ code }) {
+    return code === `auth/${"user-disabled"}` || code === `auth/${"user-token-expired"}`;
+  }
+  var ProactiveRefresh = class {
+    constructor(user) {
+      this.user = user;
+      this.isRunning = false;
+      this.timerId = null;
+      this.errorBackoff = 3e4;
+    }
+    _start() {
+      if (this.isRunning) {
+        return;
+      }
+      this.isRunning = true;
+      this.schedule();
+    }
+    _stop() {
+      if (!this.isRunning) {
+        return;
+      }
+      this.isRunning = false;
+      if (this.timerId !== null) {
+        clearTimeout(this.timerId);
+      }
+    }
+    getInterval(wasError) {
+      var _a;
+      if (wasError) {
+        const interval = this.errorBackoff;
+        this.errorBackoff = Math.min(
+          this.errorBackoff * 2,
+          96e4
+          /* Duration.RETRY_BACKOFF_MAX */
+        );
+        return interval;
+      } else {
+        this.errorBackoff = 3e4;
+        const expTime = (_a = this.user.stsTokenManager.expirationTime) !== null && _a !== void 0 ? _a : 0;
+        const interval = expTime - Date.now() - 3e5;
+        return Math.max(0, interval);
+      }
+    }
+    schedule(wasError = false) {
+      if (!this.isRunning) {
+        return;
+      }
+      const interval = this.getInterval(wasError);
+      this.timerId = setTimeout(async () => {
+        await this.iteration();
+      }, interval);
+    }
+    async iteration() {
+      try {
+        await this.user.getIdToken(true);
+      } catch (e) {
+        if ((e === null || e === void 0 ? void 0 : e.code) === `auth/${"network-request-failed"}`) {
+          this.schedule(
+            /* wasError */
+            true
+          );
+        }
+        return;
+      }
+      this.schedule();
+    }
+  };
+  var UserMetadata = class {
+    constructor(createdAt, lastLoginAt) {
+      this.createdAt = createdAt;
+      this.lastLoginAt = lastLoginAt;
+      this._initializeTime();
+    }
+    _initializeTime() {
+      this.lastSignInTime = utcTimestampToDateString(this.lastLoginAt);
+      this.creationTime = utcTimestampToDateString(this.createdAt);
+    }
+    _copy(metadata) {
+      this.createdAt = metadata.createdAt;
+      this.lastLoginAt = metadata.lastLoginAt;
+      this._initializeTime();
+    }
+    toJSON() {
+      return {
+        createdAt: this.createdAt,
+        lastLoginAt: this.lastLoginAt
+      };
+    }
+  };
+  async function _reloadWithoutSaving(user) {
+    var _a;
+    const auth2 = user.auth;
+    const idToken = await user.getIdToken();
+    const response = await _logoutIfInvalidated(user, getAccountInfo(auth2, { idToken }));
+    _assert(
+      response === null || response === void 0 ? void 0 : response.users.length,
+      auth2,
+      "internal-error"
+      /* AuthErrorCode.INTERNAL_ERROR */
+    );
+    const coreAccount = response.users[0];
+    user._notifyReloadListener(coreAccount);
+    const newProviderData = ((_a = coreAccount.providerUserInfo) === null || _a === void 0 ? void 0 : _a.length) ? extractProviderData(coreAccount.providerUserInfo) : [];
+    const providerData = mergeProviderData(user.providerData, newProviderData);
+    const oldIsAnonymous = user.isAnonymous;
+    const newIsAnonymous = !(user.email && coreAccount.passwordHash) && !(providerData === null || providerData === void 0 ? void 0 : providerData.length);
+    const isAnonymous = !oldIsAnonymous ? false : newIsAnonymous;
+    const updates = {
+      uid: coreAccount.localId,
+      displayName: coreAccount.displayName || null,
+      photoURL: coreAccount.photoUrl || null,
+      email: coreAccount.email || null,
+      emailVerified: coreAccount.emailVerified || false,
+      phoneNumber: coreAccount.phoneNumber || null,
+      tenantId: coreAccount.tenantId || null,
+      providerData,
+      metadata: new UserMetadata(coreAccount.createdAt, coreAccount.lastLoginAt),
+      isAnonymous
+    };
+    Object.assign(user, updates);
+  }
+  async function reload(user) {
+    const userInternal = getModularInstance(user);
+    await _reloadWithoutSaving(userInternal);
+    await userInternal.auth._persistUserIfCurrent(userInternal);
+    userInternal.auth._notifyListenersIfCurrent(userInternal);
+  }
+  function mergeProviderData(original, newData) {
+    const deduped = original.filter((o) => !newData.some((n) => n.providerId === o.providerId));
+    return [...deduped, ...newData];
+  }
+  function extractProviderData(providers) {
+    return providers.map((_a) => {
+      var { providerId } = _a, provider = __rest(_a, ["providerId"]);
+      return {
+        providerId,
+        uid: provider.rawId || "",
+        displayName: provider.displayName || null,
+        email: provider.email || null,
+        phoneNumber: provider.phoneNumber || null,
+        photoURL: provider.photoUrl || null
+      };
+    });
+  }
+  async function requestStsToken(auth2, refreshToken) {
+    const response = await _performFetchWithErrorHandling(auth2, {}, async () => {
+      const body = querystring({
+        "grant_type": "refresh_token",
+        "refresh_token": refreshToken
+      }).slice(1);
+      const { tokenApiHost, apiKey } = auth2.config;
+      const url = await _getFinalTarget(auth2, tokenApiHost, "/v1/token", `key=${apiKey}`);
+      const headers = await auth2._getAdditionalHeaders();
+      headers[
+        "Content-Type"
+        /* HttpHeader.CONTENT_TYPE */
+      ] = "application/x-www-form-urlencoded";
+      const options = {
+        method: "POST",
+        headers,
+        body
+      };
+      if (auth2.emulatorConfig && isCloudWorkstation(auth2.emulatorConfig.host)) {
+        options.credentials = "include";
+      }
+      return FetchProvider.fetch()(url, options);
+    });
+    return {
+      accessToken: response.access_token,
+      expiresIn: response.expires_in,
+      refreshToken: response.refresh_token
+    };
+  }
+  async function revokeToken(auth2, request) {
+    return _performApiRequest(auth2, "POST", "/v2/accounts:revokeToken", _addTidIfNecessary(auth2, request));
+  }
+  var StsTokenManager = class _StsTokenManager {
+    constructor() {
+      this.refreshToken = null;
+      this.accessToken = null;
+      this.expirationTime = null;
+    }
+    get isExpired() {
+      return !this.expirationTime || Date.now() > this.expirationTime - 3e4;
+    }
+    updateFromServerResponse(response) {
+      _assert(
+        response.idToken,
+        "internal-error"
+        /* AuthErrorCode.INTERNAL_ERROR */
+      );
+      _assert(
+        typeof response.idToken !== "undefined",
+        "internal-error"
+        /* AuthErrorCode.INTERNAL_ERROR */
+      );
+      _assert(
+        typeof response.refreshToken !== "undefined",
+        "internal-error"
+        /* AuthErrorCode.INTERNAL_ERROR */
+      );
+      const expiresIn = "expiresIn" in response && typeof response.expiresIn !== "undefined" ? Number(response.expiresIn) : _tokenExpiresIn(response.idToken);
+      this.updateTokensAndExpiration(response.idToken, response.refreshToken, expiresIn);
+    }
+    updateFromIdToken(idToken) {
+      _assert(
+        idToken.length !== 0,
+        "internal-error"
+        /* AuthErrorCode.INTERNAL_ERROR */
+      );
+      const expiresIn = _tokenExpiresIn(idToken);
+      this.updateTokensAndExpiration(idToken, null, expiresIn);
+    }
+    async getToken(auth2, forceRefresh = false) {
+      if (!forceRefresh && this.accessToken && !this.isExpired) {
+        return this.accessToken;
+      }
+      _assert(
+        this.refreshToken,
+        auth2,
+        "user-token-expired"
+        /* AuthErrorCode.TOKEN_EXPIRED */
+      );
+      if (this.refreshToken) {
+        await this.refresh(auth2, this.refreshToken);
+        return this.accessToken;
+      }
+      return null;
+    }
+    clearRefreshToken() {
+      this.refreshToken = null;
+    }
+    async refresh(auth2, oldToken) {
+      const { accessToken, refreshToken, expiresIn } = await requestStsToken(auth2, oldToken);
+      this.updateTokensAndExpiration(accessToken, refreshToken, Number(expiresIn));
+    }
+    updateTokensAndExpiration(accessToken, refreshToken, expiresInSec) {
+      this.refreshToken = refreshToken || null;
+      this.accessToken = accessToken || null;
+      this.expirationTime = Date.now() + expiresInSec * 1e3;
+    }
+    static fromJSON(appName, object) {
+      const { refreshToken, accessToken, expirationTime } = object;
+      const manager = new _StsTokenManager();
+      if (refreshToken) {
+        _assert(typeof refreshToken === "string", "internal-error", {
+          appName
+        });
+        manager.refreshToken = refreshToken;
+      }
+      if (accessToken) {
+        _assert(typeof accessToken === "string", "internal-error", {
+          appName
+        });
+        manager.accessToken = accessToken;
+      }
+      if (expirationTime) {
+        _assert(typeof expirationTime === "number", "internal-error", {
+          appName
+        });
+        manager.expirationTime = expirationTime;
+      }
+      return manager;
+    }
+    toJSON() {
+      return {
+        refreshToken: this.refreshToken,
+        accessToken: this.accessToken,
+        expirationTime: this.expirationTime
+      };
+    }
+    _assign(stsTokenManager) {
+      this.accessToken = stsTokenManager.accessToken;
+      this.refreshToken = stsTokenManager.refreshToken;
+      this.expirationTime = stsTokenManager.expirationTime;
+    }
+    _clone() {
+      return Object.assign(new _StsTokenManager(), this.toJSON());
+    }
+    _performRefresh() {
+      return debugFail("not implemented");
+    }
+  };
+  function assertStringOrUndefined(assertion, appName) {
+    _assert(typeof assertion === "string" || typeof assertion === "undefined", "internal-error", { appName });
+  }
+  var UserImpl = class _UserImpl {
+    constructor(_a) {
+      var { uid, auth: auth2, stsTokenManager } = _a, opt = __rest(_a, ["uid", "auth", "stsTokenManager"]);
+      this.providerId = "firebase";
+      this.proactiveRefresh = new ProactiveRefresh(this);
+      this.reloadUserInfo = null;
+      this.reloadListener = null;
+      this.uid = uid;
+      this.auth = auth2;
+      this.stsTokenManager = stsTokenManager;
+      this.accessToken = stsTokenManager.accessToken;
+      this.displayName = opt.displayName || null;
+      this.email = opt.email || null;
+      this.emailVerified = opt.emailVerified || false;
+      this.phoneNumber = opt.phoneNumber || null;
+      this.photoURL = opt.photoURL || null;
+      this.isAnonymous = opt.isAnonymous || false;
+      this.tenantId = opt.tenantId || null;
+      this.providerData = opt.providerData ? [...opt.providerData] : [];
+      this.metadata = new UserMetadata(opt.createdAt || void 0, opt.lastLoginAt || void 0);
+    }
+    async getIdToken(forceRefresh) {
+      const accessToken = await _logoutIfInvalidated(this, this.stsTokenManager.getToken(this.auth, forceRefresh));
+      _assert(
+        accessToken,
+        this.auth,
+        "internal-error"
+        /* AuthErrorCode.INTERNAL_ERROR */
+      );
+      if (this.accessToken !== accessToken) {
+        this.accessToken = accessToken;
+        await this.auth._persistUserIfCurrent(this);
+        this.auth._notifyListenersIfCurrent(this);
+      }
+      return accessToken;
+    }
+    getIdTokenResult(forceRefresh) {
+      return getIdTokenResult(this, forceRefresh);
+    }
+    reload() {
+      return reload(this);
+    }
+    _assign(user) {
+      if (this === user) {
+        return;
+      }
+      _assert(
+        this.uid === user.uid,
+        this.auth,
+        "internal-error"
+        /* AuthErrorCode.INTERNAL_ERROR */
+      );
+      this.displayName = user.displayName;
+      this.photoURL = user.photoURL;
+      this.email = user.email;
+      this.emailVerified = user.emailVerified;
+      this.phoneNumber = user.phoneNumber;
+      this.isAnonymous = user.isAnonymous;
+      this.tenantId = user.tenantId;
+      this.providerData = user.providerData.map((userInfo) => Object.assign({}, userInfo));
+      this.metadata._copy(user.metadata);
+      this.stsTokenManager._assign(user.stsTokenManager);
+    }
+    _clone(auth2) {
+      const newUser = new _UserImpl(Object.assign(Object.assign({}, this), { auth: auth2, stsTokenManager: this.stsTokenManager._clone() }));
+      newUser.metadata._copy(this.metadata);
+      return newUser;
+    }
+    _onReload(callback) {
+      _assert(
+        !this.reloadListener,
+        this.auth,
+        "internal-error"
+        /* AuthErrorCode.INTERNAL_ERROR */
+      );
+      this.reloadListener = callback;
+      if (this.reloadUserInfo) {
+        this._notifyReloadListener(this.reloadUserInfo);
+        this.reloadUserInfo = null;
+      }
+    }
+    _notifyReloadListener(userInfo) {
+      if (this.reloadListener) {
+        this.reloadListener(userInfo);
+      } else {
+        this.reloadUserInfo = userInfo;
+      }
+    }
+    _startProactiveRefresh() {
+      this.proactiveRefresh._start();
+    }
+    _stopProactiveRefresh() {
+      this.proactiveRefresh._stop();
+    }
+    async _updateTokensIfNecessary(response, reload2 = false) {
+      let tokensRefreshed = false;
+      if (response.idToken && response.idToken !== this.stsTokenManager.accessToken) {
+        this.stsTokenManager.updateFromServerResponse(response);
+        tokensRefreshed = true;
+      }
+      if (reload2) {
+        await _reloadWithoutSaving(this);
+      }
+      await this.auth._persistUserIfCurrent(this);
+      if (tokensRefreshed) {
+        this.auth._notifyListenersIfCurrent(this);
+      }
+    }
+    async delete() {
+      if (_isFirebaseServerApp(this.auth.app)) {
+        return Promise.reject(_serverAppCurrentUserOperationNotSupportedError(this.auth));
+      }
+      const idToken = await this.getIdToken();
+      await _logoutIfInvalidated(this, deleteAccount(this.auth, { idToken }));
+      this.stsTokenManager.clearRefreshToken();
+      return this.auth.signOut();
+    }
+    toJSON() {
+      return Object.assign(Object.assign({
+        uid: this.uid,
+        email: this.email || void 0,
+        emailVerified: this.emailVerified,
+        displayName: this.displayName || void 0,
+        isAnonymous: this.isAnonymous,
+        photoURL: this.photoURL || void 0,
+        phoneNumber: this.phoneNumber || void 0,
+        tenantId: this.tenantId || void 0,
+        providerData: this.providerData.map((userInfo) => Object.assign({}, userInfo)),
+        stsTokenManager: this.stsTokenManager.toJSON(),
+        // Redirect event ID must be maintained in case there is a pending
+        // redirect event.
+        _redirectEventId: this._redirectEventId
+      }, this.metadata.toJSON()), {
+        // Required for compatibility with the legacy SDK (go/firebase-auth-sdk-persistence-parsing):
+        apiKey: this.auth.config.apiKey,
+        appName: this.auth.name
+      });
+    }
+    get refreshToken() {
+      return this.stsTokenManager.refreshToken || "";
+    }
+    static _fromJSON(auth2, object) {
+      var _a, _b, _c, _d, _e, _f, _g, _h;
+      const displayName = (_a = object.displayName) !== null && _a !== void 0 ? _a : void 0;
+      const email = (_b = object.email) !== null && _b !== void 0 ? _b : void 0;
+      const phoneNumber = (_c = object.phoneNumber) !== null && _c !== void 0 ? _c : void 0;
+      const photoURL = (_d = object.photoURL) !== null && _d !== void 0 ? _d : void 0;
+      const tenantId = (_e = object.tenantId) !== null && _e !== void 0 ? _e : void 0;
+      const _redirectEventId = (_f = object._redirectEventId) !== null && _f !== void 0 ? _f : void 0;
+      const createdAt = (_g = object.createdAt) !== null && _g !== void 0 ? _g : void 0;
+      const lastLoginAt = (_h = object.lastLoginAt) !== null && _h !== void 0 ? _h : void 0;
+      const { uid, emailVerified, isAnonymous, providerData, stsTokenManager: plainObjectTokenManager } = object;
+      _assert(
+        uid && plainObjectTokenManager,
+        auth2,
+        "internal-error"
+        /* AuthErrorCode.INTERNAL_ERROR */
+      );
+      const stsTokenManager = StsTokenManager.fromJSON(this.name, plainObjectTokenManager);
+      _assert(
+        typeof uid === "string",
+        auth2,
+        "internal-error"
+        /* AuthErrorCode.INTERNAL_ERROR */
+      );
+      assertStringOrUndefined(displayName, auth2.name);
+      assertStringOrUndefined(email, auth2.name);
+      _assert(
+        typeof emailVerified === "boolean",
+        auth2,
+        "internal-error"
+        /* AuthErrorCode.INTERNAL_ERROR */
+      );
+      _assert(
+        typeof isAnonymous === "boolean",
+        auth2,
+        "internal-error"
+        /* AuthErrorCode.INTERNAL_ERROR */
+      );
+      assertStringOrUndefined(phoneNumber, auth2.name);
+      assertStringOrUndefined(photoURL, auth2.name);
+      assertStringOrUndefined(tenantId, auth2.name);
+      assertStringOrUndefined(_redirectEventId, auth2.name);
+      assertStringOrUndefined(createdAt, auth2.name);
+      assertStringOrUndefined(lastLoginAt, auth2.name);
+      const user = new _UserImpl({
+        uid,
+        auth: auth2,
+        email,
+        emailVerified,
+        displayName,
+        isAnonymous,
+        photoURL,
+        phoneNumber,
+        tenantId,
+        stsTokenManager,
+        createdAt,
+        lastLoginAt
+      });
+      if (providerData && Array.isArray(providerData)) {
+        user.providerData = providerData.map((userInfo) => Object.assign({}, userInfo));
+      }
+      if (_redirectEventId) {
+        user._redirectEventId = _redirectEventId;
+      }
+      return user;
+    }
+    /**
+     * Initialize a User from an idToken server response
+     * @param auth
+     * @param idTokenResponse
+     */
+    static async _fromIdTokenResponse(auth2, idTokenResponse, isAnonymous = false) {
+      const stsTokenManager = new StsTokenManager();
+      stsTokenManager.updateFromServerResponse(idTokenResponse);
+      const user = new _UserImpl({
+        uid: idTokenResponse.localId,
+        auth: auth2,
+        stsTokenManager,
+        isAnonymous
+      });
+      await _reloadWithoutSaving(user);
+      return user;
+    }
+    /**
+     * Initialize a User from an idToken server response
+     * @param auth
+     * @param idTokenResponse
+     */
+    static async _fromGetAccountInfoResponse(auth2, response, idToken) {
+      const coreAccount = response.users[0];
+      _assert(
+        coreAccount.localId !== void 0,
+        "internal-error"
+        /* AuthErrorCode.INTERNAL_ERROR */
+      );
+      const providerData = coreAccount.providerUserInfo !== void 0 ? extractProviderData(coreAccount.providerUserInfo) : [];
+      const isAnonymous = !(coreAccount.email && coreAccount.passwordHash) && !(providerData === null || providerData === void 0 ? void 0 : providerData.length);
+      const stsTokenManager = new StsTokenManager();
+      stsTokenManager.updateFromIdToken(idToken);
+      const user = new _UserImpl({
+        uid: coreAccount.localId,
+        auth: auth2,
+        stsTokenManager,
+        isAnonymous
+      });
+      const updates = {
+        uid: coreAccount.localId,
+        displayName: coreAccount.displayName || null,
+        photoURL: coreAccount.photoUrl || null,
+        email: coreAccount.email || null,
+        emailVerified: coreAccount.emailVerified || false,
+        phoneNumber: coreAccount.phoneNumber || null,
+        tenantId: coreAccount.tenantId || null,
+        providerData,
+        metadata: new UserMetadata(coreAccount.createdAt, coreAccount.lastLoginAt),
+        isAnonymous: !(coreAccount.email && coreAccount.passwordHash) && !(providerData === null || providerData === void 0 ? void 0 : providerData.length)
+      };
+      Object.assign(user, updates);
+      return user;
+    }
+  };
+  var instanceCache = /* @__PURE__ */ new Map();
+  function _getInstance(cls) {
+    debugAssert(cls instanceof Function, "Expected a class definition");
+    let instance = instanceCache.get(cls);
+    if (instance) {
+      debugAssert(instance instanceof cls, "Instance stored in cache mismatched with class");
+      return instance;
+    }
+    instance = new cls();
+    instanceCache.set(cls, instance);
+    return instance;
+  }
+  var InMemoryPersistence = class {
+    constructor() {
+      this.type = "NONE";
+      this.storage = {};
+    }
+    async _isAvailable() {
+      return true;
+    }
+    async _set(key, value) {
+      this.storage[key] = value;
+    }
+    async _get(key) {
+      const value = this.storage[key];
+      return value === void 0 ? null : value;
+    }
+    async _remove(key) {
+      delete this.storage[key];
+    }
+    _addListener(_key, _listener) {
+      return;
+    }
+    _removeListener(_key, _listener) {
+      return;
+    }
+  };
+  InMemoryPersistence.type = "NONE";
+  var inMemoryPersistence = InMemoryPersistence;
+  function _persistenceKeyName(key, apiKey, appName) {
+    return `${"firebase"}:${key}:${apiKey}:${appName}`;
+  }
+  var PersistenceUserManager = class _PersistenceUserManager {
+    constructor(persistence, auth2, userKey) {
+      this.persistence = persistence;
+      this.auth = auth2;
+      this.userKey = userKey;
+      const { config, name: name5 } = this.auth;
+      this.fullUserKey = _persistenceKeyName(this.userKey, config.apiKey, name5);
+      this.fullPersistenceKey = _persistenceKeyName("persistence", config.apiKey, name5);
+      this.boundEventHandler = auth2._onStorageEvent.bind(auth2);
+      this.persistence._addListener(this.fullUserKey, this.boundEventHandler);
+    }
+    setCurrentUser(user) {
+      return this.persistence._set(this.fullUserKey, user.toJSON());
+    }
+    async getCurrentUser() {
+      const blob = await this.persistence._get(this.fullUserKey);
+      if (!blob) {
+        return null;
+      }
+      if (typeof blob === "string") {
+        const response = await getAccountInfo(this.auth, { idToken: blob }).catch(() => void 0);
+        if (!response) {
+          return null;
+        }
+        return UserImpl._fromGetAccountInfoResponse(this.auth, response, blob);
+      }
+      return UserImpl._fromJSON(this.auth, blob);
+    }
+    removeCurrentUser() {
+      return this.persistence._remove(this.fullUserKey);
+    }
+    savePersistenceForRedirect() {
+      return this.persistence._set(this.fullPersistenceKey, this.persistence.type);
+    }
+    async setPersistence(newPersistence) {
+      if (this.persistence === newPersistence) {
+        return;
+      }
+      const currentUser = await this.getCurrentUser();
+      await this.removeCurrentUser();
+      this.persistence = newPersistence;
+      if (currentUser) {
+        return this.setCurrentUser(currentUser);
+      }
+    }
+    delete() {
+      this.persistence._removeListener(this.fullUserKey, this.boundEventHandler);
+    }
+    static async create(auth2, persistenceHierarchy, userKey = "authUser") {
+      if (!persistenceHierarchy.length) {
+        return new _PersistenceUserManager(_getInstance(inMemoryPersistence), auth2, userKey);
+      }
+      const availablePersistences = (await Promise.all(persistenceHierarchy.map(async (persistence) => {
+        if (await persistence._isAvailable()) {
+          return persistence;
+        }
+        return void 0;
+      }))).filter((persistence) => persistence);
+      let selectedPersistence = availablePersistences[0] || _getInstance(inMemoryPersistence);
+      const key = _persistenceKeyName(userKey, auth2.config.apiKey, auth2.name);
+      let userToMigrate = null;
+      for (const persistence of persistenceHierarchy) {
+        try {
+          const blob = await persistence._get(key);
+          if (blob) {
+            let user;
+            if (typeof blob === "string") {
+              const response = await getAccountInfo(auth2, {
+                idToken: blob
+              }).catch(() => void 0);
+              if (!response) {
+                break;
+              }
+              user = await UserImpl._fromGetAccountInfoResponse(auth2, response, blob);
+            } else {
+              user = UserImpl._fromJSON(auth2, blob);
+            }
+            if (persistence !== selectedPersistence) {
+              userToMigrate = user;
+            }
+            selectedPersistence = persistence;
+            break;
+          }
+        } catch (_a) {
+        }
+      }
+      const migrationHierarchy = availablePersistences.filter((p) => p._shouldAllowMigration);
+      if (!selectedPersistence._shouldAllowMigration || !migrationHierarchy.length) {
+        return new _PersistenceUserManager(selectedPersistence, auth2, userKey);
+      }
+      selectedPersistence = migrationHierarchy[0];
+      if (userToMigrate) {
+        await selectedPersistence._set(key, userToMigrate.toJSON());
+      }
+      await Promise.all(persistenceHierarchy.map(async (persistence) => {
+        if (persistence !== selectedPersistence) {
+          try {
+            await persistence._remove(key);
+          } catch (_a) {
+          }
+        }
+      }));
+      return new _PersistenceUserManager(selectedPersistence, auth2, userKey);
+    }
+  };
+  function _getBrowserName(userAgent) {
+    const ua = userAgent.toLowerCase();
+    if (ua.includes("opera/") || ua.includes("opr/") || ua.includes("opios/")) {
+      return "Opera";
+    } else if (_isIEMobile(ua)) {
+      return "IEMobile";
+    } else if (ua.includes("msie") || ua.includes("trident/")) {
+      return "IE";
+    } else if (ua.includes("edge/")) {
+      return "Edge";
+    } else if (_isFirefox(ua)) {
+      return "Firefox";
+    } else if (ua.includes("silk/")) {
+      return "Silk";
+    } else if (_isBlackBerry(ua)) {
+      return "Blackberry";
+    } else if (_isWebOS(ua)) {
+      return "Webos";
+    } else if (_isSafari(ua)) {
+      return "Safari";
+    } else if ((ua.includes("chrome/") || _isChromeIOS(ua)) && !ua.includes("edge/")) {
+      return "Chrome";
+    } else if (_isAndroid(ua)) {
+      return "Android";
+    } else {
+      const re = /([a-zA-Z\d\.]+)\/[a-zA-Z\d\.]*$/;
+      const matches = userAgent.match(re);
+      if ((matches === null || matches === void 0 ? void 0 : matches.length) === 2) {
+        return matches[1];
+      }
+    }
+    return "Other";
+  }
+  function _isFirefox(ua = getUA()) {
+    return /firefox\//i.test(ua);
+  }
+  function _isSafari(userAgent = getUA()) {
+    const ua = userAgent.toLowerCase();
+    return ua.includes("safari/") && !ua.includes("chrome/") && !ua.includes("crios/") && !ua.includes("android");
+  }
+  function _isChromeIOS(ua = getUA()) {
+    return /crios\//i.test(ua);
+  }
+  function _isIEMobile(ua = getUA()) {
+    return /iemobile/i.test(ua);
+  }
+  function _isAndroid(ua = getUA()) {
+    return /android/i.test(ua);
+  }
+  function _isBlackBerry(ua = getUA()) {
+    return /blackberry/i.test(ua);
+  }
+  function _isWebOS(ua = getUA()) {
+    return /webos/i.test(ua);
+  }
+  function _isIOS(ua = getUA()) {
+    return /iphone|ipad|ipod/i.test(ua) || /macintosh/i.test(ua) && /mobile/i.test(ua);
+  }
+  function _isIOSStandalone(ua = getUA()) {
+    var _a;
+    return _isIOS(ua) && !!((_a = window.navigator) === null || _a === void 0 ? void 0 : _a.standalone);
+  }
+  function _isIE10() {
+    return isIE() && document.documentMode === 10;
+  }
+  function _isMobileBrowser(ua = getUA()) {
+    return _isIOS(ua) || _isAndroid(ua) || _isWebOS(ua) || _isBlackBerry(ua) || /windows phone/i.test(ua) || _isIEMobile(ua);
+  }
+  function _getClientVersion(clientPlatform, frameworks = []) {
+    let reportedPlatform;
+    switch (clientPlatform) {
+      case "Browser":
+        reportedPlatform = _getBrowserName(getUA());
+        break;
+      case "Worker":
+        reportedPlatform = `${_getBrowserName(getUA())}-${clientPlatform}`;
+        break;
+      default:
+        reportedPlatform = clientPlatform;
+    }
+    const reportedFrameworks = frameworks.length ? frameworks.join(",") : "FirebaseCore-web";
+    return `${reportedPlatform}/${"JsCore"}/${SDK_VERSION}/${reportedFrameworks}`;
+  }
+  var AuthMiddlewareQueue = class {
+    constructor(auth2) {
+      this.auth = auth2;
+      this.queue = [];
+    }
+    pushCallback(callback, onAbort) {
+      const wrappedCallback = (user) => new Promise((resolve, reject) => {
+        try {
+          const result = callback(user);
+          resolve(result);
+        } catch (e) {
+          reject(e);
+        }
+      });
+      wrappedCallback.onAbort = onAbort;
+      this.queue.push(wrappedCallback);
+      const index = this.queue.length - 1;
+      return () => {
+        this.queue[index] = () => Promise.resolve();
+      };
+    }
+    async runMiddleware(nextUser) {
+      if (this.auth.currentUser === nextUser) {
+        return;
+      }
+      const onAbortStack = [];
+      try {
+        for (const beforeStateCallback of this.queue) {
+          await beforeStateCallback(nextUser);
+          if (beforeStateCallback.onAbort) {
+            onAbortStack.push(beforeStateCallback.onAbort);
+          }
+        }
+      } catch (e) {
+        onAbortStack.reverse();
+        for (const onAbort of onAbortStack) {
+          try {
+            onAbort();
+          } catch (_) {
+          }
+        }
+        throw this.auth._errorFactory.create("login-blocked", {
+          originalMessage: e === null || e === void 0 ? void 0 : e.message
+        });
+      }
+    }
+  };
+  async function _getPasswordPolicy(auth2, request = {}) {
+    return _performApiRequest(auth2, "GET", "/v2/passwordPolicy", _addTidIfNecessary(auth2, request));
+  }
+  var MINIMUM_MIN_PASSWORD_LENGTH = 6;
+  var PasswordPolicyImpl = class {
+    constructor(response) {
+      var _a, _b, _c, _d;
+      const responseOptions = response.customStrengthOptions;
+      this.customStrengthOptions = {};
+      this.customStrengthOptions.minPasswordLength = (_a = responseOptions.minPasswordLength) !== null && _a !== void 0 ? _a : MINIMUM_MIN_PASSWORD_LENGTH;
+      if (responseOptions.maxPasswordLength) {
+        this.customStrengthOptions.maxPasswordLength = responseOptions.maxPasswordLength;
+      }
+      if (responseOptions.containsLowercaseCharacter !== void 0) {
+        this.customStrengthOptions.containsLowercaseLetter = responseOptions.containsLowercaseCharacter;
+      }
+      if (responseOptions.containsUppercaseCharacter !== void 0) {
+        this.customStrengthOptions.containsUppercaseLetter = responseOptions.containsUppercaseCharacter;
+      }
+      if (responseOptions.containsNumericCharacter !== void 0) {
+        this.customStrengthOptions.containsNumericCharacter = responseOptions.containsNumericCharacter;
+      }
+      if (responseOptions.containsNonAlphanumericCharacter !== void 0) {
+        this.customStrengthOptions.containsNonAlphanumericCharacter = responseOptions.containsNonAlphanumericCharacter;
+      }
+      this.enforcementState = response.enforcementState;
+      if (this.enforcementState === "ENFORCEMENT_STATE_UNSPECIFIED") {
+        this.enforcementState = "OFF";
+      }
+      this.allowedNonAlphanumericCharacters = (_c = (_b = response.allowedNonAlphanumericCharacters) === null || _b === void 0 ? void 0 : _b.join("")) !== null && _c !== void 0 ? _c : "";
+      this.forceUpgradeOnSignin = (_d = response.forceUpgradeOnSignin) !== null && _d !== void 0 ? _d : false;
+      this.schemaVersion = response.schemaVersion;
+    }
+    validatePassword(password) {
+      var _a, _b, _c, _d, _e, _f;
+      const status = {
+        isValid: true,
+        passwordPolicy: this
+      };
+      this.validatePasswordLengthOptions(password, status);
+      this.validatePasswordCharacterOptions(password, status);
+      status.isValid && (status.isValid = (_a = status.meetsMinPasswordLength) !== null && _a !== void 0 ? _a : true);
+      status.isValid && (status.isValid = (_b = status.meetsMaxPasswordLength) !== null && _b !== void 0 ? _b : true);
+      status.isValid && (status.isValid = (_c = status.containsLowercaseLetter) !== null && _c !== void 0 ? _c : true);
+      status.isValid && (status.isValid = (_d = status.containsUppercaseLetter) !== null && _d !== void 0 ? _d : true);
+      status.isValid && (status.isValid = (_e = status.containsNumericCharacter) !== null && _e !== void 0 ? _e : true);
+      status.isValid && (status.isValid = (_f = status.containsNonAlphanumericCharacter) !== null && _f !== void 0 ? _f : true);
+      return status;
+    }
+    /**
+     * Validates that the password meets the length options for the policy.
+     *
+     * @param password Password to validate.
+     * @param status Validation status.
+     */
+    validatePasswordLengthOptions(password, status) {
+      const minPasswordLength = this.customStrengthOptions.minPasswordLength;
+      const maxPasswordLength = this.customStrengthOptions.maxPasswordLength;
+      if (minPasswordLength) {
+        status.meetsMinPasswordLength = password.length >= minPasswordLength;
+      }
+      if (maxPasswordLength) {
+        status.meetsMaxPasswordLength = password.length <= maxPasswordLength;
+      }
+    }
+    /**
+     * Validates that the password meets the character options for the policy.
+     *
+     * @param password Password to validate.
+     * @param status Validation status.
+     */
+    validatePasswordCharacterOptions(password, status) {
+      this.updatePasswordCharacterOptionsStatuses(
+        status,
+        /* containsLowercaseCharacter= */
+        false,
+        /* containsUppercaseCharacter= */
+        false,
+        /* containsNumericCharacter= */
+        false,
+        /* containsNonAlphanumericCharacter= */
+        false
+      );
+      let passwordChar;
+      for (let i = 0; i < password.length; i++) {
+        passwordChar = password.charAt(i);
+        this.updatePasswordCharacterOptionsStatuses(
+          status,
+          /* containsLowercaseCharacter= */
+          passwordChar >= "a" && passwordChar <= "z",
+          /* containsUppercaseCharacter= */
+          passwordChar >= "A" && passwordChar <= "Z",
+          /* containsNumericCharacter= */
+          passwordChar >= "0" && passwordChar <= "9",
+          /* containsNonAlphanumericCharacter= */
+          this.allowedNonAlphanumericCharacters.includes(passwordChar)
+        );
+      }
+    }
+    /**
+     * Updates the running validation status with the statuses for the character options.
+     * Expected to be called each time a character is processed to update each option status
+     * based on the current character.
+     *
+     * @param status Validation status.
+     * @param containsLowercaseCharacter Whether the character is a lowercase letter.
+     * @param containsUppercaseCharacter Whether the character is an uppercase letter.
+     * @param containsNumericCharacter Whether the character is a numeric character.
+     * @param containsNonAlphanumericCharacter Whether the character is a non-alphanumeric character.
+     */
+    updatePasswordCharacterOptionsStatuses(status, containsLowercaseCharacter, containsUppercaseCharacter, containsNumericCharacter, containsNonAlphanumericCharacter) {
+      if (this.customStrengthOptions.containsLowercaseLetter) {
+        status.containsLowercaseLetter || (status.containsLowercaseLetter = containsLowercaseCharacter);
+      }
+      if (this.customStrengthOptions.containsUppercaseLetter) {
+        status.containsUppercaseLetter || (status.containsUppercaseLetter = containsUppercaseCharacter);
+      }
+      if (this.customStrengthOptions.containsNumericCharacter) {
+        status.containsNumericCharacter || (status.containsNumericCharacter = containsNumericCharacter);
+      }
+      if (this.customStrengthOptions.containsNonAlphanumericCharacter) {
+        status.containsNonAlphanumericCharacter || (status.containsNonAlphanumericCharacter = containsNonAlphanumericCharacter);
+      }
+    }
+  };
+  var AuthImpl = class {
+    constructor(app2, heartbeatServiceProvider, appCheckServiceProvider, config) {
+      this.app = app2;
+      this.heartbeatServiceProvider = heartbeatServiceProvider;
+      this.appCheckServiceProvider = appCheckServiceProvider;
+      this.config = config;
+      this.currentUser = null;
+      this.emulatorConfig = null;
+      this.operations = Promise.resolve();
+      this.authStateSubscription = new Subscription(this);
+      this.idTokenSubscription = new Subscription(this);
+      this.beforeStateQueue = new AuthMiddlewareQueue(this);
+      this.redirectUser = null;
+      this.isProactiveRefreshEnabled = false;
+      this.EXPECTED_PASSWORD_POLICY_SCHEMA_VERSION = 1;
+      this._canInitEmulator = true;
+      this._isInitialized = false;
+      this._deleted = false;
+      this._initializationPromise = null;
+      this._popupRedirectResolver = null;
+      this._errorFactory = _DEFAULT_AUTH_ERROR_FACTORY;
+      this._agentRecaptchaConfig = null;
+      this._tenantRecaptchaConfigs = {};
+      this._projectPasswordPolicy = null;
+      this._tenantPasswordPolicies = {};
+      this._resolvePersistenceManagerAvailable = void 0;
+      this.lastNotifiedUid = void 0;
+      this.languageCode = null;
+      this.tenantId = null;
+      this.settings = { appVerificationDisabledForTesting: false };
+      this.frameworks = [];
+      this.name = app2.name;
+      this.clientVersion = config.sdkClientVersion;
+      this._persistenceManagerAvailable = new Promise((resolve) => this._resolvePersistenceManagerAvailable = resolve);
+    }
+    _initializeWithPersistence(persistenceHierarchy, popupRedirectResolver) {
+      if (popupRedirectResolver) {
+        this._popupRedirectResolver = _getInstance(popupRedirectResolver);
+      }
+      this._initializationPromise = this.queue(async () => {
+        var _a, _b, _c;
+        if (this._deleted) {
+          return;
+        }
+        this.persistenceManager = await PersistenceUserManager.create(this, persistenceHierarchy);
+        (_a = this._resolvePersistenceManagerAvailable) === null || _a === void 0 ? void 0 : _a.call(this);
+        if (this._deleted) {
+          return;
+        }
+        if ((_b = this._popupRedirectResolver) === null || _b === void 0 ? void 0 : _b._shouldInitProactively) {
+          try {
+            await this._popupRedirectResolver._initialize(this);
+          } catch (e) {
+          }
+        }
+        await this.initializeCurrentUser(popupRedirectResolver);
+        this.lastNotifiedUid = ((_c = this.currentUser) === null || _c === void 0 ? void 0 : _c.uid) || null;
+        if (this._deleted) {
+          return;
+        }
+        this._isInitialized = true;
+      });
+      return this._initializationPromise;
+    }
+    /**
+     * If the persistence is changed in another window, the user manager will let us know
+     */
+    async _onStorageEvent() {
+      if (this._deleted) {
+        return;
+      }
+      const user = await this.assertedPersistence.getCurrentUser();
+      if (!this.currentUser && !user) {
+        return;
+      }
+      if (this.currentUser && user && this.currentUser.uid === user.uid) {
+        this._currentUser._assign(user);
+        await this.currentUser.getIdToken();
+        return;
+      }
+      await this._updateCurrentUser(
+        user,
+        /* skipBeforeStateCallbacks */
+        true
+      );
+    }
+    async initializeCurrentUserFromIdToken(idToken) {
+      try {
+        const response = await getAccountInfo(this, { idToken });
+        const user = await UserImpl._fromGetAccountInfoResponse(this, response, idToken);
+        await this.directlySetCurrentUser(user);
+      } catch (err) {
+        console.warn("FirebaseServerApp could not login user with provided authIdToken: ", err);
+        await this.directlySetCurrentUser(null);
+      }
+    }
+    async initializeCurrentUser(popupRedirectResolver) {
+      var _a;
+      if (_isFirebaseServerApp(this.app)) {
+        const idToken = this.app.settings.authIdToken;
+        if (idToken) {
+          return new Promise((resolve) => {
+            setTimeout(() => this.initializeCurrentUserFromIdToken(idToken).then(resolve, resolve));
+          });
+        } else {
+          return this.directlySetCurrentUser(null);
+        }
+      }
+      const previouslyStoredUser = await this.assertedPersistence.getCurrentUser();
+      let futureCurrentUser = previouslyStoredUser;
+      let needsTocheckMiddleware = false;
+      if (popupRedirectResolver && this.config.authDomain) {
+        await this.getOrInitRedirectPersistenceManager();
+        const redirectUserEventId = (_a = this.redirectUser) === null || _a === void 0 ? void 0 : _a._redirectEventId;
+        const storedUserEventId = futureCurrentUser === null || futureCurrentUser === void 0 ? void 0 : futureCurrentUser._redirectEventId;
+        const result = await this.tryRedirectSignIn(popupRedirectResolver);
+        if ((!redirectUserEventId || redirectUserEventId === storedUserEventId) && (result === null || result === void 0 ? void 0 : result.user)) {
+          futureCurrentUser = result.user;
+          needsTocheckMiddleware = true;
+        }
+      }
+      if (!futureCurrentUser) {
+        return this.directlySetCurrentUser(null);
+      }
+      if (!futureCurrentUser._redirectEventId) {
+        if (needsTocheckMiddleware) {
+          try {
+            await this.beforeStateQueue.runMiddleware(futureCurrentUser);
+          } catch (e) {
+            futureCurrentUser = previouslyStoredUser;
+            this._popupRedirectResolver._overrideRedirectResult(this, () => Promise.reject(e));
+          }
+        }
+        if (futureCurrentUser) {
+          return this.reloadAndSetCurrentUserOrClear(futureCurrentUser);
+        } else {
+          return this.directlySetCurrentUser(null);
+        }
+      }
+      _assert(
+        this._popupRedirectResolver,
+        this,
+        "argument-error"
+        /* AuthErrorCode.ARGUMENT_ERROR */
+      );
+      await this.getOrInitRedirectPersistenceManager();
+      if (this.redirectUser && this.redirectUser._redirectEventId === futureCurrentUser._redirectEventId) {
+        return this.directlySetCurrentUser(futureCurrentUser);
+      }
+      return this.reloadAndSetCurrentUserOrClear(futureCurrentUser);
+    }
+    async tryRedirectSignIn(redirectResolver) {
+      let result = null;
+      try {
+        result = await this._popupRedirectResolver._completeRedirectFn(this, redirectResolver, true);
+      } catch (e) {
+        await this._setRedirectUser(null);
+      }
+      return result;
+    }
+    async reloadAndSetCurrentUserOrClear(user) {
+      try {
+        await _reloadWithoutSaving(user);
+      } catch (e) {
+        if ((e === null || e === void 0 ? void 0 : e.code) !== `auth/${"network-request-failed"}`) {
+          return this.directlySetCurrentUser(null);
+        }
+      }
+      return this.directlySetCurrentUser(user);
+    }
+    useDeviceLanguage() {
+      this.languageCode = _getUserLanguage();
+    }
+    async _delete() {
+      this._deleted = true;
+    }
+    async updateCurrentUser(userExtern) {
+      if (_isFirebaseServerApp(this.app)) {
+        return Promise.reject(_serverAppCurrentUserOperationNotSupportedError(this));
+      }
+      const user = userExtern ? getModularInstance(userExtern) : null;
+      if (user) {
+        _assert(
+          user.auth.config.apiKey === this.config.apiKey,
+          this,
+          "invalid-user-token"
+          /* AuthErrorCode.INVALID_AUTH */
+        );
+      }
+      return this._updateCurrentUser(user && user._clone(this));
+    }
+    async _updateCurrentUser(user, skipBeforeStateCallbacks = false) {
+      if (this._deleted) {
+        return;
+      }
+      if (user) {
+        _assert(
+          this.tenantId === user.tenantId,
+          this,
+          "tenant-id-mismatch"
+          /* AuthErrorCode.TENANT_ID_MISMATCH */
+        );
+      }
+      if (!skipBeforeStateCallbacks) {
+        await this.beforeStateQueue.runMiddleware(user);
+      }
+      return this.queue(async () => {
+        await this.directlySetCurrentUser(user);
+        this.notifyAuthListeners();
+      });
+    }
+    async signOut() {
+      if (_isFirebaseServerApp(this.app)) {
+        return Promise.reject(_serverAppCurrentUserOperationNotSupportedError(this));
+      }
+      await this.beforeStateQueue.runMiddleware(null);
+      if (this.redirectPersistenceManager || this._popupRedirectResolver) {
+        await this._setRedirectUser(null);
+      }
+      return this._updateCurrentUser(
+        null,
+        /* skipBeforeStateCallbacks */
+        true
+      );
+    }
+    setPersistence(persistence) {
+      if (_isFirebaseServerApp(this.app)) {
+        return Promise.reject(_serverAppCurrentUserOperationNotSupportedError(this));
+      }
+      return this.queue(async () => {
+        await this.assertedPersistence.setPersistence(_getInstance(persistence));
+      });
+    }
+    _getRecaptchaConfig() {
+      if (this.tenantId == null) {
+        return this._agentRecaptchaConfig;
+      } else {
+        return this._tenantRecaptchaConfigs[this.tenantId];
+      }
+    }
+    async validatePassword(password) {
+      if (!this._getPasswordPolicyInternal()) {
+        await this._updatePasswordPolicy();
+      }
+      const passwordPolicy = this._getPasswordPolicyInternal();
+      if (passwordPolicy.schemaVersion !== this.EXPECTED_PASSWORD_POLICY_SCHEMA_VERSION) {
+        return Promise.reject(this._errorFactory.create("unsupported-password-policy-schema-version", {}));
+      }
+      return passwordPolicy.validatePassword(password);
+    }
+    _getPasswordPolicyInternal() {
+      if (this.tenantId === null) {
+        return this._projectPasswordPolicy;
+      } else {
+        return this._tenantPasswordPolicies[this.tenantId];
+      }
+    }
+    async _updatePasswordPolicy() {
+      const response = await _getPasswordPolicy(this);
+      const passwordPolicy = new PasswordPolicyImpl(response);
+      if (this.tenantId === null) {
+        this._projectPasswordPolicy = passwordPolicy;
+      } else {
+        this._tenantPasswordPolicies[this.tenantId] = passwordPolicy;
+      }
+    }
+    _getPersistenceType() {
+      return this.assertedPersistence.persistence.type;
+    }
+    _getPersistence() {
+      return this.assertedPersistence.persistence;
+    }
+    _updateErrorMap(errorMap) {
+      this._errorFactory = new ErrorFactory("auth", "Firebase", errorMap());
+    }
+    onAuthStateChanged(nextOrObserver, error, completed) {
+      return this.registerStateListener(this.authStateSubscription, nextOrObserver, error, completed);
+    }
+    beforeAuthStateChanged(callback, onAbort) {
+      return this.beforeStateQueue.pushCallback(callback, onAbort);
+    }
+    onIdTokenChanged(nextOrObserver, error, completed) {
+      return this.registerStateListener(this.idTokenSubscription, nextOrObserver, error, completed);
+    }
+    authStateReady() {
+      return new Promise((resolve, reject) => {
+        if (this.currentUser) {
+          resolve();
+        } else {
+          const unsubscribe = this.onAuthStateChanged(() => {
+            unsubscribe();
+            resolve();
+          }, reject);
+        }
+      });
+    }
+    /**
+     * Revokes the given access token. Currently only supports Apple OAuth access tokens.
+     */
+    async revokeAccessToken(token) {
+      if (this.currentUser) {
+        const idToken = await this.currentUser.getIdToken();
+        const request = {
+          providerId: "apple.com",
+          tokenType: "ACCESS_TOKEN",
+          token,
+          idToken
+        };
+        if (this.tenantId != null) {
+          request.tenantId = this.tenantId;
+        }
+        await revokeToken(this, request);
+      }
+    }
+    toJSON() {
+      var _a;
+      return {
+        apiKey: this.config.apiKey,
+        authDomain: this.config.authDomain,
+        appName: this.name,
+        currentUser: (_a = this._currentUser) === null || _a === void 0 ? void 0 : _a.toJSON()
+      };
+    }
+    async _setRedirectUser(user, popupRedirectResolver) {
+      const redirectManager = await this.getOrInitRedirectPersistenceManager(popupRedirectResolver);
+      return user === null ? redirectManager.removeCurrentUser() : redirectManager.setCurrentUser(user);
+    }
+    async getOrInitRedirectPersistenceManager(popupRedirectResolver) {
+      if (!this.redirectPersistenceManager) {
+        const resolver = popupRedirectResolver && _getInstance(popupRedirectResolver) || this._popupRedirectResolver;
+        _assert(
+          resolver,
+          this,
+          "argument-error"
+          /* AuthErrorCode.ARGUMENT_ERROR */
+        );
+        this.redirectPersistenceManager = await PersistenceUserManager.create(
+          this,
+          [_getInstance(resolver._redirectPersistence)],
+          "redirectUser"
+          /* KeyName.REDIRECT_USER */
+        );
+        this.redirectUser = await this.redirectPersistenceManager.getCurrentUser();
+      }
+      return this.redirectPersistenceManager;
+    }
+    async _redirectUserForId(id) {
+      var _a, _b;
+      if (this._isInitialized) {
+        await this.queue(async () => {
+        });
+      }
+      if (((_a = this._currentUser) === null || _a === void 0 ? void 0 : _a._redirectEventId) === id) {
+        return this._currentUser;
+      }
+      if (((_b = this.redirectUser) === null || _b === void 0 ? void 0 : _b._redirectEventId) === id) {
+        return this.redirectUser;
+      }
+      return null;
+    }
+    async _persistUserIfCurrent(user) {
+      if (user === this.currentUser) {
+        return this.queue(async () => this.directlySetCurrentUser(user));
+      }
+    }
+    /** Notifies listeners only if the user is current */
+    _notifyListenersIfCurrent(user) {
+      if (user === this.currentUser) {
+        this.notifyAuthListeners();
+      }
+    }
+    _key() {
+      return `${this.config.authDomain}:${this.config.apiKey}:${this.name}`;
+    }
+    _startProactiveRefresh() {
+      this.isProactiveRefreshEnabled = true;
+      if (this.currentUser) {
+        this._currentUser._startProactiveRefresh();
+      }
+    }
+    _stopProactiveRefresh() {
+      this.isProactiveRefreshEnabled = false;
+      if (this.currentUser) {
+        this._currentUser._stopProactiveRefresh();
+      }
+    }
+    /** Returns the current user cast as the internal type */
+    get _currentUser() {
+      return this.currentUser;
+    }
+    notifyAuthListeners() {
+      var _a, _b;
+      if (!this._isInitialized) {
+        return;
+      }
+      this.idTokenSubscription.next(this.currentUser);
+      const currentUid = (_b = (_a = this.currentUser) === null || _a === void 0 ? void 0 : _a.uid) !== null && _b !== void 0 ? _b : null;
+      if (this.lastNotifiedUid !== currentUid) {
+        this.lastNotifiedUid = currentUid;
+        this.authStateSubscription.next(this.currentUser);
+      }
+    }
+    registerStateListener(subscription, nextOrObserver, error, completed) {
+      if (this._deleted) {
+        return () => {
+        };
+      }
+      const cb = typeof nextOrObserver === "function" ? nextOrObserver : nextOrObserver.next.bind(nextOrObserver);
+      let isUnsubscribed = false;
+      const promise = this._isInitialized ? Promise.resolve() : this._initializationPromise;
+      _assert(
+        promise,
+        this,
+        "internal-error"
+        /* AuthErrorCode.INTERNAL_ERROR */
+      );
+      promise.then(() => {
+        if (isUnsubscribed) {
+          return;
+        }
+        cb(this.currentUser);
+      });
+      if (typeof nextOrObserver === "function") {
+        const unsubscribe = subscription.addObserver(nextOrObserver, error, completed);
+        return () => {
+          isUnsubscribed = true;
+          unsubscribe();
+        };
+      } else {
+        const unsubscribe = subscription.addObserver(nextOrObserver);
+        return () => {
+          isUnsubscribed = true;
+          unsubscribe();
+        };
+      }
+    }
+    /**
+     * Unprotected (from race conditions) method to set the current user. This
+     * should only be called from within a queued callback. This is necessary
+     * because the queue shouldn't rely on another queued callback.
+     */
+    async directlySetCurrentUser(user) {
+      if (this.currentUser && this.currentUser !== user) {
+        this._currentUser._stopProactiveRefresh();
+      }
+      if (user && this.isProactiveRefreshEnabled) {
+        user._startProactiveRefresh();
+      }
+      this.currentUser = user;
+      if (user) {
+        await this.assertedPersistence.setCurrentUser(user);
+      } else {
+        await this.assertedPersistence.removeCurrentUser();
+      }
+    }
+    queue(action) {
+      this.operations = this.operations.then(action, action);
+      return this.operations;
+    }
+    get assertedPersistence() {
+      _assert(
+        this.persistenceManager,
+        this,
+        "internal-error"
+        /* AuthErrorCode.INTERNAL_ERROR */
+      );
+      return this.persistenceManager;
+    }
+    _logFramework(framework) {
+      if (!framework || this.frameworks.includes(framework)) {
+        return;
+      }
+      this.frameworks.push(framework);
+      this.frameworks.sort();
+      this.clientVersion = _getClientVersion(this.config.clientPlatform, this._getFrameworks());
+    }
+    _getFrameworks() {
+      return this.frameworks;
+    }
+    async _getAdditionalHeaders() {
+      var _a;
+      const headers = {
+        [
+          "X-Client-Version"
+          /* HttpHeader.X_CLIENT_VERSION */
+        ]: this.clientVersion
+      };
+      if (this.app.options.appId) {
+        headers[
+          "X-Firebase-gmpid"
+          /* HttpHeader.X_FIREBASE_GMPID */
+        ] = this.app.options.appId;
+      }
+      const heartbeatsHeader = await ((_a = this.heartbeatServiceProvider.getImmediate({
+        optional: true
+      })) === null || _a === void 0 ? void 0 : _a.getHeartbeatsHeader());
+      if (heartbeatsHeader) {
+        headers[
+          "X-Firebase-Client"
+          /* HttpHeader.X_FIREBASE_CLIENT */
+        ] = heartbeatsHeader;
+      }
+      const appCheckToken = await this._getAppCheckToken();
+      if (appCheckToken) {
+        headers[
+          "X-Firebase-AppCheck"
+          /* HttpHeader.X_FIREBASE_APP_CHECK */
+        ] = appCheckToken;
+      }
+      return headers;
+    }
+    async _getAppCheckToken() {
+      var _a;
+      if (_isFirebaseServerApp(this.app) && this.app.settings.appCheckToken) {
+        return this.app.settings.appCheckToken;
+      }
+      const appCheckTokenResult = await ((_a = this.appCheckServiceProvider.getImmediate({ optional: true })) === null || _a === void 0 ? void 0 : _a.getToken());
+      if (appCheckTokenResult === null || appCheckTokenResult === void 0 ? void 0 : appCheckTokenResult.error) {
+        _logWarn(`Error while retrieving App Check token: ${appCheckTokenResult.error}`);
+      }
+      return appCheckTokenResult === null || appCheckTokenResult === void 0 ? void 0 : appCheckTokenResult.token;
+    }
+  };
+  function _castAuth(auth2) {
+    return getModularInstance(auth2);
+  }
+  var Subscription = class {
+    constructor(auth2) {
+      this.auth = auth2;
+      this.observer = null;
+      this.addObserver = createSubscribe((observer) => this.observer = observer);
+    }
+    get next() {
+      _assert(
+        this.observer,
+        this.auth,
+        "internal-error"
+        /* AuthErrorCode.INTERNAL_ERROR */
+      );
+      return this.observer.next.bind(this.observer);
+    }
+  };
+  var externalJSProvider = {
+    async loadJS() {
+      throw new Error("Unable to load external scripts");
+    },
+    recaptchaV2Script: "",
+    recaptchaEnterpriseScript: "",
+    gapiScript: ""
+  };
+  function _setExternalJSProvider(p) {
+    externalJSProvider = p;
+  }
+  function _loadJS(url) {
+    return externalJSProvider.loadJS(url);
+  }
+  function _recaptchaEnterpriseScriptUrl() {
+    return externalJSProvider.recaptchaEnterpriseScript;
+  }
+  function _gapiScriptUrl() {
+    return externalJSProvider.gapiScript;
+  }
+  function _generateCallbackName(prefix) {
+    return `__${prefix}${Math.floor(Math.random() * 1e6)}`;
+  }
+  var MockGreCAPTCHATopLevel = class {
+    constructor() {
+      this.enterprise = new MockGreCAPTCHA();
+    }
+    ready(callback) {
+      callback();
+    }
+    execute(_siteKey, _options) {
+      return Promise.resolve("token");
+    }
+    render(_container, _parameters) {
+      return "";
+    }
+  };
+  var MockGreCAPTCHA = class {
+    ready(callback) {
+      callback();
+    }
+    execute(_siteKey, _options) {
+      return Promise.resolve("token");
+    }
+    render(_container, _parameters) {
+      return "";
+    }
+  };
+  var RECAPTCHA_ENTERPRISE_VERIFIER_TYPE = "recaptcha-enterprise";
+  var FAKE_TOKEN = "NO_RECAPTCHA";
+  var RecaptchaEnterpriseVerifier = class {
+    /**
+     *
+     * @param authExtern - The corresponding Firebase {@link Auth} instance.
+     *
+     */
+    constructor(authExtern) {
+      this.type = RECAPTCHA_ENTERPRISE_VERIFIER_TYPE;
+      this.auth = _castAuth(authExtern);
+    }
+    /**
+     * Executes the verification process.
+     *
+     * @returns A Promise for a token that can be used to assert the validity of a request.
+     */
+    async verify(action = "verify", forceRefresh = false) {
+      async function retrieveSiteKey(auth2) {
+        if (!forceRefresh) {
+          if (auth2.tenantId == null && auth2._agentRecaptchaConfig != null) {
+            return auth2._agentRecaptchaConfig.siteKey;
+          }
+          if (auth2.tenantId != null && auth2._tenantRecaptchaConfigs[auth2.tenantId] !== void 0) {
+            return auth2._tenantRecaptchaConfigs[auth2.tenantId].siteKey;
+          }
+        }
+        return new Promise(async (resolve, reject) => {
+          getRecaptchaConfig(auth2, {
+            clientType: "CLIENT_TYPE_WEB",
+            version: "RECAPTCHA_ENTERPRISE"
+            /* RecaptchaVersion.ENTERPRISE */
+          }).then((response) => {
+            if (response.recaptchaKey === void 0) {
+              reject(new Error("recaptcha Enterprise site key undefined"));
+            } else {
+              const config = new RecaptchaConfig(response);
+              if (auth2.tenantId == null) {
+                auth2._agentRecaptchaConfig = config;
+              } else {
+                auth2._tenantRecaptchaConfigs[auth2.tenantId] = config;
+              }
+              return resolve(config.siteKey);
+            }
+          }).catch((error) => {
+            reject(error);
+          });
+        });
+      }
+      function retrieveRecaptchaToken(siteKey, resolve, reject) {
+        const grecaptcha = window.grecaptcha;
+        if (isEnterprise(grecaptcha)) {
+          grecaptcha.enterprise.ready(() => {
+            grecaptcha.enterprise.execute(siteKey, { action }).then((token) => {
+              resolve(token);
+            }).catch(() => {
+              resolve(FAKE_TOKEN);
+            });
+          });
+        } else {
+          reject(Error("No reCAPTCHA enterprise script loaded."));
+        }
+      }
+      if (this.auth.settings.appVerificationDisabledForTesting) {
+        const mockRecaptcha = new MockGreCAPTCHATopLevel();
+        return mockRecaptcha.execute("siteKey", { action: "verify" });
+      }
+      return new Promise((resolve, reject) => {
+        retrieveSiteKey(this.auth).then((siteKey) => {
+          if (!forceRefresh && isEnterprise(window.grecaptcha)) {
+            retrieveRecaptchaToken(siteKey, resolve, reject);
+          } else {
+            if (typeof window === "undefined") {
+              reject(new Error("RecaptchaVerifier is only supported in browser"));
+              return;
+            }
+            let url = _recaptchaEnterpriseScriptUrl();
+            if (url.length !== 0) {
+              url += siteKey;
+            }
+            _loadJS(url).then(() => {
+              retrieveRecaptchaToken(siteKey, resolve, reject);
+            }).catch((error) => {
+              reject(error);
+            });
+          }
+        }).catch((error) => {
+          reject(error);
+        });
+      });
+    }
+  };
+  async function injectRecaptchaFields(auth2, request, action, isCaptchaResp = false, isFakeToken = false) {
+    const verifier = new RecaptchaEnterpriseVerifier(auth2);
+    let captchaResponse;
+    if (isFakeToken) {
+      captchaResponse = FAKE_TOKEN;
+    } else {
+      try {
+        captchaResponse = await verifier.verify(action);
+      } catch (error) {
+        captchaResponse = await verifier.verify(action, true);
+      }
+    }
+    const newRequest = Object.assign({}, request);
+    if (action === "mfaSmsEnrollment" || action === "mfaSmsSignIn") {
+      if ("phoneEnrollmentInfo" in newRequest) {
+        const phoneNumber = newRequest.phoneEnrollmentInfo.phoneNumber;
+        const recaptchaToken = newRequest.phoneEnrollmentInfo.recaptchaToken;
+        Object.assign(newRequest, {
+          "phoneEnrollmentInfo": {
+            phoneNumber,
+            recaptchaToken,
+            captchaResponse,
+            "clientType": "CLIENT_TYPE_WEB",
+            "recaptchaVersion": "RECAPTCHA_ENTERPRISE"
+            /* RecaptchaVersion.ENTERPRISE */
+          }
+        });
+      } else if ("phoneSignInInfo" in newRequest) {
+        const recaptchaToken = newRequest.phoneSignInInfo.recaptchaToken;
+        Object.assign(newRequest, {
+          "phoneSignInInfo": {
+            recaptchaToken,
+            captchaResponse,
+            "clientType": "CLIENT_TYPE_WEB",
+            "recaptchaVersion": "RECAPTCHA_ENTERPRISE"
+            /* RecaptchaVersion.ENTERPRISE */
+          }
+        });
+      }
+      return newRequest;
+    }
+    if (!isCaptchaResp) {
+      Object.assign(newRequest, { captchaResponse });
+    } else {
+      Object.assign(newRequest, { "captchaResp": captchaResponse });
+    }
+    Object.assign(newRequest, {
+      "clientType": "CLIENT_TYPE_WEB"
+      /* RecaptchaClientType.WEB */
+    });
+    Object.assign(newRequest, {
+      "recaptchaVersion": "RECAPTCHA_ENTERPRISE"
+      /* RecaptchaVersion.ENTERPRISE */
+    });
+    return newRequest;
+  }
+  async function handleRecaptchaFlow(authInstance, request, actionName, actionMethod, recaptchaAuthProvider) {
+    var _a, _b;
+    if (recaptchaAuthProvider === "EMAIL_PASSWORD_PROVIDER") {
+      if ((_a = authInstance._getRecaptchaConfig()) === null || _a === void 0 ? void 0 : _a.isProviderEnabled(
+        "EMAIL_PASSWORD_PROVIDER"
+        /* RecaptchaAuthProvider.EMAIL_PASSWORD_PROVIDER */
+      )) {
+        const requestWithRecaptcha = await injectRecaptchaFields(
+          authInstance,
+          request,
+          actionName,
+          actionName === "getOobCode"
+          /* RecaptchaActionName.GET_OOB_CODE */
+        );
+        return actionMethod(authInstance, requestWithRecaptcha);
+      } else {
+        return actionMethod(authInstance, request).catch(async (error) => {
+          if (error.code === `auth/${"missing-recaptcha-token"}`) {
+            console.log(`${actionName} is protected by reCAPTCHA Enterprise for this project. Automatically triggering the reCAPTCHA flow and restarting the flow.`);
+            const requestWithRecaptcha = await injectRecaptchaFields(
+              authInstance,
+              request,
+              actionName,
+              actionName === "getOobCode"
+              /* RecaptchaActionName.GET_OOB_CODE */
+            );
+            return actionMethod(authInstance, requestWithRecaptcha);
+          } else {
+            return Promise.reject(error);
+          }
+        });
+      }
+    } else if (recaptchaAuthProvider === "PHONE_PROVIDER") {
+      if ((_b = authInstance._getRecaptchaConfig()) === null || _b === void 0 ? void 0 : _b.isProviderEnabled(
+        "PHONE_PROVIDER"
+        /* RecaptchaAuthProvider.PHONE_PROVIDER */
+      )) {
+        const requestWithRecaptcha = await injectRecaptchaFields(authInstance, request, actionName);
+        return actionMethod(authInstance, requestWithRecaptcha).catch(async (error) => {
+          var _a2;
+          if (((_a2 = authInstance._getRecaptchaConfig()) === null || _a2 === void 0 ? void 0 : _a2.getProviderEnforcementState(
+            "PHONE_PROVIDER"
+            /* RecaptchaAuthProvider.PHONE_PROVIDER */
+          )) === "AUDIT") {
+            if (error.code === `auth/${"missing-recaptcha-token"}` || error.code === `auth/${"invalid-app-credential"}`) {
+              console.log(`Failed to verify with reCAPTCHA Enterprise. Automatically triggering the reCAPTCHA v2 flow to complete the ${actionName} flow.`);
+              const requestWithRecaptchaFields = await injectRecaptchaFields(
+                authInstance,
+                request,
+                actionName,
+                false,
+                // isCaptchaResp
+                true
+                // isFakeToken
+              );
+              return actionMethod(authInstance, requestWithRecaptchaFields);
+            }
+          }
+          return Promise.reject(error);
+        });
+      } else {
+        const requestWithRecaptchaFields = await injectRecaptchaFields(
+          authInstance,
+          request,
+          actionName,
+          false,
+          // isCaptchaResp
+          true
+          // isFakeToken
+        );
+        return actionMethod(authInstance, requestWithRecaptchaFields);
+      }
+    } else {
+      return Promise.reject(recaptchaAuthProvider + " provider is not supported.");
+    }
+  }
+  async function _initializeRecaptchaConfig(auth2) {
+    const authInternal = _castAuth(auth2);
+    const response = await getRecaptchaConfig(authInternal, {
+      clientType: "CLIENT_TYPE_WEB",
+      version: "RECAPTCHA_ENTERPRISE"
+      /* RecaptchaVersion.ENTERPRISE */
+    });
+    const config = new RecaptchaConfig(response);
+    if (authInternal.tenantId == null) {
+      authInternal._agentRecaptchaConfig = config;
+    } else {
+      authInternal._tenantRecaptchaConfigs[authInternal.tenantId] = config;
+    }
+    if (config.isAnyProviderEnabled()) {
+      const verifier = new RecaptchaEnterpriseVerifier(authInternal);
+      void verifier.verify();
+    }
+  }
+  function initializeAuth(app2, deps) {
+    const provider = _getProvider(app2, "auth");
+    if (provider.isInitialized()) {
+      const auth3 = provider.getImmediate();
+      const initialOptions = provider.getOptions();
+      if (deepEqual(initialOptions, deps !== null && deps !== void 0 ? deps : {})) {
+        return auth3;
+      } else {
+        _fail(
+          auth3,
+          "already-initialized"
+          /* AuthErrorCode.ALREADY_INITIALIZED */
+        );
+      }
+    }
+    const auth2 = provider.initialize({ options: deps });
+    return auth2;
+  }
+  function _initializeAuthInstance(auth2, deps) {
+    const persistence = (deps === null || deps === void 0 ? void 0 : deps.persistence) || [];
+    const hierarchy = (Array.isArray(persistence) ? persistence : [persistence]).map(_getInstance);
+    if (deps === null || deps === void 0 ? void 0 : deps.errorMap) {
+      auth2._updateErrorMap(deps.errorMap);
+    }
+    auth2._initializeWithPersistence(hierarchy, deps === null || deps === void 0 ? void 0 : deps.popupRedirectResolver);
+  }
+  function connectAuthEmulator(auth2, url, options) {
+    const authInternal = _castAuth(auth2);
+    _assert(
+      /^https?:\/\//.test(url),
+      authInternal,
+      "invalid-emulator-scheme"
+      /* AuthErrorCode.INVALID_EMULATOR_SCHEME */
+    );
+    const disableWarnings = !!(options === null || options === void 0 ? void 0 : options.disableWarnings);
+    const protocol = extractProtocol(url);
+    const { host, port } = extractHostAndPort(url);
+    const portStr = port === null ? "" : `:${port}`;
+    const emulator = { url: `${protocol}//${host}${portStr}/` };
+    const emulatorConfig = Object.freeze({
+      host,
+      port,
+      protocol: protocol.replace(":", ""),
+      options: Object.freeze({ disableWarnings })
+    });
+    if (!authInternal._canInitEmulator) {
+      _assert(
+        authInternal.config.emulator && authInternal.emulatorConfig,
+        authInternal,
+        "emulator-config-failed"
+        /* AuthErrorCode.EMULATOR_CONFIG_FAILED */
+      );
+      _assert(
+        deepEqual(emulator, authInternal.config.emulator) && deepEqual(emulatorConfig, authInternal.emulatorConfig),
+        authInternal,
+        "emulator-config-failed"
+        /* AuthErrorCode.EMULATOR_CONFIG_FAILED */
+      );
+      return;
+    }
+    authInternal.config.emulator = emulator;
+    authInternal.emulatorConfig = emulatorConfig;
+    authInternal.settings.appVerificationDisabledForTesting = true;
+    if (isCloudWorkstation(host)) {
+      void pingServer(`${protocol}//${host}${portStr}`);
+      updateEmulatorBanner("Auth", true);
+    } else if (!disableWarnings) {
+      emitEmulatorWarning();
+    }
+  }
+  function extractProtocol(url) {
+    const protocolEnd = url.indexOf(":");
+    return protocolEnd < 0 ? "" : url.substr(0, protocolEnd + 1);
+  }
+  function extractHostAndPort(url) {
+    const protocol = extractProtocol(url);
+    const authority = /(\/\/)?([^?#/]+)/.exec(url.substr(protocol.length));
+    if (!authority) {
+      return { host: "", port: null };
+    }
+    const hostAndPort = authority[2].split("@").pop() || "";
+    const bracketedIPv6 = /^(\[[^\]]+\])(:|$)/.exec(hostAndPort);
+    if (bracketedIPv6) {
+      const host = bracketedIPv6[1];
+      return { host, port: parsePort(hostAndPort.substr(host.length + 1)) };
+    } else {
+      const [host, port] = hostAndPort.split(":");
+      return { host, port: parsePort(port) };
+    }
+  }
+  function parsePort(portStr) {
+    if (!portStr) {
+      return null;
+    }
+    const port = Number(portStr);
+    if (isNaN(port)) {
+      return null;
+    }
+    return port;
+  }
+  function emitEmulatorWarning() {
+    function attachBanner() {
+      const el = document.createElement("p");
+      const sty = el.style;
+      el.innerText = "Running in emulator mode. Do not use with production credentials.";
+      sty.position = "fixed";
+      sty.width = "100%";
+      sty.backgroundColor = "#ffffff";
+      sty.border = ".1em solid #000000";
+      sty.color = "#b50000";
+      sty.bottom = "0px";
+      sty.left = "0px";
+      sty.margin = "0px";
+      sty.zIndex = "10000";
+      sty.textAlign = "center";
+      el.classList.add("firebase-emulator-warning");
+      document.body.appendChild(el);
+    }
+    if (typeof console !== "undefined" && typeof console.info === "function") {
+      console.info("WARNING: You are using the Auth Emulator, which is intended for local testing only.  Do not use with production credentials.");
+    }
+    if (typeof window !== "undefined" && typeof document !== "undefined") {
+      if (document.readyState === "loading") {
+        window.addEventListener("DOMContentLoaded", attachBanner);
+      } else {
+        attachBanner();
+      }
+    }
+  }
+  var AuthCredential = class {
+    /** @internal */
+    constructor(providerId, signInMethod) {
+      this.providerId = providerId;
+      this.signInMethod = signInMethod;
+    }
+    /**
+     * Returns a JSON-serializable representation of this object.
+     *
+     * @returns a JSON-serializable representation of this object.
+     */
+    toJSON() {
+      return debugFail("not implemented");
+    }
+    /** @internal */
+    _getIdTokenResponse(_auth) {
+      return debugFail("not implemented");
+    }
+    /** @internal */
+    _linkToIdToken(_auth, _idToken) {
+      return debugFail("not implemented");
+    }
+    /** @internal */
+    _getReauthenticationResolver(_auth) {
+      return debugFail("not implemented");
+    }
+  };
+  async function linkEmailPassword(auth2, request) {
+    return _performApiRequest(auth2, "POST", "/v1/accounts:signUp", request);
+  }
+  async function signInWithPassword(auth2, request) {
+    return _performSignInRequest(auth2, "POST", "/v1/accounts:signInWithPassword", _addTidIfNecessary(auth2, request));
+  }
+  async function signInWithEmailLink$1(auth2, request) {
+    return _performSignInRequest(auth2, "POST", "/v1/accounts:signInWithEmailLink", _addTidIfNecessary(auth2, request));
+  }
+  async function signInWithEmailLinkForLinking(auth2, request) {
+    return _performSignInRequest(auth2, "POST", "/v1/accounts:signInWithEmailLink", _addTidIfNecessary(auth2, request));
+  }
+  var EmailAuthCredential = class _EmailAuthCredential extends AuthCredential {
+    /** @internal */
+    constructor(_email, _password, signInMethod, _tenantId = null) {
+      super("password", signInMethod);
+      this._email = _email;
+      this._password = _password;
+      this._tenantId = _tenantId;
+    }
+    /** @internal */
+    static _fromEmailAndPassword(email, password) {
+      return new _EmailAuthCredential(
+        email,
+        password,
+        "password"
+        /* SignInMethod.EMAIL_PASSWORD */
+      );
+    }
+    /** @internal */
+    static _fromEmailAndCode(email, oobCode, tenantId = null) {
+      return new _EmailAuthCredential(email, oobCode, "emailLink", tenantId);
+    }
+    /** {@inheritdoc AuthCredential.toJSON} */
+    toJSON() {
+      return {
+        email: this._email,
+        password: this._password,
+        signInMethod: this.signInMethod,
+        tenantId: this._tenantId
+      };
+    }
+    /**
+     * Static method to deserialize a JSON representation of an object into an {@link  AuthCredential}.
+     *
+     * @param json - Either `object` or the stringified representation of the object. When string is
+     * provided, `JSON.parse` would be called first.
+     *
+     * @returns If the JSON input does not represent an {@link AuthCredential}, null is returned.
+     */
+    static fromJSON(json) {
+      const obj = typeof json === "string" ? JSON.parse(json) : json;
+      if ((obj === null || obj === void 0 ? void 0 : obj.email) && (obj === null || obj === void 0 ? void 0 : obj.password)) {
+        if (obj.signInMethod === "password") {
+          return this._fromEmailAndPassword(obj.email, obj.password);
+        } else if (obj.signInMethod === "emailLink") {
+          return this._fromEmailAndCode(obj.email, obj.password, obj.tenantId);
+        }
+      }
+      return null;
+    }
+    /** @internal */
+    async _getIdTokenResponse(auth2) {
+      switch (this.signInMethod) {
+        case "password":
+          const request = {
+            returnSecureToken: true,
+            email: this._email,
+            password: this._password,
+            clientType: "CLIENT_TYPE_WEB"
+            /* RecaptchaClientType.WEB */
+          };
+          return handleRecaptchaFlow(
+            auth2,
+            request,
+            "signInWithPassword",
+            signInWithPassword,
+            "EMAIL_PASSWORD_PROVIDER"
+            /* RecaptchaAuthProvider.EMAIL_PASSWORD_PROVIDER */
+          );
+        case "emailLink":
+          return signInWithEmailLink$1(auth2, {
+            email: this._email,
+            oobCode: this._password
+          });
+        default:
+          _fail(
+            auth2,
+            "internal-error"
+            /* AuthErrorCode.INTERNAL_ERROR */
+          );
+      }
+    }
+    /** @internal */
+    async _linkToIdToken(auth2, idToken) {
+      switch (this.signInMethod) {
+        case "password":
+          const request = {
+            idToken,
+            returnSecureToken: true,
+            email: this._email,
+            password: this._password,
+            clientType: "CLIENT_TYPE_WEB"
+            /* RecaptchaClientType.WEB */
+          };
+          return handleRecaptchaFlow(
+            auth2,
+            request,
+            "signUpPassword",
+            linkEmailPassword,
+            "EMAIL_PASSWORD_PROVIDER"
+            /* RecaptchaAuthProvider.EMAIL_PASSWORD_PROVIDER */
+          );
+        case "emailLink":
+          return signInWithEmailLinkForLinking(auth2, {
+            idToken,
+            email: this._email,
+            oobCode: this._password
+          });
+        default:
+          _fail(
+            auth2,
+            "internal-error"
+            /* AuthErrorCode.INTERNAL_ERROR */
+          );
+      }
+    }
+    /** @internal */
+    _getReauthenticationResolver(auth2) {
+      return this._getIdTokenResponse(auth2);
+    }
+  };
+  async function signInWithIdp(auth2, request) {
+    return _performSignInRequest(auth2, "POST", "/v1/accounts:signInWithIdp", _addTidIfNecessary(auth2, request));
+  }
+  var IDP_REQUEST_URI$1 = "http://localhost";
+  var OAuthCredential = class _OAuthCredential extends AuthCredential {
+    constructor() {
+      super(...arguments);
+      this.pendingToken = null;
+    }
+    /** @internal */
+    static _fromParams(params) {
+      const cred = new _OAuthCredential(params.providerId, params.signInMethod);
+      if (params.idToken || params.accessToken) {
+        if (params.idToken) {
+          cred.idToken = params.idToken;
+        }
+        if (params.accessToken) {
+          cred.accessToken = params.accessToken;
+        }
+        if (params.nonce && !params.pendingToken) {
+          cred.nonce = params.nonce;
+        }
+        if (params.pendingToken) {
+          cred.pendingToken = params.pendingToken;
+        }
+      } else if (params.oauthToken && params.oauthTokenSecret) {
+        cred.accessToken = params.oauthToken;
+        cred.secret = params.oauthTokenSecret;
+      } else {
+        _fail(
+          "argument-error"
+          /* AuthErrorCode.ARGUMENT_ERROR */
+        );
+      }
+      return cred;
+    }
+    /** {@inheritdoc AuthCredential.toJSON}  */
+    toJSON() {
+      return {
+        idToken: this.idToken,
+        accessToken: this.accessToken,
+        secret: this.secret,
+        nonce: this.nonce,
+        pendingToken: this.pendingToken,
+        providerId: this.providerId,
+        signInMethod: this.signInMethod
+      };
+    }
+    /**
+     * Static method to deserialize a JSON representation of an object into an
+     * {@link  AuthCredential}.
+     *
+     * @param json - Input can be either Object or the stringified representation of the object.
+     * When string is provided, JSON.parse would be called first.
+     *
+     * @returns If the JSON input does not represent an {@link  AuthCredential}, null is returned.
+     */
+    static fromJSON(json) {
+      const obj = typeof json === "string" ? JSON.parse(json) : json;
+      const { providerId, signInMethod } = obj, rest = __rest(obj, ["providerId", "signInMethod"]);
+      if (!providerId || !signInMethod) {
+        return null;
+      }
+      const cred = new _OAuthCredential(providerId, signInMethod);
+      cred.idToken = rest.idToken || void 0;
+      cred.accessToken = rest.accessToken || void 0;
+      cred.secret = rest.secret;
+      cred.nonce = rest.nonce;
+      cred.pendingToken = rest.pendingToken || null;
+      return cred;
+    }
+    /** @internal */
+    _getIdTokenResponse(auth2) {
+      const request = this.buildRequest();
+      return signInWithIdp(auth2, request);
+    }
+    /** @internal */
+    _linkToIdToken(auth2, idToken) {
+      const request = this.buildRequest();
+      request.idToken = idToken;
+      return signInWithIdp(auth2, request);
+    }
+    /** @internal */
+    _getReauthenticationResolver(auth2) {
+      const request = this.buildRequest();
+      request.autoCreate = false;
+      return signInWithIdp(auth2, request);
+    }
+    buildRequest() {
+      const request = {
+        requestUri: IDP_REQUEST_URI$1,
+        returnSecureToken: true
+      };
+      if (this.pendingToken) {
+        request.pendingToken = this.pendingToken;
+      } else {
+        const postBody = {};
+        if (this.idToken) {
+          postBody["id_token"] = this.idToken;
+        }
+        if (this.accessToken) {
+          postBody["access_token"] = this.accessToken;
+        }
+        if (this.secret) {
+          postBody["oauth_token_secret"] = this.secret;
+        }
+        postBody["providerId"] = this.providerId;
+        if (this.nonce && !this.pendingToken) {
+          postBody["nonce"] = this.nonce;
+        }
+        request.postBody = querystring(postBody);
+      }
+      return request;
+    }
+  };
+  async function sendPhoneVerificationCode(auth2, request) {
+    return _performApiRequest(auth2, "POST", "/v1/accounts:sendVerificationCode", _addTidIfNecessary(auth2, request));
+  }
+  async function signInWithPhoneNumber$1(auth2, request) {
+    return _performSignInRequest(auth2, "POST", "/v1/accounts:signInWithPhoneNumber", _addTidIfNecessary(auth2, request));
+  }
+  async function linkWithPhoneNumber$1(auth2, request) {
+    const response = await _performSignInRequest(auth2, "POST", "/v1/accounts:signInWithPhoneNumber", _addTidIfNecessary(auth2, request));
+    if (response.temporaryProof) {
+      throw _makeTaggedError(auth2, "account-exists-with-different-credential", response);
+    }
+    return response;
+  }
+  var VERIFY_PHONE_NUMBER_FOR_EXISTING_ERROR_MAP_ = {
+    [
+      "USER_NOT_FOUND"
+      /* ServerError.USER_NOT_FOUND */
+    ]: "user-not-found"
+    /* AuthErrorCode.USER_DELETED */
+  };
+  async function verifyPhoneNumberForExisting(auth2, request) {
+    const apiRequest = Object.assign(Object.assign({}, request), { operation: "REAUTH" });
+    return _performSignInRequest(auth2, "POST", "/v1/accounts:signInWithPhoneNumber", _addTidIfNecessary(auth2, apiRequest), VERIFY_PHONE_NUMBER_FOR_EXISTING_ERROR_MAP_);
+  }
+  var PhoneAuthCredential = class _PhoneAuthCredential extends AuthCredential {
+    constructor(params) {
+      super(
+        "phone",
+        "phone"
+        /* SignInMethod.PHONE */
+      );
+      this.params = params;
+    }
+    /** @internal */
+    static _fromVerification(verificationId, verificationCode) {
+      return new _PhoneAuthCredential({ verificationId, verificationCode });
+    }
+    /** @internal */
+    static _fromTokenResponse(phoneNumber, temporaryProof) {
+      return new _PhoneAuthCredential({ phoneNumber, temporaryProof });
+    }
+    /** @internal */
+    _getIdTokenResponse(auth2) {
+      return signInWithPhoneNumber$1(auth2, this._makeVerificationRequest());
+    }
+    /** @internal */
+    _linkToIdToken(auth2, idToken) {
+      return linkWithPhoneNumber$1(auth2, Object.assign({ idToken }, this._makeVerificationRequest()));
+    }
+    /** @internal */
+    _getReauthenticationResolver(auth2) {
+      return verifyPhoneNumberForExisting(auth2, this._makeVerificationRequest());
+    }
+    /** @internal */
+    _makeVerificationRequest() {
+      const { temporaryProof, phoneNumber, verificationId, verificationCode } = this.params;
+      if (temporaryProof && phoneNumber) {
+        return { temporaryProof, phoneNumber };
+      }
+      return {
+        sessionInfo: verificationId,
+        code: verificationCode
+      };
+    }
+    /** {@inheritdoc AuthCredential.toJSON} */
+    toJSON() {
+      const obj = {
+        providerId: this.providerId
+      };
+      if (this.params.phoneNumber) {
+        obj.phoneNumber = this.params.phoneNumber;
+      }
+      if (this.params.temporaryProof) {
+        obj.temporaryProof = this.params.temporaryProof;
+      }
+      if (this.params.verificationCode) {
+        obj.verificationCode = this.params.verificationCode;
+      }
+      if (this.params.verificationId) {
+        obj.verificationId = this.params.verificationId;
+      }
+      return obj;
+    }
+    /** Generates a phone credential based on a plain object or a JSON string. */
+    static fromJSON(json) {
+      if (typeof json === "string") {
+        json = JSON.parse(json);
+      }
+      const { verificationId, verificationCode, phoneNumber, temporaryProof } = json;
+      if (!verificationCode && !verificationId && !phoneNumber && !temporaryProof) {
+        return null;
+      }
+      return new _PhoneAuthCredential({
+        verificationId,
+        verificationCode,
+        phoneNumber,
+        temporaryProof
+      });
+    }
+  };
+  function parseMode(mode) {
+    switch (mode) {
+      case "recoverEmail":
+        return "RECOVER_EMAIL";
+      case "resetPassword":
+        return "PASSWORD_RESET";
+      case "signIn":
+        return "EMAIL_SIGNIN";
+      case "verifyEmail":
+        return "VERIFY_EMAIL";
+      case "verifyAndChangeEmail":
+        return "VERIFY_AND_CHANGE_EMAIL";
+      case "revertSecondFactorAddition":
+        return "REVERT_SECOND_FACTOR_ADDITION";
+      default:
+        return null;
+    }
+  }
+  function parseDeepLink(url) {
+    const link = querystringDecode(extractQuerystring(url))["link"];
+    const doubleDeepLink = link ? querystringDecode(extractQuerystring(link))["deep_link_id"] : null;
+    const iOSDeepLink = querystringDecode(extractQuerystring(url))["deep_link_id"];
+    const iOSDoubleDeepLink = iOSDeepLink ? querystringDecode(extractQuerystring(iOSDeepLink))["link"] : null;
+    return iOSDoubleDeepLink || iOSDeepLink || doubleDeepLink || link || url;
+  }
+  var ActionCodeURL = class _ActionCodeURL {
+    /**
+     * @param actionLink - The link from which to extract the URL.
+     * @returns The {@link ActionCodeURL} object, or null if the link is invalid.
+     *
+     * @internal
+     */
+    constructor(actionLink) {
+      var _a, _b, _c, _d, _e, _f;
+      const searchParams = querystringDecode(extractQuerystring(actionLink));
+      const apiKey = (_a = searchParams[
+        "apiKey"
+        /* QueryField.API_KEY */
+      ]) !== null && _a !== void 0 ? _a : null;
+      const code = (_b = searchParams[
+        "oobCode"
+        /* QueryField.CODE */
+      ]) !== null && _b !== void 0 ? _b : null;
+      const operation = parseMode((_c = searchParams[
+        "mode"
+        /* QueryField.MODE */
+      ]) !== null && _c !== void 0 ? _c : null);
+      _assert(
+        apiKey && code && operation,
+        "argument-error"
+        /* AuthErrorCode.ARGUMENT_ERROR */
+      );
+      this.apiKey = apiKey;
+      this.operation = operation;
+      this.code = code;
+      this.continueUrl = (_d = searchParams[
+        "continueUrl"
+        /* QueryField.CONTINUE_URL */
+      ]) !== null && _d !== void 0 ? _d : null;
+      this.languageCode = (_e = searchParams[
+        "lang"
+        /* QueryField.LANGUAGE_CODE */
+      ]) !== null && _e !== void 0 ? _e : null;
+      this.tenantId = (_f = searchParams[
+        "tenantId"
+        /* QueryField.TENANT_ID */
+      ]) !== null && _f !== void 0 ? _f : null;
+    }
+    /**
+     * Parses the email action link string and returns an {@link ActionCodeURL} if the link is valid,
+     * otherwise returns null.
+     *
+     * @param link  - The email action link string.
+     * @returns The {@link ActionCodeURL} object, or null if the link is invalid.
+     *
+     * @public
+     */
+    static parseLink(link) {
+      const actionLink = parseDeepLink(link);
+      try {
+        return new _ActionCodeURL(actionLink);
+      } catch (_a) {
+        return null;
+      }
+    }
+  };
+  var EmailAuthProvider = class _EmailAuthProvider {
+    constructor() {
+      this.providerId = _EmailAuthProvider.PROVIDER_ID;
+    }
+    /**
+     * Initialize an {@link AuthCredential} using an email and password.
+     *
+     * @example
+     * ```javascript
+     * const authCredential = EmailAuthProvider.credential(email, password);
+     * const userCredential = await signInWithCredential(auth, authCredential);
+     * ```
+     *
+     * @example
+     * ```javascript
+     * const userCredential = await signInWithEmailAndPassword(auth, email, password);
+     * ```
+     *
+     * @param email - Email address.
+     * @param password - User account password.
+     * @returns The auth provider credential.
+     */
+    static credential(email, password) {
+      return EmailAuthCredential._fromEmailAndPassword(email, password);
+    }
+    /**
+     * Initialize an {@link AuthCredential} using an email and an email link after a sign in with
+     * email link operation.
+     *
+     * @example
+     * ```javascript
+     * const authCredential = EmailAuthProvider.credentialWithLink(auth, email, emailLink);
+     * const userCredential = await signInWithCredential(auth, authCredential);
+     * ```
+     *
+     * @example
+     * ```javascript
+     * await sendSignInLinkToEmail(auth, email);
+     * // Obtain emailLink from user.
+     * const userCredential = await signInWithEmailLink(auth, email, emailLink);
+     * ```
+     *
+     * @param auth - The {@link Auth} instance used to verify the link.
+     * @param email - Email address.
+     * @param emailLink - Sign-in email link.
+     * @returns - The auth provider credential.
+     */
+    static credentialWithLink(email, emailLink) {
+      const actionCodeUrl = ActionCodeURL.parseLink(emailLink);
+      _assert(
+        actionCodeUrl,
+        "argument-error"
+        /* AuthErrorCode.ARGUMENT_ERROR */
+      );
+      return EmailAuthCredential._fromEmailAndCode(email, actionCodeUrl.code, actionCodeUrl.tenantId);
+    }
+  };
+  EmailAuthProvider.PROVIDER_ID = "password";
+  EmailAuthProvider.EMAIL_PASSWORD_SIGN_IN_METHOD = "password";
+  EmailAuthProvider.EMAIL_LINK_SIGN_IN_METHOD = "emailLink";
+  var FederatedAuthProvider = class {
+    /**
+     * Constructor for generic OAuth providers.
+     *
+     * @param providerId - Provider for which credentials should be generated.
+     */
+    constructor(providerId) {
+      this.providerId = providerId;
+      this.defaultLanguageCode = null;
+      this.customParameters = {};
+    }
+    /**
+     * Set the language gode.
+     *
+     * @param languageCode - language code
+     */
+    setDefaultLanguage(languageCode) {
+      this.defaultLanguageCode = languageCode;
+    }
+    /**
+     * Sets the OAuth custom parameters to pass in an OAuth request for popup and redirect sign-in
+     * operations.
+     *
+     * @remarks
+     * For a detailed list, check the reserved required OAuth 2.0 parameters such as `client_id`,
+     * `redirect_uri`, `scope`, `response_type`, and `state` are not allowed and will be ignored.
+     *
+     * @param customOAuthParameters - The custom OAuth parameters to pass in the OAuth request.
+     */
+    setCustomParameters(customOAuthParameters) {
+      this.customParameters = customOAuthParameters;
+      return this;
+    }
+    /**
+     * Retrieve the current list of {@link CustomParameters}.
+     */
+    getCustomParameters() {
+      return this.customParameters;
+    }
+  };
+  var BaseOAuthProvider = class extends FederatedAuthProvider {
+    constructor() {
+      super(...arguments);
+      this.scopes = [];
+    }
+    /**
+     * Add an OAuth scope to the credential.
+     *
+     * @param scope - Provider OAuth scope to add.
+     */
+    addScope(scope) {
+      if (!this.scopes.includes(scope)) {
+        this.scopes.push(scope);
+      }
+      return this;
+    }
+    /**
+     * Retrieve the current list of OAuth scopes.
+     */
+    getScopes() {
+      return [...this.scopes];
+    }
+  };
+  var FacebookAuthProvider = class _FacebookAuthProvider extends BaseOAuthProvider {
+    constructor() {
+      super(
+        "facebook.com"
+        /* ProviderId.FACEBOOK */
+      );
+    }
+    /**
+     * Creates a credential for Facebook.
+     *
+     * @example
+     * ```javascript
+     * // `event` from the Facebook auth.authResponseChange callback.
+     * const credential = FacebookAuthProvider.credential(event.authResponse.accessToken);
+     * const result = await signInWithCredential(credential);
+     * ```
+     *
+     * @param accessToken - Facebook access token.
+     */
+    static credential(accessToken) {
+      return OAuthCredential._fromParams({
+        providerId: _FacebookAuthProvider.PROVIDER_ID,
+        signInMethod: _FacebookAuthProvider.FACEBOOK_SIGN_IN_METHOD,
+        accessToken
+      });
+    }
+    /**
+     * Used to extract the underlying {@link OAuthCredential} from a {@link UserCredential}.
+     *
+     * @param userCredential - The user credential.
+     */
+    static credentialFromResult(userCredential) {
+      return _FacebookAuthProvider.credentialFromTaggedObject(userCredential);
+    }
+    /**
+     * Used to extract the underlying {@link OAuthCredential} from a {@link AuthError} which was
+     * thrown during a sign-in, link, or reauthenticate operation.
+     *
+     * @param userCredential - The user credential.
+     */
+    static credentialFromError(error) {
+      return _FacebookAuthProvider.credentialFromTaggedObject(error.customData || {});
+    }
+    static credentialFromTaggedObject({ _tokenResponse: tokenResponse }) {
+      if (!tokenResponse || !("oauthAccessToken" in tokenResponse)) {
+        return null;
+      }
+      if (!tokenResponse.oauthAccessToken) {
+        return null;
+      }
+      try {
+        return _FacebookAuthProvider.credential(tokenResponse.oauthAccessToken);
+      } catch (_a) {
+        return null;
+      }
+    }
+  };
+  FacebookAuthProvider.FACEBOOK_SIGN_IN_METHOD = "facebook.com";
+  FacebookAuthProvider.PROVIDER_ID = "facebook.com";
+  var GoogleAuthProvider = class _GoogleAuthProvider extends BaseOAuthProvider {
+    constructor() {
+      super(
+        "google.com"
+        /* ProviderId.GOOGLE */
+      );
+      this.addScope("profile");
+    }
+    /**
+     * Creates a credential for Google. At least one of ID token and access token is required.
+     *
+     * @example
+     * ```javascript
+     * // \`googleUser\` from the onsuccess Google Sign In callback.
+     * const credential = GoogleAuthProvider.credential(googleUser.getAuthResponse().id_token);
+     * const result = await signInWithCredential(credential);
+     * ```
+     *
+     * @param idToken - Google ID token.
+     * @param accessToken - Google access token.
+     */
+    static credential(idToken, accessToken) {
+      return OAuthCredential._fromParams({
+        providerId: _GoogleAuthProvider.PROVIDER_ID,
+        signInMethod: _GoogleAuthProvider.GOOGLE_SIGN_IN_METHOD,
+        idToken,
+        accessToken
+      });
+    }
+    /**
+     * Used to extract the underlying {@link OAuthCredential} from a {@link UserCredential}.
+     *
+     * @param userCredential - The user credential.
+     */
+    static credentialFromResult(userCredential) {
+      return _GoogleAuthProvider.credentialFromTaggedObject(userCredential);
+    }
+    /**
+     * Used to extract the underlying {@link OAuthCredential} from a {@link AuthError} which was
+     * thrown during a sign-in, link, or reauthenticate operation.
+     *
+     * @param userCredential - The user credential.
+     */
+    static credentialFromError(error) {
+      return _GoogleAuthProvider.credentialFromTaggedObject(error.customData || {});
+    }
+    static credentialFromTaggedObject({ _tokenResponse: tokenResponse }) {
+      if (!tokenResponse) {
+        return null;
+      }
+      const { oauthIdToken, oauthAccessToken } = tokenResponse;
+      if (!oauthIdToken && !oauthAccessToken) {
+        return null;
+      }
+      try {
+        return _GoogleAuthProvider.credential(oauthIdToken, oauthAccessToken);
+      } catch (_a) {
+        return null;
+      }
+    }
+  };
+  GoogleAuthProvider.GOOGLE_SIGN_IN_METHOD = "google.com";
+  GoogleAuthProvider.PROVIDER_ID = "google.com";
+  var GithubAuthProvider = class _GithubAuthProvider extends BaseOAuthProvider {
+    constructor() {
+      super(
+        "github.com"
+        /* ProviderId.GITHUB */
+      );
+    }
+    /**
+     * Creates a credential for GitHub.
+     *
+     * @param accessToken - GitHub access token.
+     */
+    static credential(accessToken) {
+      return OAuthCredential._fromParams({
+        providerId: _GithubAuthProvider.PROVIDER_ID,
+        signInMethod: _GithubAuthProvider.GITHUB_SIGN_IN_METHOD,
+        accessToken
+      });
+    }
+    /**
+     * Used to extract the underlying {@link OAuthCredential} from a {@link UserCredential}.
+     *
+     * @param userCredential - The user credential.
+     */
+    static credentialFromResult(userCredential) {
+      return _GithubAuthProvider.credentialFromTaggedObject(userCredential);
+    }
+    /**
+     * Used to extract the underlying {@link OAuthCredential} from a {@link AuthError} which was
+     * thrown during a sign-in, link, or reauthenticate operation.
+     *
+     * @param userCredential - The user credential.
+     */
+    static credentialFromError(error) {
+      return _GithubAuthProvider.credentialFromTaggedObject(error.customData || {});
+    }
+    static credentialFromTaggedObject({ _tokenResponse: tokenResponse }) {
+      if (!tokenResponse || !("oauthAccessToken" in tokenResponse)) {
+        return null;
+      }
+      if (!tokenResponse.oauthAccessToken) {
+        return null;
+      }
+      try {
+        return _GithubAuthProvider.credential(tokenResponse.oauthAccessToken);
+      } catch (_a) {
+        return null;
+      }
+    }
+  };
+  GithubAuthProvider.GITHUB_SIGN_IN_METHOD = "github.com";
+  GithubAuthProvider.PROVIDER_ID = "github.com";
+  var TwitterAuthProvider = class _TwitterAuthProvider extends BaseOAuthProvider {
+    constructor() {
+      super(
+        "twitter.com"
+        /* ProviderId.TWITTER */
+      );
+    }
+    /**
+     * Creates a credential for Twitter.
+     *
+     * @param token - Twitter access token.
+     * @param secret - Twitter secret.
+     */
+    static credential(token, secret) {
+      return OAuthCredential._fromParams({
+        providerId: _TwitterAuthProvider.PROVIDER_ID,
+        signInMethod: _TwitterAuthProvider.TWITTER_SIGN_IN_METHOD,
+        oauthToken: token,
+        oauthTokenSecret: secret
+      });
+    }
+    /**
+     * Used to extract the underlying {@link OAuthCredential} from a {@link UserCredential}.
+     *
+     * @param userCredential - The user credential.
+     */
+    static credentialFromResult(userCredential) {
+      return _TwitterAuthProvider.credentialFromTaggedObject(userCredential);
+    }
+    /**
+     * Used to extract the underlying {@link OAuthCredential} from a {@link AuthError} which was
+     * thrown during a sign-in, link, or reauthenticate operation.
+     *
+     * @param userCredential - The user credential.
+     */
+    static credentialFromError(error) {
+      return _TwitterAuthProvider.credentialFromTaggedObject(error.customData || {});
+    }
+    static credentialFromTaggedObject({ _tokenResponse: tokenResponse }) {
+      if (!tokenResponse) {
+        return null;
+      }
+      const { oauthAccessToken, oauthTokenSecret } = tokenResponse;
+      if (!oauthAccessToken || !oauthTokenSecret) {
+        return null;
+      }
+      try {
+        return _TwitterAuthProvider.credential(oauthAccessToken, oauthTokenSecret);
+      } catch (_a) {
+        return null;
+      }
+    }
+  };
+  TwitterAuthProvider.TWITTER_SIGN_IN_METHOD = "twitter.com";
+  TwitterAuthProvider.PROVIDER_ID = "twitter.com";
+  async function signUp(auth2, request) {
+    return _performSignInRequest(auth2, "POST", "/v1/accounts:signUp", _addTidIfNecessary(auth2, request));
+  }
+  var UserCredentialImpl = class _UserCredentialImpl {
+    constructor(params) {
+      this.user = params.user;
+      this.providerId = params.providerId;
+      this._tokenResponse = params._tokenResponse;
+      this.operationType = params.operationType;
+    }
+    static async _fromIdTokenResponse(auth2, operationType, idTokenResponse, isAnonymous = false) {
+      const user = await UserImpl._fromIdTokenResponse(auth2, idTokenResponse, isAnonymous);
+      const providerId = providerIdForResponse(idTokenResponse);
+      const userCred = new _UserCredentialImpl({
+        user,
+        providerId,
+        _tokenResponse: idTokenResponse,
+        operationType
+      });
+      return userCred;
+    }
+    static async _forOperation(user, operationType, response) {
+      await user._updateTokensIfNecessary(
+        response,
+        /* reload */
+        true
+      );
+      const providerId = providerIdForResponse(response);
+      return new _UserCredentialImpl({
+        user,
+        providerId,
+        _tokenResponse: response,
+        operationType
+      });
+    }
+  };
+  function providerIdForResponse(response) {
+    if (response.providerId) {
+      return response.providerId;
+    }
+    if ("phoneNumber" in response) {
+      return "phone";
+    }
+    return null;
+  }
+  var MultiFactorError = class _MultiFactorError extends FirebaseError {
+    constructor(auth2, error, operationType, user) {
+      var _a;
+      super(error.code, error.message);
+      this.operationType = operationType;
+      this.user = user;
+      Object.setPrototypeOf(this, _MultiFactorError.prototype);
+      this.customData = {
+        appName: auth2.name,
+        tenantId: (_a = auth2.tenantId) !== null && _a !== void 0 ? _a : void 0,
+        _serverResponse: error.customData._serverResponse,
+        operationType
+      };
+    }
+    static _fromErrorAndOperation(auth2, error, operationType, user) {
+      return new _MultiFactorError(auth2, error, operationType, user);
+    }
+  };
+  function _processCredentialSavingMfaContextIfNecessary(auth2, operationType, credential, user) {
+    const idTokenProvider = operationType === "reauthenticate" ? credential._getReauthenticationResolver(auth2) : credential._getIdTokenResponse(auth2);
+    return idTokenProvider.catch((error) => {
+      if (error.code === `auth/${"multi-factor-auth-required"}`) {
+        throw MultiFactorError._fromErrorAndOperation(auth2, error, operationType, user);
+      }
+      throw error;
+    });
+  }
+  async function _link$1(user, credential, bypassAuthState = false) {
+    const response = await _logoutIfInvalidated(user, credential._linkToIdToken(user.auth, await user.getIdToken()), bypassAuthState);
+    return UserCredentialImpl._forOperation(user, "link", response);
+  }
+  async function _reauthenticate(user, credential, bypassAuthState = false) {
+    const { auth: auth2 } = user;
+    if (_isFirebaseServerApp(auth2.app)) {
+      return Promise.reject(_serverAppCurrentUserOperationNotSupportedError(auth2));
+    }
+    const operationType = "reauthenticate";
+    try {
+      const response = await _logoutIfInvalidated(user, _processCredentialSavingMfaContextIfNecessary(auth2, operationType, credential, user), bypassAuthState);
+      _assert(
+        response.idToken,
+        auth2,
+        "internal-error"
+        /* AuthErrorCode.INTERNAL_ERROR */
+      );
+      const parsed = _parseToken(response.idToken);
+      _assert(
+        parsed,
+        auth2,
+        "internal-error"
+        /* AuthErrorCode.INTERNAL_ERROR */
+      );
+      const { sub: localId } = parsed;
+      _assert(
+        user.uid === localId,
+        auth2,
+        "user-mismatch"
+        /* AuthErrorCode.USER_MISMATCH */
+      );
+      return UserCredentialImpl._forOperation(user, operationType, response);
+    } catch (e) {
+      if ((e === null || e === void 0 ? void 0 : e.code) === `auth/${"user-not-found"}`) {
+        _fail(
+          auth2,
+          "user-mismatch"
+          /* AuthErrorCode.USER_MISMATCH */
+        );
+      }
+      throw e;
+    }
+  }
+  async function _signInWithCredential(auth2, credential, bypassAuthState = false) {
+    if (_isFirebaseServerApp(auth2.app)) {
+      return Promise.reject(_serverAppCurrentUserOperationNotSupportedError(auth2));
+    }
+    const operationType = "signIn";
+    const response = await _processCredentialSavingMfaContextIfNecessary(auth2, operationType, credential);
+    const userCredential = await UserCredentialImpl._fromIdTokenResponse(auth2, operationType, response);
+    if (!bypassAuthState) {
+      await auth2._updateCurrentUser(userCredential.user);
+    }
+    return userCredential;
+  }
+  async function signInWithCredential(auth2, credential) {
+    return _signInWithCredential(_castAuth(auth2), credential);
+  }
+  async function recachePasswordPolicy(auth2) {
+    const authInternal = _castAuth(auth2);
+    if (authInternal._getPasswordPolicyInternal()) {
+      await authInternal._updatePasswordPolicy();
+    }
+  }
+  async function createUserWithEmailAndPassword(auth2, email, password) {
+    if (_isFirebaseServerApp(auth2.app)) {
+      return Promise.reject(_serverAppCurrentUserOperationNotSupportedError(auth2));
+    }
+    const authInternal = _castAuth(auth2);
+    const request = {
+      returnSecureToken: true,
+      email,
+      password,
+      clientType: "CLIENT_TYPE_WEB"
+      /* RecaptchaClientType.WEB */
+    };
+    const signUpResponse = handleRecaptchaFlow(
+      authInternal,
+      request,
+      "signUpPassword",
+      signUp,
+      "EMAIL_PASSWORD_PROVIDER"
+      /* RecaptchaAuthProvider.EMAIL_PASSWORD_PROVIDER */
+    );
+    const response = await signUpResponse.catch((error) => {
+      if (error.code === `auth/${"password-does-not-meet-requirements"}`) {
+        void recachePasswordPolicy(auth2);
+      }
+      throw error;
+    });
+    const userCredential = await UserCredentialImpl._fromIdTokenResponse(authInternal, "signIn", response);
+    await authInternal._updateCurrentUser(userCredential.user);
+    return userCredential;
+  }
+  function signInWithEmailAndPassword(auth2, email, password) {
+    if (_isFirebaseServerApp(auth2.app)) {
+      return Promise.reject(_serverAppCurrentUserOperationNotSupportedError(auth2));
+    }
+    return signInWithCredential(getModularInstance(auth2), EmailAuthProvider.credential(email, password)).catch(async (error) => {
+      if (error.code === `auth/${"password-does-not-meet-requirements"}`) {
+        void recachePasswordPolicy(auth2);
+      }
+      throw error;
+    });
+  }
+  function onIdTokenChanged(auth2, nextOrObserver, error, completed) {
+    return getModularInstance(auth2).onIdTokenChanged(nextOrObserver, error, completed);
+  }
+  function beforeAuthStateChanged(auth2, callback, onAbort) {
+    return getModularInstance(auth2).beforeAuthStateChanged(callback, onAbort);
+  }
+  function signOut(auth2) {
+    return getModularInstance(auth2).signOut();
+  }
+  function startEnrollPhoneMfa(auth2, request) {
+    return _performApiRequest(auth2, "POST", "/v2/accounts/mfaEnrollment:start", _addTidIfNecessary(auth2, request));
+  }
+  function finalizeEnrollPhoneMfa(auth2, request) {
+    return _performApiRequest(auth2, "POST", "/v2/accounts/mfaEnrollment:finalize", _addTidIfNecessary(auth2, request));
+  }
+  function startEnrollTotpMfa(auth2, request) {
+    return _performApiRequest(auth2, "POST", "/v2/accounts/mfaEnrollment:start", _addTidIfNecessary(auth2, request));
+  }
+  function finalizeEnrollTotpMfa(auth2, request) {
+    return _performApiRequest(auth2, "POST", "/v2/accounts/mfaEnrollment:finalize", _addTidIfNecessary(auth2, request));
+  }
+  var STORAGE_AVAILABLE_KEY = "__sak";
+  var BrowserPersistenceClass = class {
+    constructor(storageRetriever, type) {
+      this.storageRetriever = storageRetriever;
+      this.type = type;
+    }
+    _isAvailable() {
+      try {
+        if (!this.storage) {
+          return Promise.resolve(false);
+        }
+        this.storage.setItem(STORAGE_AVAILABLE_KEY, "1");
+        this.storage.removeItem(STORAGE_AVAILABLE_KEY);
+        return Promise.resolve(true);
+      } catch (_a) {
+        return Promise.resolve(false);
+      }
+    }
+    _set(key, value) {
+      this.storage.setItem(key, JSON.stringify(value));
+      return Promise.resolve();
+    }
+    _get(key) {
+      const json = this.storage.getItem(key);
+      return Promise.resolve(json ? JSON.parse(json) : null);
+    }
+    _remove(key) {
+      this.storage.removeItem(key);
+      return Promise.resolve();
+    }
+    get storage() {
+      return this.storageRetriever();
+    }
+  };
+  var _POLLING_INTERVAL_MS$1 = 1e3;
+  var IE10_LOCAL_STORAGE_SYNC_DELAY = 10;
+  var BrowserLocalPersistence = class extends BrowserPersistenceClass {
+    constructor() {
+      super(
+        () => window.localStorage,
+        "LOCAL"
+        /* PersistenceType.LOCAL */
+      );
+      this.boundEventHandler = (event, poll) => this.onStorageEvent(event, poll);
+      this.listeners = {};
+      this.localCache = {};
+      this.pollTimer = null;
+      this.fallbackToPolling = _isMobileBrowser();
+      this._shouldAllowMigration = true;
+    }
+    forAllChangedKeys(cb) {
+      for (const key of Object.keys(this.listeners)) {
+        const newValue = this.storage.getItem(key);
+        const oldValue = this.localCache[key];
+        if (newValue !== oldValue) {
+          cb(key, oldValue, newValue);
+        }
+      }
+    }
+    onStorageEvent(event, poll = false) {
+      if (!event.key) {
+        this.forAllChangedKeys((key2, _oldValue, newValue) => {
+          this.notifyListeners(key2, newValue);
+        });
+        return;
+      }
+      const key = event.key;
+      if (poll) {
+        this.detachListener();
+      } else {
+        this.stopPolling();
+      }
+      const triggerListeners = () => {
+        const storedValue2 = this.storage.getItem(key);
+        if (!poll && this.localCache[key] === storedValue2) {
+          return;
+        }
+        this.notifyListeners(key, storedValue2);
+      };
+      const storedValue = this.storage.getItem(key);
+      if (_isIE10() && storedValue !== event.newValue && event.newValue !== event.oldValue) {
+        setTimeout(triggerListeners, IE10_LOCAL_STORAGE_SYNC_DELAY);
+      } else {
+        triggerListeners();
+      }
+    }
+    notifyListeners(key, value) {
+      this.localCache[key] = value;
+      const listeners = this.listeners[key];
+      if (listeners) {
+        for (const listener of Array.from(listeners)) {
+          listener(value ? JSON.parse(value) : value);
+        }
+      }
+    }
+    startPolling() {
+      this.stopPolling();
+      this.pollTimer = setInterval(() => {
+        this.forAllChangedKeys((key, oldValue, newValue) => {
+          this.onStorageEvent(
+            new StorageEvent("storage", {
+              key,
+              oldValue,
+              newValue
+            }),
+            /* poll */
+            true
+          );
+        });
+      }, _POLLING_INTERVAL_MS$1);
+    }
+    stopPolling() {
+      if (this.pollTimer) {
+        clearInterval(this.pollTimer);
+        this.pollTimer = null;
+      }
+    }
+    attachListener() {
+      window.addEventListener("storage", this.boundEventHandler);
+    }
+    detachListener() {
+      window.removeEventListener("storage", this.boundEventHandler);
+    }
+    _addListener(key, listener) {
+      if (Object.keys(this.listeners).length === 0) {
+        if (this.fallbackToPolling) {
+          this.startPolling();
+        } else {
+          this.attachListener();
+        }
+      }
+      if (!this.listeners[key]) {
+        this.listeners[key] = /* @__PURE__ */ new Set();
+        this.localCache[key] = this.storage.getItem(key);
+      }
+      this.listeners[key].add(listener);
+    }
+    _removeListener(key, listener) {
+      if (this.listeners[key]) {
+        this.listeners[key].delete(listener);
+        if (this.listeners[key].size === 0) {
+          delete this.listeners[key];
+        }
+      }
+      if (Object.keys(this.listeners).length === 0) {
+        this.detachListener();
+        this.stopPolling();
+      }
+    }
+    // Update local cache on base operations:
+    async _set(key, value) {
+      await super._set(key, value);
+      this.localCache[key] = JSON.stringify(value);
+    }
+    async _get(key) {
+      const value = await super._get(key);
+      this.localCache[key] = JSON.stringify(value);
+      return value;
+    }
+    async _remove(key) {
+      await super._remove(key);
+      delete this.localCache[key];
+    }
+  };
+  BrowserLocalPersistence.type = "LOCAL";
+  var browserLocalPersistence = BrowserLocalPersistence;
+  var POLLING_INTERVAL_MS = 1e3;
+  function getDocumentCookie(name5) {
+    var _a, _b;
+    const escapedName = name5.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&");
+    const matcher = RegExp(`${escapedName}=([^;]+)`);
+    return (_b = (_a = document.cookie.match(matcher)) === null || _a === void 0 ? void 0 : _a[1]) !== null && _b !== void 0 ? _b : null;
+  }
+  function getCookieName(key) {
+    const isDevMode = window.location.protocol === "http:";
+    return `${isDevMode ? "__dev_" : "__HOST-"}FIREBASE_${key.split(":")[3]}`;
+  }
+  var CookiePersistence = class {
+    constructor() {
+      this.type = "COOKIE";
+      this.listenerUnsubscribes = /* @__PURE__ */ new Map();
+    }
+    // used to get the URL to the backend to proxy to
+    _getFinalTarget(originalUrl) {
+      if (typeof window === void 0) {
+        return originalUrl;
+      }
+      const url = new URL(`${window.location.origin}/__cookies__`);
+      url.searchParams.set("finalTarget", originalUrl);
+      return url;
+    }
+    // To be a usable persistence method in a chain browserCookiePersistence ensures that
+    // prerequisites have been met, namely that we're in a secureContext, navigator and document are
+    // available and cookies are enabled. Not all UAs support these method, so fallback accordingly.
+    async _isAvailable() {
+      var _a;
+      if (typeof isSecureContext === "boolean" && !isSecureContext) {
+        return false;
+      }
+      if (typeof navigator === "undefined" || typeof document === "undefined") {
+        return false;
+      }
+      return (_a = navigator.cookieEnabled) !== null && _a !== void 0 ? _a : true;
+    }
+    // Set should be a noop as we expect middleware to handle this
+    async _set(_key, _value) {
+      return;
+    }
+    // Attempt to get the cookie from cookieStore, fallback to document.cookie
+    async _get(key) {
+      if (!this._isAvailable()) {
+        return null;
+      }
+      const name5 = getCookieName(key);
+      if (window.cookieStore) {
+        const cookie = await window.cookieStore.get(name5);
+        return cookie === null || cookie === void 0 ? void 0 : cookie.value;
+      }
+      return getDocumentCookie(name5);
+    }
+    // Log out by overriding the idToken with a sentinel value of ""
+    async _remove(key) {
+      if (!this._isAvailable()) {
+        return;
+      }
+      const existingValue = await this._get(key);
+      if (!existingValue) {
+        return;
+      }
+      const name5 = getCookieName(key);
+      document.cookie = `${name5}=;Max-Age=34560000;Partitioned;Secure;SameSite=Strict;Path=/;Priority=High`;
+      await fetch(`/__cookies__`, { method: "DELETE" }).catch(() => void 0);
+    }
+    // Listen for cookie changes, both cookieStore and fallback to polling document.cookie
+    _addListener(key, listener) {
+      if (!this._isAvailable()) {
+        return;
+      }
+      const name5 = getCookieName(key);
+      if (window.cookieStore) {
+        const cb = ((event) => {
+          const changedCookie = event.changed.find((change) => change.name === name5);
+          if (changedCookie) {
+            listener(changedCookie.value);
+          }
+          const deletedCookie = event.deleted.find((change) => change.name === name5);
+          if (deletedCookie) {
+            listener(null);
+          }
+        });
+        const unsubscribe2 = () => window.cookieStore.removeEventListener("change", cb);
+        this.listenerUnsubscribes.set(listener, unsubscribe2);
+        return window.cookieStore.addEventListener("change", cb);
+      }
+      let lastValue = getDocumentCookie(name5);
+      const interval = setInterval(() => {
+        const currentValue = getDocumentCookie(name5);
+        if (currentValue !== lastValue) {
+          listener(currentValue);
+          lastValue = currentValue;
+        }
+      }, POLLING_INTERVAL_MS);
+      const unsubscribe = () => clearInterval(interval);
+      this.listenerUnsubscribes.set(listener, unsubscribe);
+    }
+    _removeListener(_key, listener) {
+      const unsubscribe = this.listenerUnsubscribes.get(listener);
+      if (!unsubscribe) {
+        return;
+      }
+      unsubscribe();
+      this.listenerUnsubscribes.delete(listener);
+    }
+  };
+  CookiePersistence.type = "COOKIE";
+  var BrowserSessionPersistence = class extends BrowserPersistenceClass {
+    constructor() {
+      super(
+        () => window.sessionStorage,
+        "SESSION"
+        /* PersistenceType.SESSION */
+      );
+    }
+    _addListener(_key, _listener) {
+      return;
+    }
+    _removeListener(_key, _listener) {
+      return;
+    }
+  };
+  BrowserSessionPersistence.type = "SESSION";
+  var browserSessionPersistence = BrowserSessionPersistence;
+  function _allSettled(promises) {
+    return Promise.all(promises.map(async (promise) => {
+      try {
+        const value = await promise;
+        return {
+          fulfilled: true,
+          value
+        };
+      } catch (reason) {
+        return {
+          fulfilled: false,
+          reason
+        };
+      }
+    }));
+  }
+  var Receiver = class _Receiver {
+    constructor(eventTarget) {
+      this.eventTarget = eventTarget;
+      this.handlersMap = {};
+      this.boundEventHandler = this.handleEvent.bind(this);
+    }
+    /**
+     * Obtain an instance of a Receiver for a given event target, if none exists it will be created.
+     *
+     * @param eventTarget - An event target (such as window or self) through which the underlying
+     * messages will be received.
+     */
+    static _getInstance(eventTarget) {
+      const existingInstance = this.receivers.find((receiver) => receiver.isListeningto(eventTarget));
+      if (existingInstance) {
+        return existingInstance;
+      }
+      const newInstance = new _Receiver(eventTarget);
+      this.receivers.push(newInstance);
+      return newInstance;
+    }
+    isListeningto(eventTarget) {
+      return this.eventTarget === eventTarget;
+    }
+    /**
+     * Fans out a MessageEvent to the appropriate listeners.
+     *
+     * @remarks
+     * Sends an {@link Status.ACK} upon receipt and a {@link Status.DONE} once all handlers have
+     * finished processing.
+     *
+     * @param event - The MessageEvent.
+     *
+     */
+    async handleEvent(event) {
+      const messageEvent = event;
+      const { eventId, eventType, data } = messageEvent.data;
+      const handlers = this.handlersMap[eventType];
+      if (!(handlers === null || handlers === void 0 ? void 0 : handlers.size)) {
+        return;
+      }
+      messageEvent.ports[0].postMessage({
+        status: "ack",
+        eventId,
+        eventType
+      });
+      const promises = Array.from(handlers).map(async (handler) => handler(messageEvent.origin, data));
+      const response = await _allSettled(promises);
+      messageEvent.ports[0].postMessage({
+        status: "done",
+        eventId,
+        eventType,
+        response
+      });
+    }
+    /**
+     * Subscribe an event handler for a particular event.
+     *
+     * @param eventType - Event name to subscribe to.
+     * @param eventHandler - The event handler which should receive the events.
+     *
+     */
+    _subscribe(eventType, eventHandler) {
+      if (Object.keys(this.handlersMap).length === 0) {
+        this.eventTarget.addEventListener("message", this.boundEventHandler);
+      }
+      if (!this.handlersMap[eventType]) {
+        this.handlersMap[eventType] = /* @__PURE__ */ new Set();
+      }
+      this.handlersMap[eventType].add(eventHandler);
+    }
+    /**
+     * Unsubscribe an event handler from a particular event.
+     *
+     * @param eventType - Event name to unsubscribe from.
+     * @param eventHandler - Optional event handler, if none provided, unsubscribe all handlers on this event.
+     *
+     */
+    _unsubscribe(eventType, eventHandler) {
+      if (this.handlersMap[eventType] && eventHandler) {
+        this.handlersMap[eventType].delete(eventHandler);
+      }
+      if (!eventHandler || this.handlersMap[eventType].size === 0) {
+        delete this.handlersMap[eventType];
+      }
+      if (Object.keys(this.handlersMap).length === 0) {
+        this.eventTarget.removeEventListener("message", this.boundEventHandler);
+      }
+    }
+  };
+  Receiver.receivers = [];
+  function _generateEventId(prefix = "", digits = 10) {
+    let random = "";
+    for (let i = 0; i < digits; i++) {
+      random += Math.floor(Math.random() * 10);
+    }
+    return prefix + random;
+  }
+  var Sender = class {
+    constructor(target) {
+      this.target = target;
+      this.handlers = /* @__PURE__ */ new Set();
+    }
+    /**
+     * Unsubscribe the handler and remove it from our tracking Set.
+     *
+     * @param handler - The handler to unsubscribe.
+     */
+    removeMessageHandler(handler) {
+      if (handler.messageChannel) {
+        handler.messageChannel.port1.removeEventListener("message", handler.onMessage);
+        handler.messageChannel.port1.close();
+      }
+      this.handlers.delete(handler);
+    }
+    /**
+     * Send a message to the Receiver located at {@link target}.
+     *
+     * @remarks
+     * We'll first wait a bit for an ACK , if we get one we will wait significantly longer until the
+     * receiver has had a chance to fully process the event.
+     *
+     * @param eventType - Type of event to send.
+     * @param data - The payload of the event.
+     * @param timeout - Timeout for waiting on an ACK from the receiver.
+     *
+     * @returns An array of settled promises from all the handlers that were listening on the receiver.
+     */
+    async _send(eventType, data, timeout = 50) {
+      const messageChannel = typeof MessageChannel !== "undefined" ? new MessageChannel() : null;
+      if (!messageChannel) {
+        throw new Error(
+          "connection_unavailable"
+          /* _MessageError.CONNECTION_UNAVAILABLE */
+        );
+      }
+      let completionTimer;
+      let handler;
+      return new Promise((resolve, reject) => {
+        const eventId = _generateEventId("", 20);
+        messageChannel.port1.start();
+        const ackTimer = setTimeout(() => {
+          reject(new Error(
+            "unsupported_event"
+            /* _MessageError.UNSUPPORTED_EVENT */
+          ));
+        }, timeout);
+        handler = {
+          messageChannel,
+          onMessage(event) {
+            const messageEvent = event;
+            if (messageEvent.data.eventId !== eventId) {
+              return;
+            }
+            switch (messageEvent.data.status) {
+              case "ack":
+                clearTimeout(ackTimer);
+                completionTimer = setTimeout(
+                  () => {
+                    reject(new Error(
+                      "timeout"
+                      /* _MessageError.TIMEOUT */
+                    ));
+                  },
+                  3e3
+                  /* _TimeoutDuration.COMPLETION */
+                );
+                break;
+              case "done":
+                clearTimeout(completionTimer);
+                resolve(messageEvent.data.response);
+                break;
+              default:
+                clearTimeout(ackTimer);
+                clearTimeout(completionTimer);
+                reject(new Error(
+                  "invalid_response"
+                  /* _MessageError.INVALID_RESPONSE */
+                ));
+                break;
+            }
+          }
+        };
+        this.handlers.add(handler);
+        messageChannel.port1.addEventListener("message", handler.onMessage);
+        this.target.postMessage({
+          eventType,
+          eventId,
+          data
+        }, [messageChannel.port2]);
+      }).finally(() => {
+        if (handler) {
+          this.removeMessageHandler(handler);
+        }
+      });
+    }
+  };
+  function _window() {
+    return window;
+  }
+  function _setWindowLocation(url) {
+    _window().location.href = url;
+  }
+  function _isWorker() {
+    return typeof _window()["WorkerGlobalScope"] !== "undefined" && typeof _window()["importScripts"] === "function";
+  }
+  async function _getActiveServiceWorker() {
+    if (!(navigator === null || navigator === void 0 ? void 0 : navigator.serviceWorker)) {
+      return null;
+    }
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      return registration.active;
+    } catch (_a) {
+      return null;
+    }
+  }
+  function _getServiceWorkerController() {
+    var _a;
+    return ((_a = navigator === null || navigator === void 0 ? void 0 : navigator.serviceWorker) === null || _a === void 0 ? void 0 : _a.controller) || null;
+  }
+  function _getWorkerGlobalScope() {
+    return _isWorker() ? self : null;
+  }
+  var DB_NAME2 = "firebaseLocalStorageDb";
+  var DB_VERSION2 = 1;
+  var DB_OBJECTSTORE_NAME = "firebaseLocalStorage";
+  var DB_DATA_KEYPATH = "fbase_key";
+  var DBPromise = class {
+    constructor(request) {
+      this.request = request;
+    }
+    toPromise() {
+      return new Promise((resolve, reject) => {
+        this.request.addEventListener("success", () => {
+          resolve(this.request.result);
+        });
+        this.request.addEventListener("error", () => {
+          reject(this.request.error);
+        });
+      });
+    }
+  };
+  function getObjectStore(db2, isReadWrite) {
+    return db2.transaction([DB_OBJECTSTORE_NAME], isReadWrite ? "readwrite" : "readonly").objectStore(DB_OBJECTSTORE_NAME);
+  }
+  function _deleteDatabase() {
+    const request = indexedDB.deleteDatabase(DB_NAME2);
+    return new DBPromise(request).toPromise();
+  }
+  function _openDatabase() {
+    const request = indexedDB.open(DB_NAME2, DB_VERSION2);
+    return new Promise((resolve, reject) => {
+      request.addEventListener("error", () => {
+        reject(request.error);
+      });
+      request.addEventListener("upgradeneeded", () => {
+        const db2 = request.result;
+        try {
+          db2.createObjectStore(DB_OBJECTSTORE_NAME, { keyPath: DB_DATA_KEYPATH });
+        } catch (e) {
+          reject(e);
+        }
+      });
+      request.addEventListener("success", async () => {
+        const db2 = request.result;
+        if (!db2.objectStoreNames.contains(DB_OBJECTSTORE_NAME)) {
+          db2.close();
+          await _deleteDatabase();
+          resolve(await _openDatabase());
+        } else {
+          resolve(db2);
+        }
+      });
+    });
+  }
+  async function _putObject(db2, key, value) {
+    const request = getObjectStore(db2, true).put({
+      [DB_DATA_KEYPATH]: key,
+      value
+    });
+    return new DBPromise(request).toPromise();
+  }
+  async function getObject(db2, key) {
+    const request = getObjectStore(db2, false).get(key);
+    const data = await new DBPromise(request).toPromise();
+    return data === void 0 ? null : data.value;
+  }
+  function _deleteObject(db2, key) {
+    const request = getObjectStore(db2, true).delete(key);
+    return new DBPromise(request).toPromise();
+  }
+  var _POLLING_INTERVAL_MS = 800;
+  var _TRANSACTION_RETRY_COUNT = 3;
+  var IndexedDBLocalPersistence = class {
+    constructor() {
+      this.type = "LOCAL";
+      this._shouldAllowMigration = true;
+      this.listeners = {};
+      this.localCache = {};
+      this.pollTimer = null;
+      this.pendingWrites = 0;
+      this.receiver = null;
+      this.sender = null;
+      this.serviceWorkerReceiverAvailable = false;
+      this.activeServiceWorker = null;
+      this._workerInitializationPromise = this.initializeServiceWorkerMessaging().then(() => {
+      }, () => {
+      });
+    }
+    async _openDb() {
+      if (this.db) {
+        return this.db;
+      }
+      this.db = await _openDatabase();
+      return this.db;
+    }
+    async _withRetries(op) {
+      let numAttempts = 0;
+      while (true) {
+        try {
+          const db2 = await this._openDb();
+          return await op(db2);
+        } catch (e) {
+          if (numAttempts++ > _TRANSACTION_RETRY_COUNT) {
+            throw e;
+          }
+          if (this.db) {
+            this.db.close();
+            this.db = void 0;
+          }
+        }
+      }
+    }
+    /**
+     * IndexedDB events do not propagate from the main window to the worker context.  We rely on a
+     * postMessage interface to send these events to the worker ourselves.
+     */
+    async initializeServiceWorkerMessaging() {
+      return _isWorker() ? this.initializeReceiver() : this.initializeSender();
+    }
+    /**
+     * As the worker we should listen to events from the main window.
+     */
+    async initializeReceiver() {
+      this.receiver = Receiver._getInstance(_getWorkerGlobalScope());
+      this.receiver._subscribe("keyChanged", async (_origin, data) => {
+        const keys = await this._poll();
+        return {
+          keyProcessed: keys.includes(data.key)
+        };
+      });
+      this.receiver._subscribe("ping", async (_origin, _data) => {
+        return [
+          "keyChanged"
+          /* _EventType.KEY_CHANGED */
+        ];
+      });
+    }
+    /**
+     * As the main window, we should let the worker know when keys change (set and remove).
+     *
+     * @remarks
+     * {@link https://developer.mozilla.org/en-US/docs/Web/API/ServiceWorkerContainer/ready | ServiceWorkerContainer.ready}
+     * may not resolve.
+     */
+    async initializeSender() {
+      var _a, _b;
+      this.activeServiceWorker = await _getActiveServiceWorker();
+      if (!this.activeServiceWorker) {
+        return;
+      }
+      this.sender = new Sender(this.activeServiceWorker);
+      const results = await this.sender._send(
+        "ping",
+        {},
+        800
+        /* _TimeoutDuration.LONG_ACK */
+      );
+      if (!results) {
+        return;
+      }
+      if (((_a = results[0]) === null || _a === void 0 ? void 0 : _a.fulfilled) && ((_b = results[0]) === null || _b === void 0 ? void 0 : _b.value.includes(
+        "keyChanged"
+        /* _EventType.KEY_CHANGED */
+      ))) {
+        this.serviceWorkerReceiverAvailable = true;
+      }
+    }
+    /**
+     * Let the worker know about a changed key, the exact key doesn't technically matter since the
+     * worker will just trigger a full sync anyway.
+     *
+     * @remarks
+     * For now, we only support one service worker per page.
+     *
+     * @param key - Storage key which changed.
+     */
+    async notifyServiceWorker(key) {
+      if (!this.sender || !this.activeServiceWorker || _getServiceWorkerController() !== this.activeServiceWorker) {
+        return;
+      }
+      try {
+        await this.sender._send(
+          "keyChanged",
+          { key },
+          // Use long timeout if receiver has previously responded to a ping from us.
+          this.serviceWorkerReceiverAvailable ? 800 : 50
+          /* _TimeoutDuration.ACK */
+        );
+      } catch (_a) {
+      }
+    }
+    async _isAvailable() {
+      try {
+        if (!indexedDB) {
+          return false;
+        }
+        const db2 = await _openDatabase();
+        await _putObject(db2, STORAGE_AVAILABLE_KEY, "1");
+        await _deleteObject(db2, STORAGE_AVAILABLE_KEY);
+        return true;
+      } catch (_a) {
+      }
+      return false;
+    }
+    async _withPendingWrite(write) {
+      this.pendingWrites++;
+      try {
+        await write();
+      } finally {
+        this.pendingWrites--;
+      }
+    }
+    async _set(key, value) {
+      return this._withPendingWrite(async () => {
+        await this._withRetries((db2) => _putObject(db2, key, value));
+        this.localCache[key] = value;
+        return this.notifyServiceWorker(key);
+      });
+    }
+    async _get(key) {
+      const obj = await this._withRetries((db2) => getObject(db2, key));
+      this.localCache[key] = obj;
+      return obj;
+    }
+    async _remove(key) {
+      return this._withPendingWrite(async () => {
+        await this._withRetries((db2) => _deleteObject(db2, key));
+        delete this.localCache[key];
+        return this.notifyServiceWorker(key);
+      });
+    }
+    async _poll() {
+      const result = await this._withRetries((db2) => {
+        const getAllRequest = getObjectStore(db2, false).getAll();
+        return new DBPromise(getAllRequest).toPromise();
+      });
+      if (!result) {
+        return [];
+      }
+      if (this.pendingWrites !== 0) {
+        return [];
+      }
+      const keys = [];
+      const keysInResult = /* @__PURE__ */ new Set();
+      if (result.length !== 0) {
+        for (const { fbase_key: key, value } of result) {
+          keysInResult.add(key);
+          if (JSON.stringify(this.localCache[key]) !== JSON.stringify(value)) {
+            this.notifyListeners(key, value);
+            keys.push(key);
+          }
+        }
+      }
+      for (const localKey of Object.keys(this.localCache)) {
+        if (this.localCache[localKey] && !keysInResult.has(localKey)) {
+          this.notifyListeners(localKey, null);
+          keys.push(localKey);
+        }
+      }
+      return keys;
+    }
+    notifyListeners(key, newValue) {
+      this.localCache[key] = newValue;
+      const listeners = this.listeners[key];
+      if (listeners) {
+        for (const listener of Array.from(listeners)) {
+          listener(newValue);
+        }
+      }
+    }
+    startPolling() {
+      this.stopPolling();
+      this.pollTimer = setInterval(async () => this._poll(), _POLLING_INTERVAL_MS);
+    }
+    stopPolling() {
+      if (this.pollTimer) {
+        clearInterval(this.pollTimer);
+        this.pollTimer = null;
+      }
+    }
+    _addListener(key, listener) {
+      if (Object.keys(this.listeners).length === 0) {
+        this.startPolling();
+      }
+      if (!this.listeners[key]) {
+        this.listeners[key] = /* @__PURE__ */ new Set();
+        void this._get(key);
+      }
+      this.listeners[key].add(listener);
+    }
+    _removeListener(key, listener) {
+      if (this.listeners[key]) {
+        this.listeners[key].delete(listener);
+        if (this.listeners[key].size === 0) {
+          delete this.listeners[key];
+        }
+      }
+      if (Object.keys(this.listeners).length === 0) {
+        this.stopPolling();
+      }
+    }
+  };
+  IndexedDBLocalPersistence.type = "LOCAL";
+  var indexedDBLocalPersistence = IndexedDBLocalPersistence;
+  function startSignInPhoneMfa(auth2, request) {
+    return _performApiRequest(auth2, "POST", "/v2/accounts/mfaSignIn:start", _addTidIfNecessary(auth2, request));
+  }
+  function finalizeSignInPhoneMfa(auth2, request) {
+    return _performApiRequest(auth2, "POST", "/v2/accounts/mfaSignIn:finalize", _addTidIfNecessary(auth2, request));
+  }
+  function finalizeSignInTotpMfa(auth2, request) {
+    return _performApiRequest(auth2, "POST", "/v2/accounts/mfaSignIn:finalize", _addTidIfNecessary(auth2, request));
+  }
+  var _JSLOAD_CALLBACK = _generateCallbackName("rcb");
+  var NETWORK_TIMEOUT_DELAY = new Delay(3e4, 6e4);
+  var RECAPTCHA_VERIFIER_TYPE = "recaptcha";
+  async function _verifyPhoneNumber(auth2, options, verifier) {
+    var _a;
+    if (!auth2._getRecaptchaConfig()) {
+      try {
+        await _initializeRecaptchaConfig(auth2);
+      } catch (error) {
+        console.log("Failed to initialize reCAPTCHA Enterprise config. Triggering the reCAPTCHA v2 verification.");
+      }
+    }
+    try {
+      let phoneInfoOptions;
+      if (typeof options === "string") {
+        phoneInfoOptions = {
+          phoneNumber: options
+        };
+      } else {
+        phoneInfoOptions = options;
+      }
+      if ("session" in phoneInfoOptions) {
+        const session = phoneInfoOptions.session;
+        if ("phoneNumber" in phoneInfoOptions) {
+          _assert(
+            session.type === "enroll",
+            auth2,
+            "internal-error"
+            /* AuthErrorCode.INTERNAL_ERROR */
+          );
+          const startPhoneMfaEnrollmentRequest = {
+            idToken: session.credential,
+            phoneEnrollmentInfo: {
+              phoneNumber: phoneInfoOptions.phoneNumber,
+              clientType: "CLIENT_TYPE_WEB"
+              /* RecaptchaClientType.WEB */
+            }
+          };
+          const startEnrollPhoneMfaActionCallback = async (authInstance, request) => {
+            if (request.phoneEnrollmentInfo.captchaResponse === FAKE_TOKEN) {
+              _assert(
+                (verifier === null || verifier === void 0 ? void 0 : verifier.type) === RECAPTCHA_VERIFIER_TYPE,
+                authInstance,
+                "argument-error"
+                /* AuthErrorCode.ARGUMENT_ERROR */
+              );
+              const requestWithRecaptchaV2 = await injectRecaptchaV2Token(authInstance, request, verifier);
+              return startEnrollPhoneMfa(authInstance, requestWithRecaptchaV2);
+            }
+            return startEnrollPhoneMfa(authInstance, request);
+          };
+          const startPhoneMfaEnrollmentResponse = handleRecaptchaFlow(
+            auth2,
+            startPhoneMfaEnrollmentRequest,
+            "mfaSmsEnrollment",
+            startEnrollPhoneMfaActionCallback,
+            "PHONE_PROVIDER"
+            /* RecaptchaAuthProvider.PHONE_PROVIDER */
+          );
+          const response = await startPhoneMfaEnrollmentResponse.catch((error) => {
+            return Promise.reject(error);
+          });
+          return response.phoneSessionInfo.sessionInfo;
+        } else {
+          _assert(
+            session.type === "signin",
+            auth2,
+            "internal-error"
+            /* AuthErrorCode.INTERNAL_ERROR */
+          );
+          const mfaEnrollmentId = ((_a = phoneInfoOptions.multiFactorHint) === null || _a === void 0 ? void 0 : _a.uid) || phoneInfoOptions.multiFactorUid;
+          _assert(
+            mfaEnrollmentId,
+            auth2,
+            "missing-multi-factor-info"
+            /* AuthErrorCode.MISSING_MFA_INFO */
+          );
+          const startPhoneMfaSignInRequest = {
+            mfaPendingCredential: session.credential,
+            mfaEnrollmentId,
+            phoneSignInInfo: {
+              clientType: "CLIENT_TYPE_WEB"
+              /* RecaptchaClientType.WEB */
+            }
+          };
+          const startSignInPhoneMfaActionCallback = async (authInstance, request) => {
+            if (request.phoneSignInInfo.captchaResponse === FAKE_TOKEN) {
+              _assert(
+                (verifier === null || verifier === void 0 ? void 0 : verifier.type) === RECAPTCHA_VERIFIER_TYPE,
+                authInstance,
+                "argument-error"
+                /* AuthErrorCode.ARGUMENT_ERROR */
+              );
+              const requestWithRecaptchaV2 = await injectRecaptchaV2Token(authInstance, request, verifier);
+              return startSignInPhoneMfa(authInstance, requestWithRecaptchaV2);
+            }
+            return startSignInPhoneMfa(authInstance, request);
+          };
+          const startPhoneMfaSignInResponse = handleRecaptchaFlow(
+            auth2,
+            startPhoneMfaSignInRequest,
+            "mfaSmsSignIn",
+            startSignInPhoneMfaActionCallback,
+            "PHONE_PROVIDER"
+            /* RecaptchaAuthProvider.PHONE_PROVIDER */
+          );
+          const response = await startPhoneMfaSignInResponse.catch((error) => {
+            return Promise.reject(error);
+          });
+          return response.phoneResponseInfo.sessionInfo;
+        }
+      } else {
+        const sendPhoneVerificationCodeRequest = {
+          phoneNumber: phoneInfoOptions.phoneNumber,
+          clientType: "CLIENT_TYPE_WEB"
+          /* RecaptchaClientType.WEB */
+        };
+        const sendPhoneVerificationCodeActionCallback = async (authInstance, request) => {
+          if (request.captchaResponse === FAKE_TOKEN) {
+            _assert(
+              (verifier === null || verifier === void 0 ? void 0 : verifier.type) === RECAPTCHA_VERIFIER_TYPE,
+              authInstance,
+              "argument-error"
+              /* AuthErrorCode.ARGUMENT_ERROR */
+            );
+            const requestWithRecaptchaV2 = await injectRecaptchaV2Token(authInstance, request, verifier);
+            return sendPhoneVerificationCode(authInstance, requestWithRecaptchaV2);
+          }
+          return sendPhoneVerificationCode(authInstance, request);
+        };
+        const sendPhoneVerificationCodeResponse = handleRecaptchaFlow(
+          auth2,
+          sendPhoneVerificationCodeRequest,
+          "sendVerificationCode",
+          sendPhoneVerificationCodeActionCallback,
+          "PHONE_PROVIDER"
+          /* RecaptchaAuthProvider.PHONE_PROVIDER */
+        );
+        const response = await sendPhoneVerificationCodeResponse.catch((error) => {
+          return Promise.reject(error);
+        });
+        return response.sessionInfo;
+      }
+    } finally {
+      verifier === null || verifier === void 0 ? void 0 : verifier._reset();
+    }
+  }
+  async function injectRecaptchaV2Token(auth2, request, recaptchaV2Verifier) {
+    _assert(
+      recaptchaV2Verifier.type === RECAPTCHA_VERIFIER_TYPE,
+      auth2,
+      "argument-error"
+      /* AuthErrorCode.ARGUMENT_ERROR */
+    );
+    const recaptchaV2Token = await recaptchaV2Verifier.verify();
+    _assert(
+      typeof recaptchaV2Token === "string",
+      auth2,
+      "argument-error"
+      /* AuthErrorCode.ARGUMENT_ERROR */
+    );
+    const newRequest = Object.assign({}, request);
+    if ("phoneEnrollmentInfo" in newRequest) {
+      const phoneNumber = newRequest.phoneEnrollmentInfo.phoneNumber;
+      const captchaResponse = newRequest.phoneEnrollmentInfo.captchaResponse;
+      const clientType = newRequest.phoneEnrollmentInfo.clientType;
+      const recaptchaVersion = newRequest.phoneEnrollmentInfo.recaptchaVersion;
+      Object.assign(newRequest, {
+        "phoneEnrollmentInfo": {
+          phoneNumber,
+          recaptchaToken: recaptchaV2Token,
+          captchaResponse,
+          clientType,
+          recaptchaVersion
+        }
+      });
+      return newRequest;
+    } else if ("phoneSignInInfo" in newRequest) {
+      const captchaResponse = newRequest.phoneSignInInfo.captchaResponse;
+      const clientType = newRequest.phoneSignInInfo.clientType;
+      const recaptchaVersion = newRequest.phoneSignInInfo.recaptchaVersion;
+      Object.assign(newRequest, {
+        "phoneSignInInfo": {
+          recaptchaToken: recaptchaV2Token,
+          captchaResponse,
+          clientType,
+          recaptchaVersion
+        }
+      });
+      return newRequest;
+    } else {
+      Object.assign(newRequest, { "recaptchaToken": recaptchaV2Token });
+      return newRequest;
+    }
+  }
+  var PhoneAuthProvider = class _PhoneAuthProvider {
+    /**
+     * @param auth - The Firebase {@link Auth} instance in which sign-ins should occur.
+     *
+     */
+    constructor(auth2) {
+      this.providerId = _PhoneAuthProvider.PROVIDER_ID;
+      this.auth = _castAuth(auth2);
+    }
+    /**
+     *
+     * Starts a phone number authentication flow by sending a verification code to the given phone
+     * number.
+     *
+     * @example
+     * ```javascript
+     * const provider = new PhoneAuthProvider(auth);
+     * const verificationId = await provider.verifyPhoneNumber(phoneNumber, applicationVerifier);
+     * // Obtain verificationCode from the user.
+     * const authCredential = PhoneAuthProvider.credential(verificationId, verificationCode);
+     * const userCredential = await signInWithCredential(auth, authCredential);
+     * ```
+     *
+     * @example
+     * An alternative flow is provided using the `signInWithPhoneNumber` method.
+     * ```javascript
+     * const confirmationResult = signInWithPhoneNumber(auth, phoneNumber, applicationVerifier);
+     * // Obtain verificationCode from the user.
+     * const userCredential = confirmationResult.confirm(verificationCode);
+     * ```
+     *
+     * @param phoneInfoOptions - The user's {@link PhoneInfoOptions}. The phone number should be in
+     * E.164 format (e.g. +16505550101).
+     * @param applicationVerifier - An {@link ApplicationVerifier}, which prevents
+     * requests from unauthorized clients. This SDK includes an implementation
+     * based on reCAPTCHA v2, {@link RecaptchaVerifier}. If you've enabled
+     * reCAPTCHA Enterprise bot protection in Enforce mode, this parameter is
+     * optional; in all other configurations, the parameter is required.
+     *
+     * @returns A Promise for a verification ID that can be passed to
+     * {@link PhoneAuthProvider.credential} to identify this flow.
+     */
+    verifyPhoneNumber(phoneOptions, applicationVerifier) {
+      return _verifyPhoneNumber(this.auth, phoneOptions, getModularInstance(applicationVerifier));
+    }
+    /**
+     * Creates a phone auth credential, given the verification ID from
+     * {@link PhoneAuthProvider.verifyPhoneNumber} and the code that was sent to the user's
+     * mobile device.
+     *
+     * @example
+     * ```javascript
+     * const provider = new PhoneAuthProvider(auth);
+     * const verificationId = provider.verifyPhoneNumber(phoneNumber, applicationVerifier);
+     * // Obtain verificationCode from the user.
+     * const authCredential = PhoneAuthProvider.credential(verificationId, verificationCode);
+     * const userCredential = signInWithCredential(auth, authCredential);
+     * ```
+     *
+     * @example
+     * An alternative flow is provided using the `signInWithPhoneNumber` method.
+     * ```javascript
+     * const confirmationResult = await signInWithPhoneNumber(auth, phoneNumber, applicationVerifier);
+     * // Obtain verificationCode from the user.
+     * const userCredential = await confirmationResult.confirm(verificationCode);
+     * ```
+     *
+     * @param verificationId - The verification ID returned from {@link PhoneAuthProvider.verifyPhoneNumber}.
+     * @param verificationCode - The verification code sent to the user's mobile device.
+     *
+     * @returns The auth provider credential.
+     */
+    static credential(verificationId, verificationCode) {
+      return PhoneAuthCredential._fromVerification(verificationId, verificationCode);
+    }
+    /**
+     * Generates an {@link AuthCredential} from a {@link UserCredential}.
+     * @param userCredential - The user credential.
+     */
+    static credentialFromResult(userCredential) {
+      const credential = userCredential;
+      return _PhoneAuthProvider.credentialFromTaggedObject(credential);
+    }
+    /**
+     * Returns an {@link AuthCredential} when passed an error.
+     *
+     * @remarks
+     *
+     * This method works for errors like
+     * `auth/account-exists-with-different-credentials`. This is useful for
+     * recovering when attempting to set a user's phone number but the number
+     * in question is already tied to another account. For example, the following
+     * code tries to update the current user's phone number, and if that
+     * fails, links the user with the account associated with that number:
+     *
+     * ```js
+     * const provider = new PhoneAuthProvider(auth);
+     * const verificationId = await provider.verifyPhoneNumber(number, verifier);
+     * try {
+     *   const code = ''; // Prompt the user for the verification code
+     *   await updatePhoneNumber(
+     *       auth.currentUser,
+     *       PhoneAuthProvider.credential(verificationId, code));
+     * } catch (e) {
+     *   if ((e as FirebaseError)?.code === 'auth/account-exists-with-different-credential') {
+     *     const cred = PhoneAuthProvider.credentialFromError(e);
+     *     await linkWithCredential(auth.currentUser, cred);
+     *   }
+     * }
+     *
+     * // At this point, auth.currentUser.phoneNumber === number.
+     * ```
+     *
+     * @param error - The error to generate a credential from.
+     */
+    static credentialFromError(error) {
+      return _PhoneAuthProvider.credentialFromTaggedObject(error.customData || {});
+    }
+    static credentialFromTaggedObject({ _tokenResponse: tokenResponse }) {
+      if (!tokenResponse) {
+        return null;
+      }
+      const { phoneNumber, temporaryProof } = tokenResponse;
+      if (phoneNumber && temporaryProof) {
+        return PhoneAuthCredential._fromTokenResponse(phoneNumber, temporaryProof);
+      }
+      return null;
+    }
+  };
+  PhoneAuthProvider.PROVIDER_ID = "phone";
+  PhoneAuthProvider.PHONE_SIGN_IN_METHOD = "phone";
+  function _withDefaultResolver(auth2, resolverOverride) {
+    if (resolverOverride) {
+      return _getInstance(resolverOverride);
+    }
+    _assert(
+      auth2._popupRedirectResolver,
+      auth2,
+      "argument-error"
+      /* AuthErrorCode.ARGUMENT_ERROR */
+    );
+    return auth2._popupRedirectResolver;
+  }
+  var IdpCredential = class extends AuthCredential {
+    constructor(params) {
+      super(
+        "custom",
+        "custom"
+        /* ProviderId.CUSTOM */
+      );
+      this.params = params;
+    }
+    _getIdTokenResponse(auth2) {
+      return signInWithIdp(auth2, this._buildIdpRequest());
+    }
+    _linkToIdToken(auth2, idToken) {
+      return signInWithIdp(auth2, this._buildIdpRequest(idToken));
+    }
+    _getReauthenticationResolver(auth2) {
+      return signInWithIdp(auth2, this._buildIdpRequest());
+    }
+    _buildIdpRequest(idToken) {
+      const request = {
+        requestUri: this.params.requestUri,
+        sessionId: this.params.sessionId,
+        postBody: this.params.postBody,
+        tenantId: this.params.tenantId,
+        pendingToken: this.params.pendingToken,
+        returnSecureToken: true,
+        returnIdpCredential: true
+      };
+      if (idToken) {
+        request.idToken = idToken;
+      }
+      return request;
+    }
+  };
+  function _signIn(params) {
+    return _signInWithCredential(params.auth, new IdpCredential(params), params.bypassAuthState);
+  }
+  function _reauth(params) {
+    const { auth: auth2, user } = params;
+    _assert(
+      user,
+      auth2,
+      "internal-error"
+      /* AuthErrorCode.INTERNAL_ERROR */
+    );
+    return _reauthenticate(user, new IdpCredential(params), params.bypassAuthState);
+  }
+  async function _link(params) {
+    const { auth: auth2, user } = params;
+    _assert(
+      user,
+      auth2,
+      "internal-error"
+      /* AuthErrorCode.INTERNAL_ERROR */
+    );
+    return _link$1(user, new IdpCredential(params), params.bypassAuthState);
+  }
+  var AbstractPopupRedirectOperation = class {
+    constructor(auth2, filter, resolver, user, bypassAuthState = false) {
+      this.auth = auth2;
+      this.resolver = resolver;
+      this.user = user;
+      this.bypassAuthState = bypassAuthState;
+      this.pendingPromise = null;
+      this.eventManager = null;
+      this.filter = Array.isArray(filter) ? filter : [filter];
+    }
+    execute() {
+      return new Promise(async (resolve, reject) => {
+        this.pendingPromise = { resolve, reject };
+        try {
+          this.eventManager = await this.resolver._initialize(this.auth);
+          await this.onExecution();
+          this.eventManager.registerConsumer(this);
+        } catch (e) {
+          this.reject(e);
+        }
+      });
+    }
+    async onAuthEvent(event) {
+      const { urlResponse, sessionId, postBody, tenantId, error, type } = event;
+      if (error) {
+        this.reject(error);
+        return;
+      }
+      const params = {
+        auth: this.auth,
+        requestUri: urlResponse,
+        sessionId,
+        tenantId: tenantId || void 0,
+        postBody: postBody || void 0,
+        user: this.user,
+        bypassAuthState: this.bypassAuthState
+      };
+      try {
+        this.resolve(await this.getIdpTask(type)(params));
+      } catch (e) {
+        this.reject(e);
+      }
+    }
+    onError(error) {
+      this.reject(error);
+    }
+    getIdpTask(type) {
+      switch (type) {
+        case "signInViaPopup":
+        case "signInViaRedirect":
+          return _signIn;
+        case "linkViaPopup":
+        case "linkViaRedirect":
+          return _link;
+        case "reauthViaPopup":
+        case "reauthViaRedirect":
+          return _reauth;
+        default:
+          _fail(
+            this.auth,
+            "internal-error"
+            /* AuthErrorCode.INTERNAL_ERROR */
+          );
+      }
+    }
+    resolve(cred) {
+      debugAssert(this.pendingPromise, "Pending promise was never set");
+      this.pendingPromise.resolve(cred);
+      this.unregisterAndCleanUp();
+    }
+    reject(error) {
+      debugAssert(this.pendingPromise, "Pending promise was never set");
+      this.pendingPromise.reject(error);
+      this.unregisterAndCleanUp();
+    }
+    unregisterAndCleanUp() {
+      if (this.eventManager) {
+        this.eventManager.unregisterConsumer(this);
+      }
+      this.pendingPromise = null;
+      this.cleanUp();
+    }
+  };
+  var _POLL_WINDOW_CLOSE_TIMEOUT = new Delay(2e3, 1e4);
+  var PopupOperation = class _PopupOperation extends AbstractPopupRedirectOperation {
+    constructor(auth2, filter, provider, resolver, user) {
+      super(auth2, filter, resolver, user);
+      this.provider = provider;
+      this.authWindow = null;
+      this.pollId = null;
+      if (_PopupOperation.currentPopupAction) {
+        _PopupOperation.currentPopupAction.cancel();
+      }
+      _PopupOperation.currentPopupAction = this;
+    }
+    async executeNotNull() {
+      const result = await this.execute();
+      _assert(
+        result,
+        this.auth,
+        "internal-error"
+        /* AuthErrorCode.INTERNAL_ERROR */
+      );
+      return result;
+    }
+    async onExecution() {
+      debugAssert(this.filter.length === 1, "Popup operations only handle one event");
+      const eventId = _generateEventId();
+      this.authWindow = await this.resolver._openPopup(
+        this.auth,
+        this.provider,
+        this.filter[0],
+        // There's always one, see constructor
+        eventId
+      );
+      this.authWindow.associatedEvent = eventId;
+      this.resolver._originValidation(this.auth).catch((e) => {
+        this.reject(e);
+      });
+      this.resolver._isIframeWebStorageSupported(this.auth, (isSupported) => {
+        if (!isSupported) {
+          this.reject(_createError(
+            this.auth,
+            "web-storage-unsupported"
+            /* AuthErrorCode.WEB_STORAGE_UNSUPPORTED */
+          ));
+        }
+      });
+      this.pollUserCancellation();
+    }
+    get eventId() {
+      var _a;
+      return ((_a = this.authWindow) === null || _a === void 0 ? void 0 : _a.associatedEvent) || null;
+    }
+    cancel() {
+      this.reject(_createError(
+        this.auth,
+        "cancelled-popup-request"
+        /* AuthErrorCode.EXPIRED_POPUP_REQUEST */
+      ));
+    }
+    cleanUp() {
+      if (this.authWindow) {
+        this.authWindow.close();
+      }
+      if (this.pollId) {
+        window.clearTimeout(this.pollId);
+      }
+      this.authWindow = null;
+      this.pollId = null;
+      _PopupOperation.currentPopupAction = null;
+    }
+    pollUserCancellation() {
+      const poll = () => {
+        var _a, _b;
+        if ((_b = (_a = this.authWindow) === null || _a === void 0 ? void 0 : _a.window) === null || _b === void 0 ? void 0 : _b.closed) {
+          this.pollId = window.setTimeout(
+            () => {
+              this.pollId = null;
+              this.reject(_createError(
+                this.auth,
+                "popup-closed-by-user"
+                /* AuthErrorCode.POPUP_CLOSED_BY_USER */
+              ));
+            },
+            8e3
+            /* _Timeout.AUTH_EVENT */
+          );
+          return;
+        }
+        this.pollId = window.setTimeout(poll, _POLL_WINDOW_CLOSE_TIMEOUT.get());
+      };
+      poll();
+    }
+  };
+  PopupOperation.currentPopupAction = null;
+  var PENDING_REDIRECT_KEY = "pendingRedirect";
+  var redirectOutcomeMap = /* @__PURE__ */ new Map();
+  var RedirectAction = class extends AbstractPopupRedirectOperation {
+    constructor(auth2, resolver, bypassAuthState = false) {
+      super(auth2, [
+        "signInViaRedirect",
+        "linkViaRedirect",
+        "reauthViaRedirect",
+        "unknown"
+        /* AuthEventType.UNKNOWN */
+      ], resolver, void 0, bypassAuthState);
+      this.eventId = null;
+    }
+    /**
+     * Override the execute function; if we already have a redirect result, then
+     * just return it.
+     */
+    async execute() {
+      let readyOutcome = redirectOutcomeMap.get(this.auth._key());
+      if (!readyOutcome) {
+        try {
+          const hasPendingRedirect = await _getAndClearPendingRedirectStatus(this.resolver, this.auth);
+          const result = hasPendingRedirect ? await super.execute() : null;
+          readyOutcome = () => Promise.resolve(result);
+        } catch (e) {
+          readyOutcome = () => Promise.reject(e);
+        }
+        redirectOutcomeMap.set(this.auth._key(), readyOutcome);
+      }
+      if (!this.bypassAuthState) {
+        redirectOutcomeMap.set(this.auth._key(), () => Promise.resolve(null));
+      }
+      return readyOutcome();
+    }
+    async onAuthEvent(event) {
+      if (event.type === "signInViaRedirect") {
+        return super.onAuthEvent(event);
+      } else if (event.type === "unknown") {
+        this.resolve(null);
+        return;
+      }
+      if (event.eventId) {
+        const user = await this.auth._redirectUserForId(event.eventId);
+        if (user) {
+          this.user = user;
+          return super.onAuthEvent(event);
+        } else {
+          this.resolve(null);
+        }
+      }
+    }
+    async onExecution() {
+    }
+    cleanUp() {
+    }
+  };
+  async function _getAndClearPendingRedirectStatus(resolver, auth2) {
+    const key = pendingRedirectKey(auth2);
+    const persistence = resolverPersistence(resolver);
+    if (!await persistence._isAvailable()) {
+      return false;
+    }
+    const hasPendingRedirect = await persistence._get(key) === "true";
+    await persistence._remove(key);
+    return hasPendingRedirect;
+  }
+  function _overrideRedirectResult(auth2, result) {
+    redirectOutcomeMap.set(auth2._key(), result);
+  }
+  function resolverPersistence(resolver) {
+    return _getInstance(resolver._redirectPersistence);
+  }
+  function pendingRedirectKey(auth2) {
+    return _persistenceKeyName(PENDING_REDIRECT_KEY, auth2.config.apiKey, auth2.name);
+  }
+  async function _getRedirectResult(auth2, resolverExtern, bypassAuthState = false) {
+    if (_isFirebaseServerApp(auth2.app)) {
+      return Promise.reject(_serverAppCurrentUserOperationNotSupportedError(auth2));
+    }
+    const authInternal = _castAuth(auth2);
+    const resolver = _withDefaultResolver(authInternal, resolverExtern);
+    const action = new RedirectAction(authInternal, resolver, bypassAuthState);
+    const result = await action.execute();
+    if (result && !bypassAuthState) {
+      delete result.user._redirectEventId;
+      await authInternal._persistUserIfCurrent(result.user);
+      await authInternal._setRedirectUser(null, resolverExtern);
+    }
+    return result;
+  }
+  var EVENT_DUPLICATION_CACHE_DURATION_MS = 10 * 60 * 1e3;
+  var AuthEventManager = class {
+    constructor(auth2) {
+      this.auth = auth2;
+      this.cachedEventUids = /* @__PURE__ */ new Set();
+      this.consumers = /* @__PURE__ */ new Set();
+      this.queuedRedirectEvent = null;
+      this.hasHandledPotentialRedirect = false;
+      this.lastProcessedEventTime = Date.now();
+    }
+    registerConsumer(authEventConsumer) {
+      this.consumers.add(authEventConsumer);
+      if (this.queuedRedirectEvent && this.isEventForConsumer(this.queuedRedirectEvent, authEventConsumer)) {
+        this.sendToConsumer(this.queuedRedirectEvent, authEventConsumer);
+        this.saveEventToCache(this.queuedRedirectEvent);
+        this.queuedRedirectEvent = null;
+      }
+    }
+    unregisterConsumer(authEventConsumer) {
+      this.consumers.delete(authEventConsumer);
+    }
+    onEvent(event) {
+      if (this.hasEventBeenHandled(event)) {
+        return false;
+      }
+      let handled = false;
+      this.consumers.forEach((consumer) => {
+        if (this.isEventForConsumer(event, consumer)) {
+          handled = true;
+          this.sendToConsumer(event, consumer);
+          this.saveEventToCache(event);
+        }
+      });
+      if (this.hasHandledPotentialRedirect || !isRedirectEvent(event)) {
+        return handled;
+      }
+      this.hasHandledPotentialRedirect = true;
+      if (!handled) {
+        this.queuedRedirectEvent = event;
+        handled = true;
+      }
+      return handled;
+    }
+    sendToConsumer(event, consumer) {
+      var _a;
+      if (event.error && !isNullRedirectEvent(event)) {
+        const code = ((_a = event.error.code) === null || _a === void 0 ? void 0 : _a.split("auth/")[1]) || "internal-error";
+        consumer.onError(_createError(this.auth, code));
+      } else {
+        consumer.onAuthEvent(event);
+      }
+    }
+    isEventForConsumer(event, consumer) {
+      const eventIdMatches = consumer.eventId === null || !!event.eventId && event.eventId === consumer.eventId;
+      return consumer.filter.includes(event.type) && eventIdMatches;
+    }
+    hasEventBeenHandled(event) {
+      if (Date.now() - this.lastProcessedEventTime >= EVENT_DUPLICATION_CACHE_DURATION_MS) {
+        this.cachedEventUids.clear();
+      }
+      return this.cachedEventUids.has(eventUid(event));
+    }
+    saveEventToCache(event) {
+      this.cachedEventUids.add(eventUid(event));
+      this.lastProcessedEventTime = Date.now();
+    }
+  };
+  function eventUid(e) {
+    return [e.type, e.eventId, e.sessionId, e.tenantId].filter((v) => v).join("-");
+  }
+  function isNullRedirectEvent({ type, error }) {
+    return type === "unknown" && (error === null || error === void 0 ? void 0 : error.code) === `auth/${"no-auth-event"}`;
+  }
+  function isRedirectEvent(event) {
+    switch (event.type) {
+      case "signInViaRedirect":
+      case "linkViaRedirect":
+      case "reauthViaRedirect":
+        return true;
+      case "unknown":
+        return isNullRedirectEvent(event);
+      default:
+        return false;
+    }
+  }
+  async function _getProjectConfig(auth2, request = {}) {
+    return _performApiRequest(auth2, "GET", "/v1/projects", request);
+  }
+  var IP_ADDRESS_REGEX = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
+  var HTTP_REGEX = /^https?/;
+  async function _validateOrigin(auth2) {
+    if (auth2.config.emulator) {
+      return;
+    }
+    const { authorizedDomains } = await _getProjectConfig(auth2);
+    for (const domain of authorizedDomains) {
+      try {
+        if (matchDomain(domain)) {
+          return;
+        }
+      } catch (_a) {
+      }
+    }
+    _fail(
+      auth2,
+      "unauthorized-domain"
+      /* AuthErrorCode.INVALID_ORIGIN */
+    );
+  }
+  function matchDomain(expected) {
+    const currentUrl = _getCurrentUrl();
+    const { protocol, hostname } = new URL(currentUrl);
+    if (expected.startsWith("chrome-extension://")) {
+      const ceUrl = new URL(expected);
+      if (ceUrl.hostname === "" && hostname === "") {
+        return protocol === "chrome-extension:" && expected.replace("chrome-extension://", "") === currentUrl.replace("chrome-extension://", "");
+      }
+      return protocol === "chrome-extension:" && ceUrl.hostname === hostname;
+    }
+    if (!HTTP_REGEX.test(protocol)) {
+      return false;
+    }
+    if (IP_ADDRESS_REGEX.test(expected)) {
+      return hostname === expected;
+    }
+    const escapedDomainPattern = expected.replace(/\./g, "\\.");
+    const re = new RegExp("^(.+\\." + escapedDomainPattern + "|" + escapedDomainPattern + ")$", "i");
+    return re.test(hostname);
+  }
+  var NETWORK_TIMEOUT = new Delay(3e4, 6e4);
+  function resetUnloadedGapiModules() {
+    const beacon = _window().___jsl;
+    if (beacon === null || beacon === void 0 ? void 0 : beacon.H) {
+      for (const hint of Object.keys(beacon.H)) {
+        beacon.H[hint].r = beacon.H[hint].r || [];
+        beacon.H[hint].L = beacon.H[hint].L || [];
+        beacon.H[hint].r = [...beacon.H[hint].L];
+        if (beacon.CP) {
+          for (let i = 0; i < beacon.CP.length; i++) {
+            beacon.CP[i] = null;
+          }
+        }
+      }
+    }
+  }
+  function loadGapi(auth2) {
+    return new Promise((resolve, reject) => {
+      var _a, _b, _c;
+      function loadGapiIframe() {
+        resetUnloadedGapiModules();
+        gapi.load("gapi.iframes", {
+          callback: () => {
+            resolve(gapi.iframes.getContext());
+          },
+          ontimeout: () => {
+            resetUnloadedGapiModules();
+            reject(_createError(
+              auth2,
+              "network-request-failed"
+              /* AuthErrorCode.NETWORK_REQUEST_FAILED */
+            ));
+          },
+          timeout: NETWORK_TIMEOUT.get()
+        });
+      }
+      if ((_b = (_a = _window().gapi) === null || _a === void 0 ? void 0 : _a.iframes) === null || _b === void 0 ? void 0 : _b.Iframe) {
+        resolve(gapi.iframes.getContext());
+      } else if (!!((_c = _window().gapi) === null || _c === void 0 ? void 0 : _c.load)) {
+        loadGapiIframe();
+      } else {
+        const cbName = _generateCallbackName("iframefcb");
+        _window()[cbName] = () => {
+          if (!!gapi.load) {
+            loadGapiIframe();
+          } else {
+            reject(_createError(
+              auth2,
+              "network-request-failed"
+              /* AuthErrorCode.NETWORK_REQUEST_FAILED */
+            ));
+          }
+        };
+        return _loadJS(`${_gapiScriptUrl()}?onload=${cbName}`).catch((e) => reject(e));
+      }
+    }).catch((error) => {
+      cachedGApiLoader = null;
+      throw error;
+    });
+  }
+  var cachedGApiLoader = null;
+  function _loadGapi(auth2) {
+    cachedGApiLoader = cachedGApiLoader || loadGapi(auth2);
+    return cachedGApiLoader;
+  }
+  var PING_TIMEOUT = new Delay(5e3, 15e3);
+  var IFRAME_PATH = "__/auth/iframe";
+  var EMULATED_IFRAME_PATH = "emulator/auth/iframe";
+  var IFRAME_ATTRIBUTES = {
+    style: {
+      position: "absolute",
+      top: "-100px",
+      width: "1px",
+      height: "1px"
+    },
+    "aria-hidden": "true",
+    tabindex: "-1"
+  };
+  var EID_FROM_APIHOST = /* @__PURE__ */ new Map([
+    ["identitytoolkit.googleapis.com", "p"],
+    // production
+    ["staging-identitytoolkit.sandbox.googleapis.com", "s"],
+    // staging
+    ["test-identitytoolkit.sandbox.googleapis.com", "t"]
+    // test
+  ]);
+  function getIframeUrl(auth2) {
+    const config = auth2.config;
+    _assert(
+      config.authDomain,
+      auth2,
+      "auth-domain-config-required"
+      /* AuthErrorCode.MISSING_AUTH_DOMAIN */
+    );
+    const url = config.emulator ? _emulatorUrl(config, EMULATED_IFRAME_PATH) : `https://${auth2.config.authDomain}/${IFRAME_PATH}`;
+    const params = {
+      apiKey: config.apiKey,
+      appName: auth2.name,
+      v: SDK_VERSION
+    };
+    const eid = EID_FROM_APIHOST.get(auth2.config.apiHost);
+    if (eid) {
+      params.eid = eid;
+    }
+    const frameworks = auth2._getFrameworks();
+    if (frameworks.length) {
+      params.fw = frameworks.join(",");
+    }
+    return `${url}?${querystring(params).slice(1)}`;
+  }
+  async function _openIframe(auth2) {
+    const context = await _loadGapi(auth2);
+    const gapi2 = _window().gapi;
+    _assert(
+      gapi2,
+      auth2,
+      "internal-error"
+      /* AuthErrorCode.INTERNAL_ERROR */
+    );
+    return context.open({
+      where: document.body,
+      url: getIframeUrl(auth2),
+      messageHandlersFilter: gapi2.iframes.CROSS_ORIGIN_IFRAMES_FILTER,
+      attributes: IFRAME_ATTRIBUTES,
+      dontclear: true
+    }, (iframe) => new Promise(async (resolve, reject) => {
+      await iframe.restyle({
+        // Prevent iframe from closing on mouse out.
+        setHideOnLeave: false
+      });
+      const networkError = _createError(
+        auth2,
+        "network-request-failed"
+        /* AuthErrorCode.NETWORK_REQUEST_FAILED */
+      );
+      const networkErrorTimer = _window().setTimeout(() => {
+        reject(networkError);
+      }, PING_TIMEOUT.get());
+      function clearTimerAndResolve() {
+        _window().clearTimeout(networkErrorTimer);
+        resolve(iframe);
+      }
+      iframe.ping(clearTimerAndResolve).then(clearTimerAndResolve, () => {
+        reject(networkError);
+      });
+    }));
+  }
+  var BASE_POPUP_OPTIONS = {
+    location: "yes",
+    resizable: "yes",
+    statusbar: "yes",
+    toolbar: "no"
+  };
+  var DEFAULT_WIDTH = 500;
+  var DEFAULT_HEIGHT = 600;
+  var TARGET_BLANK = "_blank";
+  var FIREFOX_EMPTY_URL = "http://localhost";
+  var AuthPopup = class {
+    constructor(window2) {
+      this.window = window2;
+      this.associatedEvent = null;
+    }
+    close() {
+      if (this.window) {
+        try {
+          this.window.close();
+        } catch (e) {
+        }
+      }
+    }
+  };
+  function _open(auth2, url, name5, width = DEFAULT_WIDTH, height = DEFAULT_HEIGHT) {
+    const top = Math.max((window.screen.availHeight - height) / 2, 0).toString();
+    const left = Math.max((window.screen.availWidth - width) / 2, 0).toString();
+    let target = "";
+    const options = Object.assign(Object.assign({}, BASE_POPUP_OPTIONS), {
+      width: width.toString(),
+      height: height.toString(),
+      top,
+      left
+    });
+    const ua = getUA().toLowerCase();
+    if (name5) {
+      target = _isChromeIOS(ua) ? TARGET_BLANK : name5;
+    }
+    if (_isFirefox(ua)) {
+      url = url || FIREFOX_EMPTY_URL;
+      options.scrollbars = "yes";
+    }
+    const optionsString = Object.entries(options).reduce((accum, [key, value]) => `${accum}${key}=${value},`, "");
+    if (_isIOSStandalone(ua) && target !== "_self") {
+      openAsNewWindowIOS(url || "", target);
+      return new AuthPopup(null);
+    }
+    const newWin = window.open(url || "", target, optionsString);
+    _assert(
+      newWin,
+      auth2,
+      "popup-blocked"
+      /* AuthErrorCode.POPUP_BLOCKED */
+    );
+    try {
+      newWin.focus();
+    } catch (e) {
+    }
+    return new AuthPopup(newWin);
+  }
+  function openAsNewWindowIOS(url, target) {
+    const el = document.createElement("a");
+    el.href = url;
+    el.target = target;
+    const click = document.createEvent("MouseEvent");
+    click.initMouseEvent("click", true, true, window, 1, 0, 0, 0, 0, false, false, false, false, 1, null);
+    el.dispatchEvent(click);
+  }
+  var WIDGET_PATH = "__/auth/handler";
+  var EMULATOR_WIDGET_PATH = "emulator/auth/handler";
+  var FIREBASE_APP_CHECK_FRAGMENT_ID = encodeURIComponent("fac");
+  async function _getRedirectUrl(auth2, provider, authType, redirectUrl, eventId, additionalParams) {
+    _assert(
+      auth2.config.authDomain,
+      auth2,
+      "auth-domain-config-required"
+      /* AuthErrorCode.MISSING_AUTH_DOMAIN */
+    );
+    _assert(
+      auth2.config.apiKey,
+      auth2,
+      "invalid-api-key"
+      /* AuthErrorCode.INVALID_API_KEY */
+    );
+    const params = {
+      apiKey: auth2.config.apiKey,
+      appName: auth2.name,
+      authType,
+      redirectUrl,
+      v: SDK_VERSION,
+      eventId
+    };
+    if (provider instanceof FederatedAuthProvider) {
+      provider.setDefaultLanguage(auth2.languageCode);
+      params.providerId = provider.providerId || "";
+      if (!isEmpty(provider.getCustomParameters())) {
+        params.customParameters = JSON.stringify(provider.getCustomParameters());
+      }
+      for (const [key, value] of Object.entries(additionalParams || {})) {
+        params[key] = value;
+      }
+    }
+    if (provider instanceof BaseOAuthProvider) {
+      const scopes = provider.getScopes().filter((scope) => scope !== "");
+      if (scopes.length > 0) {
+        params.scopes = scopes.join(",");
+      }
+    }
+    if (auth2.tenantId) {
+      params.tid = auth2.tenantId;
+    }
+    const paramsDict = params;
+    for (const key of Object.keys(paramsDict)) {
+      if (paramsDict[key] === void 0) {
+        delete paramsDict[key];
+      }
+    }
+    const appCheckToken = await auth2._getAppCheckToken();
+    const appCheckTokenFragment = appCheckToken ? `#${FIREBASE_APP_CHECK_FRAGMENT_ID}=${encodeURIComponent(appCheckToken)}` : "";
+    return `${getHandlerBase(auth2)}?${querystring(paramsDict).slice(1)}${appCheckTokenFragment}`;
+  }
+  function getHandlerBase({ config }) {
+    if (!config.emulator) {
+      return `https://${config.authDomain}/${WIDGET_PATH}`;
+    }
+    return _emulatorUrl(config, EMULATOR_WIDGET_PATH);
+  }
+  var WEB_STORAGE_SUPPORT_KEY = "webStorageSupport";
+  var BrowserPopupRedirectResolver = class {
+    constructor() {
+      this.eventManagers = {};
+      this.iframes = {};
+      this.originValidationPromises = {};
+      this._redirectPersistence = browserSessionPersistence;
+      this._completeRedirectFn = _getRedirectResult;
+      this._overrideRedirectResult = _overrideRedirectResult;
+    }
+    // Wrapping in async even though we don't await anywhere in order
+    // to make sure errors are raised as promise rejections
+    async _openPopup(auth2, provider, authType, eventId) {
+      var _a;
+      debugAssert((_a = this.eventManagers[auth2._key()]) === null || _a === void 0 ? void 0 : _a.manager, "_initialize() not called before _openPopup()");
+      const url = await _getRedirectUrl(auth2, provider, authType, _getCurrentUrl(), eventId);
+      return _open(auth2, url, _generateEventId());
+    }
+    async _openRedirect(auth2, provider, authType, eventId) {
+      await this._originValidation(auth2);
+      const url = await _getRedirectUrl(auth2, provider, authType, _getCurrentUrl(), eventId);
+      _setWindowLocation(url);
+      return new Promise(() => {
+      });
+    }
+    _initialize(auth2) {
+      const key = auth2._key();
+      if (this.eventManagers[key]) {
+        const { manager, promise: promise2 } = this.eventManagers[key];
+        if (manager) {
+          return Promise.resolve(manager);
+        } else {
+          debugAssert(promise2, "If manager is not set, promise should be");
+          return promise2;
+        }
+      }
+      const promise = this.initAndGetManager(auth2);
+      this.eventManagers[key] = { promise };
+      promise.catch(() => {
+        delete this.eventManagers[key];
+      });
+      return promise;
+    }
+    async initAndGetManager(auth2) {
+      const iframe = await _openIframe(auth2);
+      const manager = new AuthEventManager(auth2);
+      iframe.register("authEvent", (iframeEvent) => {
+        _assert(
+          iframeEvent === null || iframeEvent === void 0 ? void 0 : iframeEvent.authEvent,
+          auth2,
+          "invalid-auth-event"
+          /* AuthErrorCode.INVALID_AUTH_EVENT */
+        );
+        const handled = manager.onEvent(iframeEvent.authEvent);
+        return {
+          status: handled ? "ACK" : "ERROR"
+          /* GapiOutcome.ERROR */
+        };
+      }, gapi.iframes.CROSS_ORIGIN_IFRAMES_FILTER);
+      this.eventManagers[auth2._key()] = { manager };
+      this.iframes[auth2._key()] = iframe;
+      return manager;
+    }
+    _isIframeWebStorageSupported(auth2, cb) {
+      const iframe = this.iframes[auth2._key()];
+      iframe.send(WEB_STORAGE_SUPPORT_KEY, { type: WEB_STORAGE_SUPPORT_KEY }, (result) => {
+        var _a;
+        const isSupported = (_a = result === null || result === void 0 ? void 0 : result[0]) === null || _a === void 0 ? void 0 : _a[WEB_STORAGE_SUPPORT_KEY];
+        if (isSupported !== void 0) {
+          cb(!!isSupported);
+        }
+        _fail(
+          auth2,
+          "internal-error"
+          /* AuthErrorCode.INTERNAL_ERROR */
+        );
+      }, gapi.iframes.CROSS_ORIGIN_IFRAMES_FILTER);
+    }
+    _originValidation(auth2) {
+      const key = auth2._key();
+      if (!this.originValidationPromises[key]) {
+        this.originValidationPromises[key] = _validateOrigin(auth2);
+      }
+      return this.originValidationPromises[key];
+    }
+    get _shouldInitProactively() {
+      return _isMobileBrowser() || _isSafari() || _isIOS();
+    }
+  };
+  var browserPopupRedirectResolver = BrowserPopupRedirectResolver;
+  var MultiFactorAssertionImpl = class {
+    constructor(factorId) {
+      this.factorId = factorId;
+    }
+    _process(auth2, session, displayName) {
+      switch (session.type) {
+        case "enroll":
+          return this._finalizeEnroll(auth2, session.credential, displayName);
+        case "signin":
+          return this._finalizeSignIn(auth2, session.credential);
+        default:
+          return debugFail("unexpected MultiFactorSessionType");
+      }
+    }
+  };
+  var PhoneMultiFactorAssertionImpl = class _PhoneMultiFactorAssertionImpl extends MultiFactorAssertionImpl {
+    constructor(credential) {
+      super(
+        "phone"
+        /* FactorId.PHONE */
+      );
+      this.credential = credential;
+    }
+    /** @internal */
+    static _fromCredential(credential) {
+      return new _PhoneMultiFactorAssertionImpl(credential);
+    }
+    /** @internal */
+    _finalizeEnroll(auth2, idToken, displayName) {
+      return finalizeEnrollPhoneMfa(auth2, {
+        idToken,
+        displayName,
+        phoneVerificationInfo: this.credential._makeVerificationRequest()
+      });
+    }
+    /** @internal */
+    _finalizeSignIn(auth2, mfaPendingCredential) {
+      return finalizeSignInPhoneMfa(auth2, {
+        mfaPendingCredential,
+        phoneVerificationInfo: this.credential._makeVerificationRequest()
+      });
+    }
+  };
+  var PhoneMultiFactorGenerator = class {
+    constructor() {
+    }
+    /**
+     * Provides a {@link PhoneMultiFactorAssertion} to confirm ownership of the phone second factor.
+     *
+     * @remarks
+     * This method does not work in a Node.js environment.
+     *
+     * @param phoneAuthCredential - A credential provided by {@link PhoneAuthProvider.credential}.
+     * @returns A {@link PhoneMultiFactorAssertion} which can be used with
+     * {@link MultiFactorResolver.resolveSignIn}
+     */
+    static assertion(credential) {
+      return PhoneMultiFactorAssertionImpl._fromCredential(credential);
+    }
+  };
+  PhoneMultiFactorGenerator.FACTOR_ID = "phone";
+  var TotpMultiFactorGenerator = class {
+    /**
+     * Provides a {@link TotpMultiFactorAssertion} to confirm ownership of
+     * the TOTP (time-based one-time password) second factor.
+     * This assertion is used to complete enrollment in TOTP second factor.
+     *
+     * @param secret A {@link TotpSecret} containing the shared secret key and other TOTP parameters.
+     * @param oneTimePassword One-time password from TOTP App.
+     * @returns A {@link TotpMultiFactorAssertion} which can be used with
+     * {@link MultiFactorUser.enroll}.
+     */
+    static assertionForEnrollment(secret, oneTimePassword) {
+      return TotpMultiFactorAssertionImpl._fromSecret(secret, oneTimePassword);
+    }
+    /**
+     * Provides a {@link TotpMultiFactorAssertion} to confirm ownership of the TOTP second factor.
+     * This assertion is used to complete signIn with TOTP as the second factor.
+     *
+     * @param enrollmentId identifies the enrolled TOTP second factor.
+     * @param oneTimePassword One-time password from TOTP App.
+     * @returns A {@link TotpMultiFactorAssertion} which can be used with
+     * {@link MultiFactorResolver.resolveSignIn}.
+     */
+    static assertionForSignIn(enrollmentId, oneTimePassword) {
+      return TotpMultiFactorAssertionImpl._fromEnrollmentId(enrollmentId, oneTimePassword);
+    }
+    /**
+     * Returns a promise to {@link TotpSecret} which contains the TOTP shared secret key and other parameters.
+     * Creates a TOTP secret as part of enrolling a TOTP second factor.
+     * Used for generating a QR code URL or inputting into a TOTP app.
+     * This method uses the auth instance corresponding to the user in the multiFactorSession.
+     *
+     * @param session The {@link MultiFactorSession} that the user is part of.
+     * @returns A promise to {@link TotpSecret}.
+     */
+    static async generateSecret(session) {
+      var _a;
+      const mfaSession = session;
+      _assert(
+        typeof ((_a = mfaSession.user) === null || _a === void 0 ? void 0 : _a.auth) !== "undefined",
+        "internal-error"
+        /* AuthErrorCode.INTERNAL_ERROR */
+      );
+      const response = await startEnrollTotpMfa(mfaSession.user.auth, {
+        idToken: mfaSession.credential,
+        totpEnrollmentInfo: {}
+      });
+      return TotpSecret._fromStartTotpMfaEnrollmentResponse(response, mfaSession.user.auth);
+    }
+  };
+  TotpMultiFactorGenerator.FACTOR_ID = "totp";
+  var TotpMultiFactorAssertionImpl = class _TotpMultiFactorAssertionImpl extends MultiFactorAssertionImpl {
+    constructor(otp, enrollmentId, secret) {
+      super(
+        "totp"
+        /* FactorId.TOTP */
+      );
+      this.otp = otp;
+      this.enrollmentId = enrollmentId;
+      this.secret = secret;
+    }
+    /** @internal */
+    static _fromSecret(secret, otp) {
+      return new _TotpMultiFactorAssertionImpl(otp, void 0, secret);
+    }
+    /** @internal */
+    static _fromEnrollmentId(enrollmentId, otp) {
+      return new _TotpMultiFactorAssertionImpl(otp, enrollmentId);
+    }
+    /** @internal */
+    async _finalizeEnroll(auth2, idToken, displayName) {
+      _assert(
+        typeof this.secret !== "undefined",
+        auth2,
+        "argument-error"
+        /* AuthErrorCode.ARGUMENT_ERROR */
+      );
+      return finalizeEnrollTotpMfa(auth2, {
+        idToken,
+        displayName,
+        totpVerificationInfo: this.secret._makeTotpVerificationInfo(this.otp)
+      });
+    }
+    /** @internal */
+    async _finalizeSignIn(auth2, mfaPendingCredential) {
+      _assert(
+        this.enrollmentId !== void 0 && this.otp !== void 0,
+        auth2,
+        "argument-error"
+        /* AuthErrorCode.ARGUMENT_ERROR */
+      );
+      const totpVerificationInfo = { verificationCode: this.otp };
+      return finalizeSignInTotpMfa(auth2, {
+        mfaPendingCredential,
+        mfaEnrollmentId: this.enrollmentId,
+        totpVerificationInfo
+      });
+    }
+  };
+  var TotpSecret = class _TotpSecret {
+    // The public members are declared outside the constructor so the docs can be generated.
+    constructor(secretKey, hashingAlgorithm, codeLength, codeIntervalSeconds, enrollmentCompletionDeadline, sessionInfo, auth2) {
+      this.sessionInfo = sessionInfo;
+      this.auth = auth2;
+      this.secretKey = secretKey;
+      this.hashingAlgorithm = hashingAlgorithm;
+      this.codeLength = codeLength;
+      this.codeIntervalSeconds = codeIntervalSeconds;
+      this.enrollmentCompletionDeadline = enrollmentCompletionDeadline;
+    }
+    /** @internal */
+    static _fromStartTotpMfaEnrollmentResponse(response, auth2) {
+      return new _TotpSecret(response.totpSessionInfo.sharedSecretKey, response.totpSessionInfo.hashingAlgorithm, response.totpSessionInfo.verificationCodeLength, response.totpSessionInfo.periodSec, new Date(response.totpSessionInfo.finalizeEnrollmentTime).toUTCString(), response.totpSessionInfo.sessionInfo, auth2);
+    }
+    /** @internal */
+    _makeTotpVerificationInfo(otp) {
+      return { sessionInfo: this.sessionInfo, verificationCode: otp };
+    }
+    /**
+     * Returns a QR code URL as described in
+     * https://github.com/google/google-authenticator/wiki/Key-Uri-Format
+     * This can be displayed to the user as a QR code to be scanned into a TOTP app like Google Authenticator.
+     * If the optional parameters are unspecified, an accountName of <userEmail> and issuer of <firebaseAppName> are used.
+     *
+     * @param accountName the name of the account/app along with a user identifier.
+     * @param issuer issuer of the TOTP (likely the app name).
+     * @returns A QR code URL string.
+     */
+    generateQrCodeUrl(accountName, issuer) {
+      var _a;
+      let useDefaults = false;
+      if (_isEmptyString(accountName) || _isEmptyString(issuer)) {
+        useDefaults = true;
+      }
+      if (useDefaults) {
+        if (_isEmptyString(accountName)) {
+          accountName = ((_a = this.auth.currentUser) === null || _a === void 0 ? void 0 : _a.email) || "unknownuser";
+        }
+        if (_isEmptyString(issuer)) {
+          issuer = this.auth.name;
+        }
+      }
+      return `otpauth://totp/${issuer}:${accountName}?secret=${this.secretKey}&issuer=${issuer}&algorithm=${this.hashingAlgorithm}&digits=${this.codeLength}`;
+    }
+  };
+  function _isEmptyString(input) {
+    return typeof input === "undefined" || (input === null || input === void 0 ? void 0 : input.length) === 0;
+  }
+  var name4 = "@firebase/auth";
+  var version4 = "1.10.8";
+  var AuthInterop = class {
+    constructor(auth2) {
+      this.auth = auth2;
+      this.internalListeners = /* @__PURE__ */ new Map();
+    }
+    getUid() {
+      var _a;
+      this.assertAuthConfigured();
+      return ((_a = this.auth.currentUser) === null || _a === void 0 ? void 0 : _a.uid) || null;
+    }
+    async getToken(forceRefresh) {
+      this.assertAuthConfigured();
+      await this.auth._initializationPromise;
+      if (!this.auth.currentUser) {
+        return null;
+      }
+      const accessToken = await this.auth.currentUser.getIdToken(forceRefresh);
+      return { accessToken };
+    }
+    addAuthTokenListener(listener) {
+      this.assertAuthConfigured();
+      if (this.internalListeners.has(listener)) {
+        return;
+      }
+      const unsubscribe = this.auth.onIdTokenChanged((user) => {
+        listener((user === null || user === void 0 ? void 0 : user.stsTokenManager.accessToken) || null);
+      });
+      this.internalListeners.set(listener, unsubscribe);
+      this.updateProactiveRefresh();
+    }
+    removeAuthTokenListener(listener) {
+      this.assertAuthConfigured();
+      const unsubscribe = this.internalListeners.get(listener);
+      if (!unsubscribe) {
+        return;
+      }
+      this.internalListeners.delete(listener);
+      unsubscribe();
+      this.updateProactiveRefresh();
+    }
+    assertAuthConfigured() {
+      _assert(
+        this.auth._initializationPromise,
+        "dependent-sdk-initialized-before-auth"
+        /* AuthErrorCode.DEPENDENT_SDK_INIT_BEFORE_AUTH */
+      );
+    }
+    updateProactiveRefresh() {
+      if (this.internalListeners.size > 0) {
+        this.auth._startProactiveRefresh();
+      } else {
+        this.auth._stopProactiveRefresh();
+      }
+    }
+  };
+  function getVersionForPlatform(clientPlatform) {
+    switch (clientPlatform) {
+      case "Node":
+        return "node";
+      case "ReactNative":
+        return "rn";
+      case "Worker":
+        return "webworker";
+      case "Cordova":
+        return "cordova";
+      case "WebExtension":
+        return "web-extension";
+      default:
+        return void 0;
+    }
+  }
+  function registerAuth(clientPlatform) {
+    _registerComponent(new Component(
+      "auth",
+      (container, { options: deps }) => {
+        const app2 = container.getProvider("app").getImmediate();
+        const heartbeatServiceProvider = container.getProvider("heartbeat");
+        const appCheckServiceProvider = container.getProvider("app-check-internal");
+        const { apiKey, authDomain } = app2.options;
+        _assert(apiKey && !apiKey.includes(":"), "invalid-api-key", { appName: app2.name });
+        const config = {
+          apiKey,
+          authDomain,
+          clientPlatform,
+          apiHost: "identitytoolkit.googleapis.com",
+          tokenApiHost: "securetoken.googleapis.com",
+          apiScheme: "https",
+          sdkClientVersion: _getClientVersion(clientPlatform)
+        };
+        const authInstance = new AuthImpl(app2, heartbeatServiceProvider, appCheckServiceProvider, config);
+        _initializeAuthInstance(authInstance, deps);
+        return authInstance;
+      },
+      "PUBLIC"
+      /* ComponentType.PUBLIC */
+    ).setInstantiationMode(
+      "EXPLICIT"
+      /* InstantiationMode.EXPLICIT */
+    ).setInstanceCreatedCallback((container, _instanceIdentifier, _instance) => {
+      const authInternalProvider = container.getProvider(
+        "auth-internal"
+        /* _ComponentName.AUTH_INTERNAL */
+      );
+      authInternalProvider.initialize();
+    }));
+    _registerComponent(new Component(
+      "auth-internal",
+      (container) => {
+        const auth2 = _castAuth(container.getProvider(
+          "auth"
+          /* _ComponentName.AUTH */
+        ).getImmediate());
+        return ((auth3) => new AuthInterop(auth3))(auth2);
+      },
+      "PRIVATE"
+      /* ComponentType.PRIVATE */
+    ).setInstantiationMode(
+      "EXPLICIT"
+      /* InstantiationMode.EXPLICIT */
+    ));
+    registerVersion(name4, version4, getVersionForPlatform(clientPlatform));
+    registerVersion(name4, version4, "esm2017");
+  }
+  var DEFAULT_ID_TOKEN_MAX_AGE = 5 * 60;
+  var authIdTokenMaxAge = getExperimentalSetting("authIdTokenMaxAge") || DEFAULT_ID_TOKEN_MAX_AGE;
+  var lastPostedIdToken = null;
+  var mintCookieFactory = (url) => async (user) => {
+    const idTokenResult = user && await user.getIdTokenResult();
+    const idTokenAge = idTokenResult && ((/* @__PURE__ */ new Date()).getTime() - Date.parse(idTokenResult.issuedAtTime)) / 1e3;
+    if (idTokenAge && idTokenAge > authIdTokenMaxAge) {
+      return;
+    }
+    const idToken = idTokenResult === null || idTokenResult === void 0 ? void 0 : idTokenResult.token;
+    if (lastPostedIdToken === idToken) {
+      return;
+    }
+    lastPostedIdToken = idToken;
+    await fetch(url, {
+      method: idToken ? "POST" : "DELETE",
+      headers: idToken ? {
+        "Authorization": `Bearer ${idToken}`
+      } : {}
+    });
+  };
+  function getAuth(app2 = getApp()) {
+    const provider = _getProvider(app2, "auth");
+    if (provider.isInitialized()) {
+      return provider.getImmediate();
+    }
+    const auth2 = initializeAuth(app2, {
+      popupRedirectResolver: browserPopupRedirectResolver,
+      persistence: [
+        indexedDBLocalPersistence,
+        browserLocalPersistence,
+        browserSessionPersistence
+      ]
+    });
+    const authTokenSyncPath = getExperimentalSetting("authTokenSyncURL");
+    if (authTokenSyncPath && typeof isSecureContext === "boolean" && isSecureContext) {
+      const authTokenSyncUrl = new URL(authTokenSyncPath, location.origin);
+      if (location.origin === authTokenSyncUrl.origin) {
+        const mintCookie = mintCookieFactory(authTokenSyncUrl.toString());
+        beforeAuthStateChanged(auth2, mintCookie, () => mintCookie(auth2.currentUser));
+        onIdTokenChanged(auth2, (user) => mintCookie(user));
+      }
+    }
+    const authEmulatorHost = getDefaultEmulatorHost("auth");
+    if (authEmulatorHost) {
+      connectAuthEmulator(auth2, `http://${authEmulatorHost}`);
+    }
+    return auth2;
+  }
+  function getScriptParentElement() {
+    var _a, _b;
+    return (_b = (_a = document.getElementsByTagName("head")) === null || _a === void 0 ? void 0 : _a[0]) !== null && _b !== void 0 ? _b : document;
+  }
+  _setExternalJSProvider({
+    loadJS(url) {
+      return new Promise((resolve, reject) => {
+        const el = document.createElement("script");
+        el.setAttribute("src", url);
+        el.onload = resolve;
+        el.onerror = (e) => {
+          const error = _createError(
+            "internal-error"
+            /* AuthErrorCode.INTERNAL_ERROR */
+          );
+          error.customData = e;
+          reject(error);
+        };
+        el.type = "text/javascript";
+        el.charset = "UTF-8";
+        getScriptParentElement().appendChild(el);
+      });
+    },
+    gapiScript: "https://apis.google.com/js/api.js",
+    recaptchaV2Script: "https://www.google.com/recaptcha/api.js",
+    recaptchaEnterpriseScript: "https://www.google.com/recaptcha/enterprise.js?render="
+  });
+  registerAuth(
+    "Browser"
+    /* ClientPlatform.BROWSER */
+  );
+
   // src/js/firebase-config.js
   var firebaseConfig = {
     apiKey: "AIzaSyBn1tl0IBQoWZBmunYtRSb-i74Yhe5OAFg",
@@ -39824,6 +47059,74 @@ This typically indicates that your device does not have a healthy Internet conne
   };
   var app = initializeApp(firebaseConfig);
   var db = getFirestore(app);
+  var functions = getFunctions(app, "us-central1");
+  var auth = getAuth(app);
+  async function buscarLicencaNuvem({ chave = "", cnpj = "", clienteId = "" } = {}) {
+    const fn = httpsCallable(functions, "buscarLicenca");
+    const res = await fn({ chave, cnpj, clienteId });
+    return res.data || { ok: false, licenca: null };
+  }
+  async function desvincularTerminalNuvem({ deviceId, chaveManter }) {
+    const fn = httpsCallable(functions, "desvincularTerminal");
+    const res = await fn({ deviceId, chaveManter });
+    return res.data || { ok: false };
+  }
+  var DOMINIO_LOJA = "pdv.flowpdv.com.br";
+  var SAL_ACESSO = "flowpdv-2026-acesso-loja";
+  function emailDaLoja(chave) {
+    return `loja_${String(chave || "").trim().toLowerCase()}@${DOMINIO_LOJA}`;
+  }
+  function senhaDaLoja(chave) {
+    return `${String(chave || "").trim().toUpperCase()}.${SAL_ACESSO}`;
+  }
+  var lojaAutenticada = "";
+  var sessaoEmAndamento = null;
+  async function garantirSessaoLoja(chave, opts = {}) {
+    const alvo = String(chave || "").trim().toUpperCase();
+    if (!alvo) return false;
+    if (lojaAutenticada === alvo && auth.currentUser) return true;
+    if (sessaoEmAndamento) {
+      try {
+        await sessaoEmAndamento;
+      } catch (e) {
+      }
+      if (lojaAutenticada === alvo && auth.currentUser) return true;
+    }
+    sessaoEmAndamento = (async () => {
+      const email = emailDaLoja(alvo);
+      const senha = senhaDaLoja(alvo);
+      try {
+        await signInWithEmailAndPassword(auth, email, senha);
+      } catch (e) {
+        const codigo = e && e.code || "";
+        const podeCriar = codigo === "auth/user-not-found" || codigo === "auth/invalid-credential" || codigo === "auth/invalid-login-credentials";
+        if (!podeCriar) throw e;
+        try {
+          await createUserWithEmailAndPassword(auth, email, senha);
+        } catch (eCriacao) {
+          if ((eCriacao && eCriacao.code) !== "auth/email-already-in-use") throw eCriacao;
+          await signInWithEmailAndPassword(auth, email, senha);
+        }
+      }
+      lojaAutenticada = alvo;
+      return true;
+    })();
+    try {
+      return await sessaoEmAndamento;
+    } catch (e) {
+      console.warn("[FirebaseLoja] N\xE3o foi poss\xEDvel autenticar a loja na nuvem:", e && (e.message || e));
+      return false;
+    } finally {
+      sessaoEmAndamento = null;
+    }
+  }
+  async function encerrarSessaoLoja() {
+    lojaAutenticada = "";
+    try {
+      await signOut(auth);
+    } catch (e) {
+    }
+  }
 
   // src/js/audit.js
   var AuditModule = {
@@ -39912,6 +47215,7 @@ This typically indicates that your device does not have a healthy Internet conne
             } catch (e) {
             }
           }
+          await garantirSessaoLoja(chaveLicenca, { deviceId: myDevId });
           await addDoc(collection(db, "auditoria_lojas"), payload);
         } catch (err) {
           console.warn("[AuditModule] Erro ao sincronizar log na nuvem (salvo localmente):", err);
@@ -40041,16 +47345,16 @@ This typically indicates that your device does not have a healthy Internet conne
     tocarSomBeep(sucesso = true) {
     },
     parseMoedaBR(valor) {
-      if (typeof valor === "number") return isNaN(valor) ? 0 : valor;
-      if (!valor) return 0;
-      let str = String(valor).trim();
-      if (str.includes(",") && str.includes(".")) {
-        str = str.replace(/\./g, "").replace(",", ".");
-      } else if (str.includes(",")) {
-        str = str.replace(",", ".");
-      }
-      const limpo = str.replace(/[^\d.-]/g, "");
-      return parseFloat(limpo) || 0;
+      return StorageService.parseMoedaBR(valor);
+    },
+    getInputLeitorAtivo() {
+      const tabPdv = document.getElementById("tab-pdv");
+      const isClassic = document.body.classList.contains("pdv-layout-classico") || tabPdv && tabPdv.classList.contains("pdv-layout-classico");
+      const classicInput = document.getElementById("classic-pdv-barcode-input");
+      const modernInput = document.getElementById("pdv-barcode-input");
+      if (isClassic && classicInput) return classicInput;
+      if (!isClassic && modernInput) return modernInput;
+      return classicInput || modernInput;
     },
     focarInputLeitor() {
       const modalLogin = document.getElementById("modal-login-operador");
@@ -40066,10 +47370,16 @@ This typically indicates that your device does not have a healthy Internet conne
         return;
       }
       const tabPdv = document.getElementById("tab-pdv");
-      const isClassic = tabPdv && tabPdv.classList.contains("pdv-layout-classico");
-      const input = document.getElementById(isClassic ? "classic-pdv-barcode-input" : "pdv-barcode-input");
-      if (input && document.activeElement !== input) {
-        input.focus();
+      if (tabPdv && !tabPdv.classList.contains("active")) {
+        return;
+      }
+      const input = this.getInputLeitorAtivo();
+      if (input) {
+        try {
+          input.focus({ preventScroll: true });
+        } catch (e) {
+          input.focus();
+        }
       }
     },
     bindBarcodeListener() {
@@ -40087,13 +47397,54 @@ This typically indicates that your device does not have a healthy Internet conne
             this.ignorarProximoEnterGlobal = true;
             this.processarEntradaCodigo(valor);
             input.value = "";
+            this.focarInputLeitor();
           }
+        });
+        input.addEventListener("blur", () => {
+          setTimeout(() => {
+            const activeTab = document.querySelector(".tab-panel.active");
+            const algumModalAberto = document.querySelector(".modal-overlay.active, .lock-screen-overlay.active");
+            if (activeTab && activeTab.id === "tab-pdv" && !algumModalAberto) {
+              const currentTag = document.activeElement ? document.activeElement.tagName : "";
+              if (currentTag !== "INPUT" && currentTag !== "TEXTAREA" && currentTag !== "SELECT") {
+                this.focarInputLeitor();
+              }
+            }
+          }, 80);
         });
       });
       document.addEventListener("click", (e) => {
         const activeTab = document.querySelector(".tab-panel.active");
         const algumModalAberto = document.querySelector(".modal-overlay.active, .lock-screen-overlay.active");
         if (activeTab && activeTab.id === "tab-pdv" && !algumModalAberto && !e.target.closest(".modal-content-box") && !e.target.closest("input") && !e.target.closest("select") && !e.target.closest("textarea")) {
+          this.focarInputLeitor();
+        }
+      });
+      document.addEventListener("keydown", (e) => {
+        const activeTab = document.querySelector(".tab-panel.active");
+        if (!activeTab || activeTab.id !== "tab-pdv") return;
+        const algumModalAberto = document.querySelector(".modal-overlay.active, .lock-screen-overlay.active");
+        if (algumModalAberto) return;
+        const tag = document.activeElement ? document.activeElement.tagName : "";
+        const isInput = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+        if (e.key === "Tab") {
+          e.preventDefault();
+          this.focarInputLeitor();
+          return;
+        }
+        if (!isInput) {
+          if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+            const input = this.getInputLeitorAtivo();
+            if (input) {
+              input.focus();
+            }
+          }
+        }
+      });
+      window.addEventListener("focus", () => {
+        const activeTab = document.querySelector(".tab-panel.active");
+        const algumModalAberto = document.querySelector(".modal-overlay.active, .lock-screen-overlay.active");
+        if (activeTab && activeTab.id === "tab-pdv" && !algumModalAberto) {
           this.focarInputLeitor();
         }
       });
@@ -40128,6 +47479,22 @@ This typically indicates that your device does not have a healthy Internet conne
       } catch (e) {
       }
     },
+    // Status centralizado do layout clássico (Bug 1 e 2)
+    atualizarStatusClassico() {
+      const statusEl = document.getElementById("classic-status-text");
+      if (!statusEl) return;
+      const turnoAberto = StorageService.getTurnoAtual();
+      if (!turnoAberto) {
+        statusEl.textContent = "CAIXA FECHADO";
+        statusEl.style.color = "#dc2626";
+      } else if (this.carrinho.length > 0) {
+        statusEl.textContent = "VENDA EM ANDAMENTO";
+        statusEl.style.color = "#0284c7";
+      } else {
+        statusEl.textContent = "CAIXA LIVRE";
+        statusEl.style.color = "#16a34a";
+      }
+    },
     calcularResumoTurnoLocal(turno) {
       if (!turno) return null;
       const vendas = StorageService.getVendas();
@@ -40147,7 +47514,19 @@ This typically indicates that your device does not have a healthy Internet conne
       vendasTurno.forEach((v) => {
         const tot = v.total || 0;
         totalVendas += tot;
-        if (v.pagamentoDividido && v.parcela1 && v.parcela2) {
+        if (v.pagamentoDividido && Array.isArray(v.pagamentos)) {
+          let dinheiroVenda = 0;
+          v.pagamentos.forEach((p) => {
+            const val = parseFloat(p.valor) || 0;
+            if (p.forma === "Dinheiro") dinheiroVenda += val;
+            else if (p.forma === "PIX") totalPix += val;
+            else if (p.forma === "D\xE9bito") totalDebito += val;
+            else if (p.forma === "Cr\xE9dito") totalCredito += val;
+            else if (p.forma === "Fiado") totalFiado += val;
+          });
+          const trocoVenda = parseFloat(v.troco) || 0;
+          totalDinheiro += Math.max(0, dinheiroVenda - trocoVenda);
+        } else if (v.pagamentoDividido && (v.parcela1 || v.parcela2)) {
           const addParcela = (forma, valor) => {
             const val = parseFloat(valor) || 0;
             if (forma === "Dinheiro") totalDinheiro += val;
@@ -40156,8 +47535,8 @@ This typically indicates that your device does not have a healthy Internet conne
             else if (forma === "Cr\xE9dito") totalCredito += val;
             else if (forma === "Fiado") totalFiado += val;
           };
-          addParcela(v.parcela1.forma, v.parcela1.valor);
-          addParcela(v.parcela2.forma, v.parcela2.valor);
+          if (v.parcela1) addParcela(v.parcela1.forma, v.parcela1.valor);
+          if (v.parcela2) addParcela(v.parcela2.forma, v.parcela2.valor);
         } else {
           if (v.formaPagamento === "Dinheiro") totalDinheiro += tot;
           else if (v.formaPagamento === "PIX") totalPix += tot;
@@ -40290,7 +47669,7 @@ This typically indicates that your device does not have a healthy Internet conne
         }
         if (valor > 0) {
           const itemAvulso = {
-            id: "AVULSO-" + Date.now().toString().slice(-4),
+            id: "AVULSO-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
             nome: "Item Diverso / Avulso",
             codigoBarras: "AVULSO",
             precoVenda: valor,
@@ -40462,6 +47841,7 @@ Venda bloqueada no PDV!`);
       return true;
     },
     abrirPerguntaClubeFidelidade() {
+      this._aberturaPerguntaClubeTimestamp = Date.now();
       const modal = document.getElementById("modal-pergunta-clube");
       if (modal) modal.classList.add("active");
     },
@@ -40483,7 +47863,7 @@ Venda bloqueada no PDV!`);
         if (prod && prod.controlarEstoque !== false) {
           const fator = item.isFardo ? parseInt(prod.fatorConversao, 10) || 1 : 1;
           const novaQtdTotal = (item.quantidade + delta) * fator;
-          const estoqueDisponivel = parseInt(prod.estoque, 10) || 0;
+          const estoqueDisponivel = parseFloat(prod.estoque) || 0;
           if (novaQtdTotal > estoqueDisponivel) {
             window.App.showToast(`\u26A0\uFE0F Limite de estoque atingido! "${prod.nome}" possui apenas ${estoqueDisponivel} un em estoque.`, "warning");
             this.tocarSomBeep(false);
@@ -40611,10 +47991,19 @@ Venda bloqueada no PDV!`);
         this.executarAberturaModalReimpressaoCupom();
       }
     },
+    reimpressaoHighlightedIndex: 0,
+    reimpressaoFiltradas: [],
     executarAberturaModalReimpressaoCupom() {
       const modal = document.getElementById("modal-reimpressao-cupom-pdv");
       const inputBusca = document.getElementById("reimpressao-busca-input");
-      if (inputBusca) inputBusca.value = "";
+      if (inputBusca) {
+        inputBusca.value = "";
+        if (!inputBusca.dataset.hasKeyNav) {
+          inputBusca.dataset.hasKeyNav = "true";
+          inputBusca.addEventListener("keydown", (e) => this.handleReimpressaoKeydown(e));
+        }
+      }
+      this.reimpressaoHighlightedIndex = 0;
       this.renderListaReimpressaoCupons();
       if (modal) {
         modal.classList.add("active");
@@ -40623,12 +48012,57 @@ Venda bloqueada no PDV!`);
         }
       }
     },
+    handleReimpressaoKeydown(e) {
+      if (!this.reimpressaoFiltradas || this.reimpressaoFiltradas.length === 0) return;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (this.reimpressaoHighlightedIndex < this.reimpressaoFiltradas.length - 1) {
+          this.reimpressaoHighlightedIndex++;
+          this.atualizarHighlightReimpressao();
+        }
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        if (this.reimpressaoHighlightedIndex > 0) {
+          this.reimpressaoHighlightedIndex--;
+          this.atualizarHighlightReimpressao();
+        }
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        const v = this.reimpressaoFiltradas[this.reimpressaoHighlightedIndex];
+        if (v) {
+          this.reimprimirCupomVendaEspecifica(v.id);
+        }
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        if (typeof e.stopImmediatePropagation === "function") e.stopImmediatePropagation();
+        this.fecharModalReimpressaoCupom();
+      }
+    },
+    atualizarHighlightReimpressao() {
+      const lista = document.getElementById("reimpressao-ultimas-vendas-lista");
+      if (!lista) return;
+      const cards = lista.querySelectorAll(".reimpressao-venda-card");
+      cards.forEach((card, idx) => {
+        const btn = card.querySelector(".btn-reimprimir-cupom-action");
+        if (idx === this.reimpressaoHighlightedIndex) {
+          card.classList.add("selected");
+          if (btn) btn.classList.add("btn-focused");
+          card.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        } else {
+          card.classList.remove("selected");
+          if (btn) btn.classList.remove("btn-focused");
+        }
+      });
+    },
     fecharModalReimpressaoCupom() {
       const modal = document.getElementById("modal-reimpressao-cupom-pdv");
       if (modal) modal.classList.remove("active");
+      window._ultimoModalFechadoTimestamp = Date.now();
       this.focarInputLeitor();
     },
     filtrarReimpressaoCupons(termo) {
+      this.reimpressaoHighlightedIndex = 0;
       this.renderListaReimpressaoCupons(termo);
     },
     renderListaReimpressaoCupons(filtro = "") {
@@ -40652,6 +48086,7 @@ Venda bloqueada no PDV!`);
         contadorEl.textContent = `Exibindo ${Math.min(filtradas.length, 25)} de ${vendas.length} vendas registradas`;
       }
       if (filtradas.length === 0) {
+        this.reimpressaoFiltradas = [];
         lista.innerHTML = `
         <div style="text-align: center; padding: 36px 20px; background: #f8fafc; border: 1.5px dashed #cbd5e1; border-radius: 12px;">
           <div style="font-size: 40px; margin-bottom: 8px;">\u{1F9FE}</div>
@@ -40662,6 +48097,7 @@ Venda bloqueada no PDV!`);
         return;
       }
       const ultimas = filtradas.slice(0, 25);
+      this.reimpressaoFiltradas = ultimas;
       lista.innerHTML = ultimas.map((v) => {
         const dataObj = new Date(v.data);
         const dataFmt = dataObj.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
@@ -40709,6 +48145,7 @@ Venda bloqueada no PDV!`);
         </div>
       `;
       }).join("");
+      this.atualizarHighlightReimpressao();
     },
     reimprimirCupomVendaEspecifica(vendaId) {
       const vendas = StorageService.getVendas() || [];
@@ -40733,6 +48170,15 @@ Venda bloqueada no PDV!`);
       this.desconto = 0;
       this.renderCarrinho();
       this.focarInputLeitor();
+      const resetIds = [
+        ["classic-codigo-barras", ""],
+        ["classic-valor-unitario", "0,00"],
+        ["classic-total-item", "0,00"]
+      ];
+      resetIds.forEach(([id, val]) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = val;
+      });
     },
     calcularTotais() {
       let subtotal = 0;
@@ -40766,6 +48212,10 @@ Venda bloqueada no PDV!`);
       if (totalItensBox) totalItensBox.textContent = totais.totalItens;
       const classicSubtotalEl = document.getElementById("classic-subtotal");
       if (classicSubtotalEl) classicSubtotalEl.textContent = totais.subtotal.toFixed(2).replace(".", ",");
+      const classicQtdItensEl = document.getElementById("classic-qtd-itens");
+      if (classicQtdItensEl) classicQtdItensEl.textContent = totais.totalItens;
+      const classicTotalVendaEl = document.getElementById("classic-total-venda");
+      if (classicTotalVendaEl) classicTotalVendaEl.textContent = totais.total.toFixed(2).replace(".", ",");
       const descontoBox = document.getElementById("pdv-desconto-box");
       const descontoDisplay = document.getElementById("pdv-desconto-display");
       if (descontoBox && descontoDisplay) {
@@ -40792,57 +48242,55 @@ Venda bloqueada no PDV!`);
           </td>
         </tr>
       `;
-        return;
-      }
-      let linhasHTML = this.carrinho.map((item, idx) => `
-      <tr>
-        <td>
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <span style="background: #f1f5f9; border: 1px solid #cbd5e1; color: #475569; font-family: 'JetBrains Mono'; font-weight: 800; font-size: 11px; padding: 1px 6px; border-radius: 4px; flex-shrink: 0;">#${idx + 1}</span>
-            <div>
-              <span class="item-code-tag">${item.codigoBarras || item.id}</span>
-              <span class="item-name-bold">${item.nome}</span>
+      } else {
+        let linhasHTML = this.carrinho.map((item, idx) => `
+        <tr>
+          <td>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="background: #f1f5f9; border: 1px solid #cbd5e1; color: #475569; font-family: 'JetBrains Mono'; font-weight: 800; font-size: 11px; padding: 1px 6px; border-radius: 4px; flex-shrink: 0;">#${idx + 1}</span>
+              <div>
+                <span class="item-code-tag">${item.codigoBarras || item.id}</span>
+                <span class="item-name-bold">${item.nome}</span>
+              </div>
             </div>
-          </div>
-        </td>
-        <td>R$ ${item.precoUnitario.toFixed(2).replace(".", ",")}</td>
-        <td>
-          <div class="item-qty-control">
-            <button type="button" class="btn-qty" onclick="PdvModule.alterarQuantidade(${idx}, -1)">-</button>
-            <strong style="min-width: 24px; text-align: center; font-family: 'JetBrains Mono';">${Number.isInteger(item.quantidade) ? item.quantidade : item.quantidade.toFixed(3).replace(/\.?0+$/, "")}</strong>
-            <button type="button" class="btn-qty" onclick="PdvModule.alterarQuantidade(${idx}, 1)">+</button>
-          </div>
-        </td>
-        <td style="font-weight: 800; font-family: 'JetBrains Mono'; color: var(--accent-green);">
-          R$ ${(item.precoUnitario * item.quantidade).toFixed(2).replace(".", ",")}
-        </td>
-        <td style="text-align: right;">
-          <button type="button" class="btn-remove-item" onclick="PdvModule.excluirItemPorIndice(${idx})" title="Remover item #${idx + 1}">\u{1F5D1}\uFE0F</button>
-        </td>
-      </tr>
-    `).join("");
-      if (this.desconto > 0) {
-        linhasHTML += `
-        <tr style="background: #fef2f2;">
-          <td colspan="3" style="text-align: right; font-weight: 800; color: #dc2626; padding-right: 16px; border-bottom: none;">
-            \u{1F381} Desconto Aplicado
           </td>
-          <td colspan="2" style="font-weight: 800; color: #dc2626; font-family: 'JetBrains Mono'; border-bottom: none;">
-            - R$ ${this.desconto.toFixed(2).replace(".", ",")}
+          <td>R$ ${item.precoUnitario.toFixed(2).replace(".", ",")}</td>
+          <td>
+            <div class="item-qty-control">
+              <button type="button" class="btn-qty" onclick="PdvModule.alterarQuantidade(${idx}, -1)">-</button>
+              <strong style="min-width: 24px; text-align: center; font-family: 'JetBrains Mono';">${Number.isInteger(item.quantidade) ? item.quantidade : item.quantidade.toFixed(3).replace(/\.?0+$/, "")}</strong>
+              <button type="button" class="btn-qty" onclick="PdvModule.alterarQuantidade(${idx}, 1)">+</button>
+            </div>
+          </td>
+          <td style="font-weight: 800; font-family: 'JetBrains Mono'; color: var(--accent-green);">
+            R$ ${(item.precoUnitario * item.quantidade).toFixed(2).replace(".", ",")}
+          </td>
+          <td style="text-align: right;">
+            <button type="button" class="btn-remove-item" onclick="PdvModule.excluirItemPorIndice(${idx})" title="Remover item #${idx + 1}">\u{1F5D1}\uFE0F</button>
           </td>
         </tr>
-      `;
+      `).join("");
+        const totalDesc = totais.desconto + (totais.descontoClube || 0);
+        if (totalDesc > 0) {
+          let descLabel = totais.descontoClube > 0 ? totais.desconto > 0 ? "\u{1F381} Desconto + Clube" : "\u{1F381} Desconto Clube" : "\u{1F381} Desconto Aplicado";
+          linhasHTML += `
+          <tr style="background: #fef2f2;">
+            <td colspan="3" style="text-align: right; font-weight: 800; color: #dc2626; padding-right: 16px; border-bottom: none;">
+              ${descLabel}
+            </td>
+            <td colspan="2" style="font-weight: 800; color: #dc2626; font-family: 'JetBrains Mono'; border-bottom: none;">
+              - R$ ${totalDesc.toFixed(2).replace(".", ",")}
+            </td>
+          </tr>
+        `;
+        }
+        tbody.innerHTML = linhasHTML;
       }
-      tbody.innerHTML = linhasHTML;
       const classicTbody = document.getElementById("classic-pdv-itens-tbody");
       if (classicTbody) {
         if (this.carrinho.length === 0) {
           classicTbody.innerHTML = "";
-          const statusEl = document.getElementById("classic-status-text");
-          if (statusEl) statusEl.textContent = "CAIXA LIVRE";
         } else {
-          const statusEl = document.getElementById("classic-status-text");
-          if (statusEl) statusEl.textContent = "VENDA EM ANDAMENTO";
           let classicLinhasHTML = this.carrinho.map((item, idx) => `
           <tr>
             <td style="font-weight: bold;">${String(idx + 1).padStart(3, "0")}</td>
@@ -40853,18 +48301,22 @@ Venda bloqueada no PDV!`);
             <td style="text-align: right; font-weight: bold;">${(item.precoUnitario * item.quantidade).toFixed(2).replace(".", ",")}</td>
           </tr>
         `).join("");
-          if (this.desconto > 0) {
+          const totalDescClassic = totais.desconto + (totais.descontoClube || 0);
+          if (totalDescClassic > 0) {
+            let descLabel = totais.descontoClube > 0 ? totais.desconto > 0 ? "Desconto + Clube" : "Desconto Clube" : "Desconto Aplicado";
             classicLinhasHTML += `
-             <tr style="background: rgba(220, 38, 38, 0.1);">
-               <td colspan="3" style="text-align: right; font-weight: 800; color: #dc2626;">Desconto Aplicado</td>
-               <td colspan="3" style="font-weight: 800; color: #dc2626; text-align: right;">- R$ ${this.desconto.toFixed(2).replace(".", ",")}</td>
+             <tr class="classic-tr-desconto" style="background: rgba(220, 38, 38, 0.08);">
+               <td colspan="5" class="classic-desconto-label" style="grid-column: 1 / 6; text-align: right; font-weight: 800; color: #dc2626; padding-right: 12px; white-space: nowrap;">${descLabel}</td>
+               <td class="classic-desconto-valor" style="grid-column: 6 / 7; font-weight: 800; color: #dc2626; text-align: right; white-space: nowrap;">- R$ ${totalDescClassic.toFixed(2).replace(".", ",")}</td>
              </tr>
            `;
           }
           classicTbody.innerHTML = classicLinhasHTML;
-          classicTbody.scrollTop = classicTbody.scrollHeight;
+          const classicTableContainer = classicTbody.closest(".classic-table-container");
+          if (classicTableContainer) classicTableContainer.scrollTop = classicTableContainer.scrollHeight;
         }
       }
+      this.atualizarStatusClassico();
     },
     // Modal: Cancelar Item Específico do Carrinho [F8 / DEL]
     atualizarQtdMaximaCancelamento() {
@@ -41024,6 +48476,9 @@ Venda bloqueada no PDV!`);
       }
     },
     filtroCategoriaBusca: "todos",
+    f2HighlightedIndex: 0,
+    f2ModoFardo: false,
+    f2ProdutosFiltrados: [],
     // Modal de Busca Rápida [F2]
     abrirBuscaProdutos() {
       const modal = document.getElementById("modal-busca-produtos");
@@ -41033,6 +48488,7 @@ Venda bloqueada no PDV!`);
         this.filtroCategoriaBusca = "todos";
         this.renderChipsCategoriasBusca();
         this.f2HighlightedIndex = 0;
+        this.f2ModoFardo = false;
         if (input) {
           input.value = "";
           if (!input.dataset.hasKeyNav) {
@@ -41044,9 +48500,78 @@ Venda bloqueada no PDV!`);
         this.renderResultadosBusca("");
       }
     },
+    handleBuscaRapidaKeydown(e) {
+      if (!this.f2ProdutosFiltrados || this.f2ProdutosFiltrados.length === 0) return;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (this.f2HighlightedIndex < this.f2ProdutosFiltrados.length - 1) {
+          this.f2HighlightedIndex++;
+          const p = this.f2ProdutosFiltrados[this.f2HighlightedIndex];
+          if (!p || !p.precoFardo) this.f2ModoFardo = false;
+          this.atualizarHighlightBuscaRapida();
+        }
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        if (this.f2HighlightedIndex > 0) {
+          this.f2HighlightedIndex--;
+          const p = this.f2ProdutosFiltrados[this.f2HighlightedIndex];
+          if (!p || !p.precoFardo) this.f2ModoFardo = false;
+          this.atualizarHighlightBuscaRapida();
+        }
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        const p = this.f2ProdutosFiltrados[this.f2HighlightedIndex];
+        if (p && p.precoFardo) {
+          this.f2ModoFardo = true;
+          this.atualizarHighlightBuscaRapida();
+        }
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        this.f2ModoFardo = false;
+        this.atualizarHighlightBuscaRapida();
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        e.stopPropagation();
+        if (typeof e.stopImmediatePropagation === "function") e.stopImmediatePropagation();
+        const p = this.f2ProdutosFiltrados[this.f2HighlightedIndex];
+        if (p) {
+          this.selecionarProdutoBusca(p.id, this.f2ModoFardo);
+        }
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        if (typeof e.stopImmediatePropagation === "function") e.stopImmediatePropagation();
+        this.fecharBuscaProdutos();
+      }
+    },
+    atualizarHighlightBuscaRapida() {
+      const lista = document.getElementById("busca-produtos-lista");
+      if (!lista) return;
+      const rows = lista.querySelectorAll(".f2-product-row");
+      rows.forEach((row, idx) => {
+        const btnUnit = row.querySelector(".f2-btn-unit");
+        const btnPack = row.querySelector(".f2-btn-pack");
+        if (idx === this.f2HighlightedIndex) {
+          row.classList.add("selected");
+          row.scrollIntoView({ block: "nearest", behavior: "smooth" });
+          if (this.f2ModoFardo && btnPack) {
+            btnPack.classList.add("f2-btn-focused");
+            if (btnUnit) btnUnit.classList.remove("f2-btn-focused");
+          } else {
+            if (btnUnit) btnUnit.classList.add("f2-btn-focused");
+            if (btnPack) btnPack.classList.remove("f2-btn-focused");
+          }
+        } else {
+          row.classList.remove("selected");
+          if (btnUnit) btnUnit.classList.remove("f2-btn-focused");
+          if (btnPack) btnPack.classList.remove("f2-btn-focused");
+        }
+      });
+    },
     fecharBuscaProdutos() {
       const modal = document.getElementById("modal-busca-produtos");
       if (modal) modal.classList.remove("active");
+      window._ultimoModalFechadoTimestamp = Date.now();
       this.focarInputLeitor();
     },
     renderChipsCategoriasBusca() {
@@ -41130,12 +48655,16 @@ Venda bloqueada no PDV!`);
         }
         return (a.nome || "").localeCompare(b.nome || "");
       });
+      this.f2ProdutosFiltrados = filtrados;
+      if (this.f2HighlightedIndex >= filtrados.length) {
+        this.f2HighlightedIndex = 0;
+      }
       if (filtrados.length === 0) {
         const msgCat = this.filtroCategoriaBusca !== "todos" ? ` na categoria <strong>${this.filtroCategoriaBusca}</strong>` : "";
         lista.innerHTML = `<div style="text-align: center; padding: 36px 20px; color: #64748b; font-size: 14px; font-weight: 600;">Nenhum produto encontrado${termoLower ? ` para "<strong>${termo}</strong>"` : ""}${msgCat}.</div>`;
         return;
       }
-      lista.innerHTML = filtrados.map((p) => {
+      lista.innerHTML = filtrados.map((p, idx) => {
         const controlaEstoque = p.controlarEstoque !== false && p.controlaEstoque !== false;
         const estoqueNum = parseFloat(p.estoque) || 0;
         const minNum = parseFloat(p.estoqueMinimo) || 5;
@@ -41156,7 +48685,7 @@ Venda bloqueada no PDV!`);
           }
         }
         return `
-        <div class="f2-product-row">
+        <div class="f2-product-row" data-f2-index="${idx}">
           <div class="f2-item-info">
             <div class="f2-item-title" style="display: flex; align-items: center; gap: 6px;">
               <span>${p.nome}</span>
@@ -41170,13 +48699,13 @@ Venda bloqueada no PDV!`);
             </div>
           </div>
           <div class="f2-item-actions">
-            <button type="button" class="f2-btn-unit" onclick="PdvModule.selecionarProdutoBusca('${p.id}', false)" title="Adicionar 1 unidade ao carrinho">
+            <button type="button" class="f2-btn-unit" onclick="PdvModule.selecionarProdutoBusca('${p.id}', false)" title="Adicionar 1 unidade ao carrinho [Enter]">
               <span class="f2-btn-tag">${isPromo ? "\u{1F525} Promo\xE7\xE3o" : "+ Unidade"}</span>
               ${isPromo ? `<span style="font-size: 10.5px; text-decoration: line-through; opacity: 0.7; line-height: 1;">R$ ${precoOriginalExibir.toFixed(2).replace(".", ",")}</span>` : ""}
               <strong class="f2-price" style="${isPromo ? "color: #ea580c; font-size: 15px;" : ""}">R$ ${(parseFloat(p.precoVenda) || 0).toFixed(2).replace(".", ",")}</strong>
             </button>
             ${p.precoFardo ? `
-              <button type="button" class="f2-btn-pack" onclick="PdvModule.selecionarProdutoBusca('${p.id}', true)" title="Adicionar pacote/fardo ao carrinho">
+              <button type="button" class="f2-btn-pack" onclick="PdvModule.selecionarProdutoBusca('${p.id}', true)" title="Adicionar pacote/fardo ao carrinho [\u2192 Enter]">
                 <span class="f2-btn-tag">+ ${p.unidadeFracionada || "Fardo / Kit"}</span>
                 <strong class="f2-price">R$ ${(parseFloat(p.precoFardo) || 0).toFixed(2).replace(".", ",")}</strong>
               </button>
@@ -41185,6 +48714,7 @@ Venda bloqueada no PDV!`);
         </div>
       `;
       }).join("");
+      this.atualizarHighlightBuscaRapida();
     },
     selecionarProdutoBusca(id, isFardo = false) {
       if (!this.validarCaixaAberto()) return;
@@ -41232,26 +48762,13 @@ Venda bloqueada no PDV!`);
         const qtdTotal = this.carrinho.reduce((acc, i) => acc + i.quantidade, 0);
         itemsBadge.textContent = `\u{1F6D2} ${qtdTotal} ${qtdTotal === 1 ? "item" : "itens"}`;
       }
-      const isFiscalLicenciado = StorageService.isModuloAtivo("fiscalNfce");
-      const cfgFiscal = window.FiscalModule && typeof window.FiscalModule.getFiscalConfig === "function" ? window.FiscalModule.getFiscalConfig() : {};
       const secFiscal = document.getElementById("pag-secao-fiscal-opcoes");
-      const checkEmitirNfce = document.getElementById("pag-emitir-nfce-check");
-      const inputCpf = document.getElementById("pag-cpf-nota-input");
       if (secFiscal) {
-        if (isFiscalLicenciado && cfgFiscal.habilitado) {
-          secFiscal.style.display = "block";
-          if (checkEmitirNfce) {
-            checkEmitirNfce.checked = cfgFiscal.autoEmitirAoFinalizar === true;
-            this.toggleCpfNfceInput();
-          }
-          if (inputCpf) inputCpf.value = this.clienteClubeAtivo ? (this.clienteClubeAtivo.cpfCnpj || "").replace(/\D/g, "") : "";
-        } else {
-          secFiscal.style.display = "none";
-          if (checkEmitirNfce) checkEmitirNfce.checked = false;
-        }
+        secFiscal.style.display = "none";
       }
       this.pagamentosLancados = [];
       this.trocoDinheiroTotal = 0;
+      this.cpfNotaFinalizacao = "";
       if (document.activeElement && typeof document.activeElement.blur === "function") {
         document.activeElement.blur();
       }
@@ -41261,7 +48778,16 @@ Venda bloqueada no PDV!`);
       if (classicBarcodeInput) classicBarcodeInput.blur();
       this.selecionarFormaPagamento("Dinheiro");
       this.atualizarFormasPagamentoLicenca();
-      if (modal) modal.classList.add("active");
+      if (modal) {
+        modal.classList.add("active");
+        const inputValor = document.getElementById("pag-valor-pago-input");
+        if (inputValor) {
+          setTimeout(() => {
+            inputValor.focus();
+            inputValor.select();
+          }, 80);
+        }
+      }
     },
     getConfiguracaoPagamentos() {
       const licenca = StorageService.getLicenca() || {};
@@ -41376,7 +48902,7 @@ Venda bloqueada no PDV!`);
       const novoLancado = this.pagamentosLancados.reduce((acc, p) => acc + (parseFloat(p.valor) || 0), 0);
       if (novoLancado >= totais.total - 5e-3) {
         this.atualizarInterfacePagamentoNovo(true);
-        this.executarFinalizacaoVendaCompleta();
+        this.solicitarFinalizacaoVenda();
       } else {
         this.atualizarInterfacePagamentoNovo(true);
         const restante = Math.max(0, totais.total - novoLancado);
@@ -41488,6 +49014,13 @@ Venda bloqueada no PDV!`);
         }
       }
       this.atualizarInterfacePagamentoNovo(false);
+      const inputValor = document.getElementById("pag-valor-pago-input");
+      if (inputValor) {
+        setTimeout(() => {
+          inputValor.focus();
+          inputValor.select();
+        }, 50);
+      }
     },
     toggleCpfNfceInput() {
       const check = document.getElementById("pag-emitir-nfce-check");
@@ -41551,45 +49084,36 @@ Venda bloqueada no PDV!`);
           bannerBox.innerHTML = `
           <div class="pag-status-banner-danger">
             <div style="display: flex; align-items: center; gap: 10px;">
-              <span style="font-size: 24px;">\u{1F534}</span>
+              <span style="font-size: 22px;">\u{1F534}</span>
               <div>
                 <span style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.85;">Aguardando Pagamento</span>
-                <div style="font-size: 20px; font-weight: 900; font-family: 'JetBrains Mono';">FALTA PAGAR: R$ ${faltaPagar.toFixed(2).replace(".", ",")}</div>
+                <div style="font-size: 22px; font-weight: 900; font-family: 'JetBrains Mono'; line-height: 1.1;">FALTA PAGAR: R$ ${faltaPagar.toFixed(2).replace(".", ",")}</div>
               </div>
             </div>
-            <span style="font-size: 11.5px; font-weight: 800; background: #ffffff; color: #991b1b; padding: 4px 12px; border-radius: 8px; border: 1.5px solid #fca5a5;">
-              Escolha [F1..F6] e tecle ENTER
-            </span>
           </div>
         `;
         } else if (troco > 5e-3) {
           bannerBox.innerHTML = `
           <div class="pag-status-banner-troco">
             <div style="display: flex; align-items: center; gap: 10px;">
-              <span style="font-size: 24px;">\u{1F4B5}</span>
+              <span style="font-size: 22px;">\u{1F4B5}</span>
               <div>
                 <span style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.85;">Troco do Cliente</span>
-                <div style="font-size: 20px; font-weight: 900; font-family: 'JetBrains Mono';">TROCO A DEVOLVER: R$ ${troco.toFixed(2).replace(".", ",")}</div>
+                <div style="font-size: 22px; font-weight: 900; font-family: 'JetBrains Mono'; line-height: 1.1;">TROCO: R$ ${troco.toFixed(2).replace(".", ",")}</div>
               </div>
             </div>
-            <span style="font-size: 11.5px; font-weight: 800; background: #d1fae5; color: #065f46; padding: 4px 12px; border-radius: 8px;">
-              \u2705 Total Pago! Tecle [ENTER] para Finalizar
-            </span>
           </div>
         `;
         } else {
           bannerBox.innerHTML = `
           <div class="pag-status-banner-success">
             <div style="display: flex; align-items: center; gap: 10px;">
-              <span style="font-size: 24px;">\u2705</span>
+              <span style="font-size: 22px;">\u2705</span>
               <div>
                 <span style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.85;">Pagamento Integral</span>
-                <div style="font-size: 20px; font-weight: 900; font-family: 'JetBrains Mono';">VALOR TOTAL CONCLU\xCDDO!</div>
+                <div style="font-size: 22px; font-weight: 900; font-family: 'JetBrains Mono'; line-height: 1.1;">VALOR TOTAL QUITADO!</div>
               </div>
             </div>
-            <span style="font-size: 11.5px; font-weight: 800; background: #dcfce7; color: #166534; padding: 4px 12px; border-radius: 8px;">
-              Pronto! Tecle [ENTER] para Finalizar
-            </span>
           </div>
         `;
         }
@@ -41660,6 +49184,7 @@ Venda bloqueada no PDV!`);
       }
     },
     _bloqueioLancarPagamento: false,
+    _finalizandoVenda: false,
     lancarValorPagamento() {
       if (this._bloqueioLancarPagamento) {
         console.warn("\u26A0\uFE0F Debounce: Pagamento repetido ignorado.");
@@ -41674,7 +49199,7 @@ Venda bloqueada no PDV!`);
       const totalLancado = this.pagamentosLancados.reduce((acc, p) => acc + (parseFloat(p.valor) || 0), 0);
       const faltaPagar = Math.max(0, parseFloat((totalVenda - totalLancado).toFixed(2)));
       if (faltaPagar <= 5e-3) {
-        this.executarFinalizacaoVendaCompleta();
+        this.solicitarFinalizacaoVenda();
         return;
       }
       const inputVal = document.getElementById("pag-valor-pago-input");
@@ -41718,7 +49243,7 @@ Venda bloqueada no PDV!`);
                     troco
                   });
                   this.atualizarInterfacePagamentoNovo();
-                  this.executarFinalizacaoVendaCompleta();
+                  this.solicitarFinalizacaoVenda();
                 }
               });
               return;
@@ -41733,7 +49258,7 @@ Venda bloqueada no PDV!`);
             troco
           });
           this.atualizarInterfacePagamentoNovo();
-          this.executarFinalizacaoVendaCompleta();
+          this.solicitarFinalizacaoVenda();
           return;
         } else {
           this.pagamentosLancados.push({
@@ -41746,7 +49271,7 @@ Venda bloqueada no PDV!`);
           const novoLancado2 = this.pagamentosLancados.reduce((acc, p) => acc + (parseFloat(p.valor) || 0), 0);
           if (novoLancado2 >= totalVenda - 5e-3) {
             this.atualizarInterfacePagamentoNovo(true);
-            this.executarFinalizacaoVendaCompleta();
+            this.solicitarFinalizacaoVenda();
           } else {
             this.atualizarInterfacePagamentoNovo(true);
             const restante = Math.max(0, totalVenda - novoLancado2);
@@ -41775,7 +49300,7 @@ Venda bloqueada no PDV!`);
             this.atualizarInterfacePagamentoNovo();
             const novoLancado2 = this.pagamentosLancados.reduce((acc, p) => acc + (parseFloat(p.valor) || 0), 0);
             if (novoLancado2 >= totalVenda - 5e-3) {
-              this.executarFinalizacaoVendaCompleta();
+              this.solicitarFinalizacaoVenda();
             }
           }).catch((err) => {
             window.App.showToast("\u274C Pagamento no Pinpad cancelado ou recusado.", "warning");
@@ -41802,7 +49327,7 @@ Venda bloqueada no PDV!`);
         this.atualizarInterfacePagamentoNovo();
         const novoLancado2 = this.pagamentosLancados.reduce((acc, p) => acc + (parseFloat(p.valor) || 0), 0);
         if (novoLancado2 >= totalVenda - 5e-3) {
-          this.executarFinalizacaoVendaCompleta();
+          this.solicitarFinalizacaoVenda();
         }
         return;
       }
@@ -41819,98 +49344,243 @@ Venda bloqueada no PDV!`);
       const novoLancado = this.pagamentosLancados.reduce((acc, p) => acc + (parseFloat(p.valor) || 0), 0);
       if (novoLancado >= totalVenda - 5e-3) {
         this.atualizarInterfacePagamentoNovo(true);
-        this.executarFinalizacaoVendaCompleta();
+        this.solicitarFinalizacaoVenda();
       } else {
         this.atualizarInterfacePagamentoNovo(true);
         const restante = Math.max(0, totalVenda - novoLancado);
         window.App.showToast(`\u{1F4B3} Lan\xE7ado R$ ${valorAplicado.toFixed(2).replace(".", ",")} em ${forma}. Falta R$ ${restante.toFixed(2).replace(".", ",")}.`, "info");
       }
     },
-    executarFinalizacaoVendaCompleta() {
-      const totais = this.calcularTotais();
-      const totalVenda = totais.total;
-      const pagamentos = this.pagamentosLancados.filter((p) => p.valor > 0);
-      if (pagamentos.length === 0) {
-        window.App.showToast("Nenhum valor lan\xE7ado!", "warning");
+    solicitarFinalizacaoVenda() {
+      if (this._finalizandoVenda) return;
+      const cfgFiscal = StorageService.getFiscalConfig();
+      const isFiscalHabilitado = StorageService.isModuloAtivo("fiscalNfce") && cfgFiscal && cfgFiscal.habilitado === true;
+      if (!isFiscalHabilitado) {
+        this.cpfNotaFinalizacao = "";
+        this.executarFinalizacaoVendaCompleta();
         return;
       }
-      const totalLancado = pagamentos.reduce((acc, p) => acc + (parseFloat(p.valor) || 0), 0);
-      if (totalLancado < totalVenda - 5e-3) {
-        const falta = Math.max(0, totalVenda - totalLancado);
-        window.App.showToast(`Ainda falta pagar R$ ${falta.toFixed(2).replace(".", ",")}!`, "warning");
+      if (this.clienteClubeAtivo && this.clienteClubeAtivo.cpfCnpj) {
+        this.cpfNotaFinalizacao = this.clienteClubeAtivo.cpfCnpj;
+        this.executarFinalizacaoVendaCompleta();
         return;
       }
-      const usuario = AuthModule.getUsuario();
-      const isMultiplo = pagamentos.length > 1;
-      const formasDescricao = pagamentos.map((p) => `${p.forma}: R$ ${p.valor.toFixed(2).replace(".", ",")}`).join(" + ");
-      const venda = {
-        id: "VND-" + Date.now().toString().slice(-6),
-        data: (/* @__PURE__ */ new Date()).toISOString(),
-        itens: [...this.carrinho],
-        subtotal: totais.subtotal,
-        desconto: totais.desconto,
-        total: totalVenda,
-        formaPagamento: isMultiplo ? `Multi-Pagamento (${pagamentos.map((p) => p.forma).join(", ")})` : pagamentos[0].forma,
-        pagamentoDividido: isMultiplo,
-        pagamentos,
-        detalhesPagamento: formasDescricao,
-        valorPago: totalLancado,
-        troco: this.trocoDinheiroTotal || 0,
-        operador: usuario.nome
-      };
-      const parcelasFiado = pagamentos.filter((p) => p.forma === "Fiado");
-      if (parcelasFiado.length > 0) {
-        const clientes = StorageService.getClientes() || [];
-        parcelasFiado.forEach((pf) => {
-          const c = clientes.find((item) => item.id === pf.clienteId);
-          if (c) {
-            c.saldoDevedor = (parseFloat(c.saldoDevedor) || 0) + pf.valor;
-            c.historico = c.historico || [];
-            c.historico.push({
-              data: (/* @__PURE__ */ new Date()).toISOString(),
-              tipo: "venda",
-              valor: pf.valor,
-              vendaId: venda.id,
-              descricao: `Compra a prazo no PDV (${venda.itens.length} itens)`
-            });
-          }
+      const tefConfig = StorageService.getTefConfig();
+      const isTefAtivo = StorageService.isModuloAtivo("tefCartao") && tefConfig && tefConfig.habilitado === true;
+      if (isTefAtivo && window.TefModule && typeof window.TefModule.solicitarCpfPinpad === "function") {
+        this._finalizandoVenda = true;
+        window.TefModule.solicitarCpfPinpad().then((res) => {
+          this.cpfNotaFinalizacao = res && res.sucesso && res.cpf ? res.cpf : "";
+          this.executarFinalizacaoVendaCompleta({ jaTravado: true });
+        }).catch(() => {
+          this.cpfNotaFinalizacao = "";
+          this.executarFinalizacaoVendaCompleta({ jaTravado: true });
         });
-        StorageService.saveClientes(clientes);
-        if (window.ClientesModule) window.ClientesModule.renderTabelaClientes();
+      } else {
+        this.abrirModalPerguntaCpfNota();
       }
-      const deveEmitirFiscal = document.getElementById("pag-emitir-nfce-check")?.checked === true;
-      const cpfNaNota = document.getElementById("pag-cpf-nota-input")?.value.trim() || "";
-      if (cpfNaNota) {
-        venda.cpfCliente = cpfNaNota;
+    },
+    abrirModalPerguntaCpfNota() {
+      const modal = document.getElementById("modal-pergunta-cpf-nota");
+      const fasePergunta = document.getElementById("cpf-nota-fase-pergunta");
+      const faseDigitacao = document.getElementById("cpf-nota-fase-digitacao");
+      const input = document.getElementById("cpf-nota-modal-input");
+      if (fasePergunta) fasePergunta.style.display = "block";
+      if (faseDigitacao) faseDigitacao.style.display = "none";
+      if (input) input.value = "";
+      if (modal) {
+        modal.classList.add("active");
+        const btnSim = document.getElementById("btn-cpf-nota-sim");
+        if (btnSim) setTimeout(() => btnSim.focus(), 60);
       }
-      if (deveEmitirFiscal && StorageService.isModuloAtivo("fiscalNfce") && window.FiscalModule && typeof window.FiscalModule.getFiscalConfig === "function") {
-        const cfgFiscal = window.FiscalModule.getFiscalConfig();
-        if (cfgFiscal && cfgFiscal.habilitado) {
-          window.FiscalModule.emitirNFCe(venda).then((resFiscal) => {
-            if (resFiscal && resFiscal.sucesso) {
-              venda.chaveNfe = resFiscal.chaveAcesso;
-              venda.protocoloNfe = resFiscal.protocoloAutorizacao;
-              venda.numeroNfce = resFiscal.numeroNfce;
-              venda.serieNfce = resFiscal.serieNfce;
-              venda.ambiente = resFiscal.ambiente;
-              venda.qrcodeUrl = resFiscal.qrcodeUrl;
-              venda.statusFiscal = resFiscal.status;
-              venda.tributosAproximados = resFiscal.tributosAproximados;
-              StorageService.atualizarVenda(venda);
-            }
-          }).catch((err) => console.warn("[Fiscal] Erro na emiss\xE3o NFC-e:", err));
+    },
+    fecharModalPerguntaCpfNota() {
+      const modal = document.getElementById("modal-pergunta-cpf-nota");
+      if (modal) modal.classList.remove("active");
+      window._ultimoModalFechadoTimestamp = Date.now();
+    },
+    responderPerguntaCpfNota(querCpf) {
+      if (!querCpf) {
+        this.fecharModalPerguntaCpfNota();
+        this.cpfNotaFinalizacao = "";
+        this.executarFinalizacaoVendaCompleta();
+        return;
+      }
+      const fasePergunta = document.getElementById("cpf-nota-fase-pergunta");
+      const faseDigitacao = document.getElementById("cpf-nota-fase-digitacao");
+      const input = document.getElementById("cpf-nota-modal-input");
+      if (fasePergunta) fasePergunta.style.display = "none";
+      if (faseDigitacao) faseDigitacao.style.display = "block";
+      if (input) {
+        input.value = "";
+        setTimeout(() => input.focus(), 60);
+      }
+    },
+    confirmarCpfNotaDigitado() {
+      const input = document.getElementById("cpf-nota-modal-input");
+      const valor = input ? input.value.trim() : "";
+      this.cpfNotaFinalizacao = valor;
+      this.fecharModalPerguntaCpfNota();
+      this.executarFinalizacaoVendaCompleta();
+    },
+    cancelarDigitacaoCpfNota() {
+      this.cpfNotaFinalizacao = "";
+      this.fecharModalPerguntaCpfNota();
+      this.executarFinalizacaoVendaCompleta();
+    },
+    pedirCpfNoPinpadModal() {
+      if (window.TefModule && typeof window.TefModule.solicitarCpfPinpad === "function") {
+        if (this._finalizandoVenda) return;
+        this._finalizandoVenda = true;
+        this.fecharModalPerguntaCpfNota();
+        window.TefModule.solicitarCpfPinpad().then((res) => {
+          this.cpfNotaFinalizacao = res && res.sucesso && res.cpf ? res.cpf : "";
+          this.executarFinalizacaoVendaCompleta({ jaTravado: true });
+        }).catch(() => {
+          this.cpfNotaFinalizacao = "";
+          this.executarFinalizacaoVendaCompleta({ jaTravado: true });
+        });
+      } else {
+        window.App.showToast("Maquininha TEF n\xE3o conectada ou sem suporte a PINPad.", "warning");
+      }
+    },
+    formatarCpfCnpj(v) {
+      v = String(v || "").replace(/\D/g, "");
+      if (v.length <= 11) {
+        v = v.replace(/(\d{3})(\d)/, "$1.$2");
+        v = v.replace(/(\d{3})(\d)/, "$1.$2");
+        v = v.replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+      } else {
+        v = v.substring(0, 14);
+        v = v.replace(/^(\d{2})(\d)/, "$1.$2");
+        v = v.replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3");
+        v = v.replace(/\.(\d{3})(\d)/, ".$1/$2");
+        v = v.replace(/(\d{4})(\d)/, "$1-$2");
+      }
+      return v;
+    },
+    executarFinalizacaoVendaCompleta(opts = {}) {
+      if (this._finalizandoVenda && !opts.jaTravado) return;
+      this._finalizandoVenda = true;
+      try {
+        const totais = this.calcularTotais();
+        const totalVenda = totais.total;
+        const pagamentos = this.pagamentosLancados.filter((p) => p.valor > 0);
+        if (pagamentos.length === 0) {
+          window.App.showToast("Nenhum valor lan\xE7ado!", "warning");
+          return;
         }
+        const totalLancado = pagamentos.reduce((acc, p) => acc + (parseFloat(p.valor) || 0), 0);
+        if (totalLancado < totalVenda - 5e-3) {
+          const falta = Math.max(0, totalVenda - totalLancado);
+          window.App.showToast(`Ainda falta pagar R$ ${falta.toFixed(2).replace(".", ",")}!`, "warning");
+          return;
+        }
+        const usuario = AuthModule.getUsuario();
+        if (!usuario) {
+          window.App.showToast("Fa\xE7a login para finalizar a venda.", "warning");
+          return;
+        }
+        const isMultiplo = pagamentos.length > 1;
+        const formasDescricao = pagamentos.map((p) => `${p.forma}: R$ ${p.valor.toFixed(2).replace(".", ",")}`).join(" + ");
+        const proximoNumero = StorageService.getProximoNumeroVenda();
+        const venda = {
+          id: "VND-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
+          numeroVenda: proximoNumero,
+          turnoId: StorageService.getTurnoAtual()?.id || null,
+          data: (/* @__PURE__ */ new Date()).toISOString(),
+          itens: [...this.carrinho],
+          subtotal: totais.subtotal,
+          desconto: totais.desconto,
+          total: totalVenda,
+          formaPagamento: isMultiplo ? `Multi-Pagamento (${pagamentos.map((p) => p.forma).join(", ")})` : pagamentos[0].forma,
+          pagamentoDividido: isMultiplo,
+          pagamentos,
+          detalhesPagamento: formasDescricao,
+          valorPago: totalLancado,
+          troco: this.trocoDinheiroTotal || 0,
+          operador: usuario.nome,
+          operadorId: usuario.id || null
+        };
+        const parcelasFiado = pagamentos.filter((p) => p.forma === "Fiado");
+        if (parcelasFiado.length > 0) {
+          const clientes = StorageService.getClientes() || [];
+          parcelasFiado.forEach((pf) => {
+            const c = clientes.find((item) => item.id === pf.clienteId);
+            if (c) {
+              c.saldoDevedor = (parseFloat(c.saldoDevedor) || 0) + pf.valor;
+              c.historico = c.historico || [];
+              c.historico.push({
+                data: (/* @__PURE__ */ new Date()).toISOString(),
+                tipo: "venda",
+                valor: pf.valor,
+                vendaId: venda.id,
+                descricao: `Compra a prazo no PDV (${venda.itens.length} itens)`
+              });
+            }
+          });
+          StorageService.saveClientes(clientes);
+          if (window.ClientesModule) window.ClientesModule.renderTabelaClientes();
+        }
+        const cfgFiscal = StorageService.getFiscalConfig();
+        const deveEmitirFiscal = StorageService.isModuloAtivo("fiscalNfce") && cfgFiscal && cfgFiscal.habilitado === true;
+        const cpfFinal = this.cpfNotaFinalizacao || (document.getElementById("pag-cpf-nota-input")?.value || "").trim() || (this.clienteClubeAtivo ? this.clienteClubeAtivo.cpfCnpj : "") || "";
+        if (cpfFinal) {
+          venda.cpfCliente = cpfFinal;
+        }
+        if (deveEmitirFiscal) {
+          venda.statusFiscal = "pendente";
+        }
+        StorageService.saveVenda(venda);
+        this.agendarEmissaoFiscal(venda, deveEmitirFiscal && cfgFiscal);
+        if (venda.itens && venda.itens.length > 0 && venda.itens[0].comandaOrigemId && window.ComandasModule) {
+          window.ComandasModule.liberarComandaAposVenda(venda.itens[0].comandaOrigemId);
+        }
+        this.fecharModalPagamento();
+        this.limparCarrinho();
+        this.renderMiniDashboardTurno();
+        this.tocarSomBeep(true);
+        this.cpfNotaFinalizacao = "";
+        window.App.showToast(`Venda finalizada com sucesso (${isMultiplo ? formasDescricao : venda.formaPagamento})!`, "success");
+        this.abrirModalSucessoImpressao(venda);
+      } catch (err) {
+        console.error("[PDV] Falha ao finalizar venda:", err);
+        window.App.showToast("N\xE3o foi poss\xEDvel finalizar a venda. Tente novamente.", "error");
+      } finally {
+        this._finalizandoVenda = false;
       }
-      StorageService.saveVenda(venda);
-      if (venda.itens && venda.itens.length > 0 && venda.itens[0].comandaOrigemId && window.ComandasModule) {
-        window.ComandasModule.liberarComandaAposVenda(venda.itens[0].comandaOrigemId);
-      }
-      this.fecharModalPagamento();
-      this.limparCarrinho();
-      this.renderMiniDashboardTurno();
-      this.tocarSomBeep(true);
-      window.App.showToast(`\u{1F389} Venda finalizada com sucesso (${isMultiplo ? formasDescricao : venda.formaPagamento})!`, "success");
-      this.abrirModalSucessoImpressao(venda);
+    },
+    agendarEmissaoFiscal(venda, deveEmitir) {
+      if (!deveEmitir || !window.FiscalModule || typeof window.FiscalModule.emitirNFCe !== "function") return;
+      window.FiscalModule.emitirNFCe(venda).then((resFiscal) => {
+        if (resFiscal && resFiscal.sucesso) {
+          venda.chaveNfe = resFiscal.chaveAcesso;
+          venda.protocoloNfe = resFiscal.protocoloAutorizacao;
+          venda.numeroNfce = resFiscal.numeroNfce;
+          venda.serieNfce = resFiscal.serieNfce;
+          venda.ambiente = resFiscal.ambiente;
+          venda.qrcodeUrl = resFiscal.qrcodeUrl;
+          venda.statusFiscal = resFiscal.status || "autorizada";
+          venda.tributosAproximados = resFiscal.tributosAproximados;
+          venda.fiscalErro = "";
+          StorageService.atualizarVenda(venda);
+        } else {
+          venda.statusFiscal = "erro";
+          venda.fiscalErro = resFiscal && (resFiscal.mensagem || resFiscal.erro) || "Falha na emiss\xE3o da NFC-e";
+          StorageService.atualizarVenda(venda);
+          if (window.App && typeof window.App.showToast === "function") {
+            window.App.showToast("Venda gravada. NFC-e pendente: " + venda.fiscalErro, "warning");
+          }
+        }
+      }).catch((err) => {
+        venda.statusFiscal = "erro";
+        venda.fiscalErro = err?.message || String(err);
+        StorageService.atualizarVenda(venda);
+        console.warn("[Fiscal] Erro na emiss\xE3o NFC-e:", err);
+        if (window.App && typeof window.App.showToast === "function") {
+          window.App.showToast("Venda gravada, mas a NFC-e n\xE3o foi autorizada. Reemita depois.", "warning");
+        }
+      });
     },
     confirmarPagamento() {
       this.lancarValorPagamento();
@@ -41927,15 +49597,25 @@ Venda bloqueada no PDV!`);
           if (v.formaPagamento === "Dinheiro") {
             vendasDinheiro += parseFloat(v.total) || 0;
           } else if (v.pagamentoDividido && Array.isArray(v.pagamentos)) {
+            let dinheiroLancado = 0;
             v.pagamentos.forEach((p) => {
-              if (p.forma === "Dinheiro") vendasDinheiro += parseFloat(p.valor) || 0;
+              if (p.forma === "Dinheiro") dinheiroLancado += parseFloat(p.valor) || 0;
             });
+            const trocoDinheiro = parseFloat(v.troco) || 0;
+            vendasDinheiro += Math.max(0, dinheiroLancado - trocoDinheiro);
+          } else if (v.pagamentoDividido && (v.parcela1 || v.parcela2)) {
+            let dinheiroLancado = 0;
+            if (v.parcela1?.forma === "Dinheiro") dinheiroLancado += parseFloat(v.parcela1.valor) || 0;
+            if (v.parcela2?.forma === "Dinheiro") dinheiroLancado += parseFloat(v.parcela2.valor) || 0;
+            const trocoDinheiro = parseFloat(v.troco) || 0;
+            vendasDinheiro += Math.max(0, dinheiroLancado - trocoDinheiro);
           }
         }
       });
       return Math.max(0, trocoInicial + suprimentos + vendasDinheiro - sangrias);
     },
     finalizarVenda(formaPagamento, dadosTef = null) {
+      if (this._finalizandoVenda) return;
       const totais = this.calcularTotais();
       const inputPago = document.getElementById("pag-valor-pago-input");
       const valorPago = formaPagamento === "Dinheiro" ? this.parseMoedaBR(inputPago?.value) || totais.total : totais.total;
@@ -41965,59 +49645,63 @@ Venda bloqueada no PDV!`);
       this.executarGravacaoVenda(formaPagamento, dadosTef, valorPago, troco);
     },
     executarGravacaoVenda(formaPagamento, dadosTef, valorPago, troco) {
-      const totais = this.calcularTotais();
-      const usuario = AuthModule.getUsuario();
-      const venda = {
-        id: "VND-" + Date.now().toString().slice(-6),
-        data: (/* @__PURE__ */ new Date()).toISOString(),
-        itens: [...this.carrinho],
-        subtotal: totais.subtotal,
-        desconto: totais.desconto,
-        total: totais.total,
-        formaPagamento,
-        valorPago,
-        troco,
-        operador: usuario.nome
-      };
-      if (dadosTef) {
-        venda.dadosTef = dadosTef;
-        venda.nsuTef = dadosTef.nsu;
-        venda.autorizacaoTef = dadosTef.autorizacao;
-        venda.bandeiraCartao = dadosTef.bandeira;
-      }
-      const deveEmitirFiscal = document.getElementById("pag-emitir-nfce-check")?.checked === true;
-      const cpfNaNota = document.getElementById("pag-cpf-nota-input")?.value.trim() || "";
-      if (cpfNaNota) {
-        venda.cpfCliente = cpfNaNota;
-      }
-      if (deveEmitirFiscal && StorageService.isModuloAtivo("fiscalNfce") && window.FiscalModule && typeof window.FiscalModule.getFiscalConfig === "function") {
-        const cfgFiscal = window.FiscalModule.getFiscalConfig();
-        if (cfgFiscal && cfgFiscal.habilitado) {
-          window.FiscalModule.emitirNFCe(venda).then((resFiscal) => {
-            if (resFiscal && resFiscal.sucesso) {
-              venda.chaveNfe = resFiscal.chaveAcesso;
-              venda.protocoloNfe = resFiscal.protocoloAutorizacao;
-              venda.numeroNfce = resFiscal.numeroNfce;
-              venda.serieNfce = resFiscal.serieNfce;
-              venda.ambiente = resFiscal.ambiente;
-              venda.qrcodeUrl = resFiscal.qrcodeUrl;
-              venda.statusFiscal = resFiscal.status;
-              venda.tributosAproximados = resFiscal.tributosAproximados;
-              StorageService.atualizarVenda(venda);
-            }
-          }).catch((err) => console.warn("[Fiscal] Erro emiss\xE3o NFC-e:", err));
+      if (this._finalizandoVenda) return;
+      this._finalizandoVenda = true;
+      try {
+        const totais = this.calcularTotais();
+        const usuario = AuthModule.getUsuario();
+        if (!usuario) {
+          window.App.showToast("Fa\xE7a login para finalizar a venda.", "warning");
+          return;
         }
+        const proximoNumero = StorageService.getProximoNumeroVenda();
+        const venda = {
+          id: "VND-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
+          numeroVenda: proximoNumero,
+          turnoId: StorageService.getTurnoAtual()?.id || null,
+          data: (/* @__PURE__ */ new Date()).toISOString(),
+          itens: [...this.carrinho],
+          subtotal: totais.subtotal,
+          desconto: totais.desconto,
+          total: totais.total,
+          formaPagamento,
+          valorPago,
+          troco,
+          operador: usuario.nome,
+          operadorId: usuario.id || null
+        };
+        if (dadosTef) {
+          venda.dadosTef = dadosTef;
+          venda.nsuTef = dadosTef.nsu;
+          venda.autorizacaoTef = dadosTef.autorizacao;
+          venda.bandeiraCartao = dadosTef.bandeira;
+        }
+        const cfgFiscal = StorageService.getFiscalConfig();
+        const deveEmitirFiscal = StorageService.isModuloAtivo("fiscalNfce") && cfgFiscal && cfgFiscal.habilitado === true;
+        const cpfFinal = this.cpfNotaFinalizacao || (document.getElementById("pag-cpf-nota-input")?.value || "").trim() || (this.clienteClubeAtivo ? this.clienteClubeAtivo.cpfCnpj : "") || "";
+        if (cpfFinal) {
+          venda.cpfCliente = cpfFinal;
+        }
+        if (deveEmitirFiscal) venda.statusFiscal = "pendente";
+        StorageService.saveVenda(venda);
+        this.agendarEmissaoFiscal(venda, deveEmitirFiscal && cfgFiscal);
+        if (venda.itens && venda.itens.length > 0 && venda.itens[0].comandaOrigemId && window.ComandasModule) {
+          window.ComandasModule.liberarComandaAposVenda(venda.itens[0].comandaOrigemId);
+        }
+        this.fecharModalPagamento();
+        this.limparCarrinho();
+        this.renderMiniDashboardTurno();
+        this.tocarSomBeep(true);
+        this.cpfNotaFinalizacao = "";
+        const numVendaFormat = venda.numeroVenda ? `#${String(venda.numeroVenda).padStart(6, "0")}` : `#${venda.id}`;
+        window.App.showToast(`Venda ${numVendaFormat} finalizada com sucesso (${formaPagamento})!`, "success");
+        this.abrirModalSucessoImpressao(venda);
+      } catch (err) {
+        console.error("[PDV] Falha ao gravar venda:", err);
+        window.App.showToast("N\xE3o foi poss\xEDvel gravar a venda. Tente novamente.", "error");
+      } finally {
+        this._finalizandoVenda = false;
       }
-      StorageService.saveVenda(venda);
-      if (venda.itens && venda.itens.length > 0 && venda.itens[0].comandaOrigemId && window.ComandasModule) {
-        window.ComandasModule.liberarComandaAposVenda(venda.itens[0].comandaOrigemId);
-      }
-      this.fecharModalPagamento();
-      this.limparCarrinho();
-      this.renderMiniDashboardTurno();
-      this.tocarSomBeep(true);
-      window.App.showToast(`\u{1F389} Venda #${venda.id} finalizada com sucesso (${formaPagamento})!`, "success");
-      this.abrirModalSucessoImpressao(venda);
     },
     abrirModalSucessoImpressao(venda) {
       this.ultimaVendaFinalizada = venda;
@@ -42027,7 +49711,8 @@ Venda bloqueada no PDV!`);
       const valorEl = document.getElementById("modal-sucesso-venda-valor");
       const detalheEl = document.getElementById("modal-sucesso-venda-detalhe");
       const fiscalBadge = document.getElementById("modal-sucesso-fiscal-badge");
-      if (idEl) idEl.textContent = `Venda #${venda.id ? venda.id.slice(-6) : "FINALIZADA"} Conclu\xEDda!`;
+      const numVenda = venda.numeroVenda || (StorageService.getVendas() || []).length;
+      if (idEl) idEl.textContent = `Venda #${numVenda} Conclu\xEDda!`;
       if (valorEl) valorEl.textContent = `R$ ${(venda.total || 0).toFixed(2).replace(".", ",")}`;
       if (detalheEl) {
         if (venda.formaPagamento === "Dinheiro" && venda.troco > 0) {
@@ -42167,6 +49852,10 @@ Venda bloqueada no PDV!`);
       if (!c) return;
       const totais = this.calcularTotais();
       const usuario = AuthModule.getUsuario();
+      if (!usuario) {
+        window.App.showToast("Fa\xE7a login para finalizar a venda.", "warning");
+        return;
+      }
       c.saldoDevedor += totais.total;
       c.historico = c.historico || [];
       c.historico.unshift({
@@ -42176,8 +49865,11 @@ Venda bloqueada no PDV!`);
         descricao: `Compra fiada no PDV (${this.carrinho.map((i) => `${i.quantidade}x ${i.nome}`).join(", ")})`
       });
       StorageService.saveClientes(clientes);
+      const proximoNumero = StorageService.getProximoNumeroVenda();
       const venda = {
-        id: "VND-" + Date.now().toString().slice(-6),
+        id: "VND-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
+        numeroVenda: proximoNumero,
+        turnoId: StorageService.getTurnoAtual()?.id || null,
         data: (/* @__PURE__ */ new Date()).toISOString(),
         itens: [...this.carrinho],
         subtotal: totais.subtotal,
@@ -42233,8 +49925,15 @@ Venda bloqueada no PDV!`);
       const motivo = document.getElementById("cortesia-motivo-input")?.value.trim() || "Degusta\xE7\xE3o / Bonifica\xE7\xE3o";
       const totais = this.calcularTotais();
       const usuario = AuthModule.getUsuario();
+      if (!usuario) {
+        window.App.showToast("Fa\xE7a login para registrar a cortesia.", "warning");
+        return;
+      }
+      const proximoNumero = StorageService.getProximoNumeroVenda();
       const venda = {
-        id: "CRT-" + Date.now().toString().slice(-6),
+        id: "CRT-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
+        numeroVenda: proximoNumero,
+        turnoId: StorageService.getTurnoAtual()?.id || null,
         data: (/* @__PURE__ */ new Date()).toISOString(),
         itens: [...this.carrinho],
         subtotal: totais.subtotal,
@@ -42956,10 +50655,7 @@ Venda bloqueada no PDV!`);
       return num > 0 ? num.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "";
     },
     parseMoedaBR(valor) {
-      if (typeof valor === "number") return valor;
-      if (!valor) return 0;
-      const limpo = String(valor).replace(/\./g, "").replace(",", ".").replace(/[^\d.-]/g, "");
-      return parseFloat(limpo) || 0;
+      return StorageService.parseMoedaBR(valor);
     },
     toggleGradeFracionada(forcarAberto = null) {
       const campos = document.getElementById("grade-fracionada-campos");
@@ -43647,7 +51343,7 @@ Venda bloqueada no PDV!`);
           } while (codigosExistentes.has(codFinal));
         }
         const novoProduto = {
-          id: "PRD-" + Date.now().toString().slice(-4),
+          id: "PRD-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
           codigoBarras: codFinal,
           nome: nome.toUpperCase(),
           atualizadoEm: (/* @__PURE__ */ new Date()).toISOString(),
@@ -43780,14 +51476,24 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
         return;
       }
       const estoqueAtual = Number(p.estoque) || 0;
+      let delta = 0;
       if (tipo === "entrada") {
+        delta = qtd;
         p.estoque = estoqueAtual + qtd;
       } else if (tipo === "perda") {
+        delta = -Math.min(estoqueAtual, qtd);
         p.estoque = Math.max(0, estoqueAtual - qtd);
       } else if (tipo === "balanco") {
+        delta = qtd - estoqueAtual;
         p.estoque = qtd;
       }
       p.atualizadoEm = (/* @__PURE__ */ new Date()).toISOString();
+      StorageService.registrarMovimentoEstoque({
+        produtoId: p.id,
+        delta,
+        origem: "ajuste",
+        refId: tipo
+      });
       StorageService.saveProdutos(produtos);
       if (window.CloudSyncModule && typeof window.CloudSyncModule.enviarAlteracaoNuvem === "function") {
         window.CloudSyncModule.enviarAlteracaoNuvem("produtos");
@@ -45171,7 +52877,19 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       vendasTurno.forEach((v) => {
         const tot = v.total || 0;
         totalVendas += tot;
-        if (v.pagamentoDividido && v.parcela1 && v.parcela2) {
+        if (v.pagamentoDividido && Array.isArray(v.pagamentos)) {
+          let dinheiroVenda = 0;
+          v.pagamentos.forEach((p) => {
+            const val = parseFloat(p.valor) || 0;
+            if (p.forma === "Dinheiro") dinheiroVenda += val;
+            else if (p.forma === "PIX") totalPix += val;
+            else if (p.forma === "D\xE9bito") totalDebito += val;
+            else if (p.forma === "Cr\xE9dito") totalCredito += val;
+            else if (p.forma === "Fiado") totalFiado += val;
+          });
+          const trocoVenda = parseFloat(v.troco) || 0;
+          totalDinheiro += Math.max(0, dinheiroVenda - trocoVenda);
+        } else if (v.pagamentoDividido && (v.parcela1 || v.parcela2)) {
           const addParcela = (forma, valor) => {
             const val = parseFloat(valor) || 0;
             if (forma === "Dinheiro") totalDinheiro += val;
@@ -45180,8 +52898,8 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
             else if (forma === "Cr\xE9dito") totalCredito += val;
             else if (forma === "Fiado") totalFiado += val;
           };
-          addParcela(v.parcela1.forma, v.parcela1.valor);
-          addParcela(v.parcela2.forma, v.parcela2.valor);
+          if (v.parcela1) addParcela(v.parcela1.forma, v.parcela1.valor);
+          if (v.parcela2) addParcela(v.parcela2.forma, v.parcela2.valor);
         } else {
           if (v.formaPagamento === "Dinheiro") totalDinheiro += tot;
           else if (v.formaPagamento === "PIX") totalPix += tot;
@@ -45269,13 +52987,20 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
     fecharModalAbertura() {
       const modal = document.getElementById("modal-abrir-caixa");
       if (modal) modal.classList.remove("active");
+      setTimeout(() => {
+        if (window.PdvModule) window.PdvModule.focarInputLeitor();
+      }, 60);
     },
     confirmarAberturaCaixa() {
       const input = document.getElementById("abertura-troco-input");
       const valorTroco = parseFloat(input?.value) || 0;
       const usuario = AuthModule.getUsuario();
+      if (!usuario) {
+        window.App.showToast("Fa\xE7a login para abrir o caixa.", "warning");
+        return;
+      }
       const novoTurno = {
-        id: "TRN-" + Date.now().toString().slice(-6),
+        id: "TRN-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
         operador: usuario.nome,
         dataAbertura: (/* @__PURE__ */ new Date()).toISOString(),
         trocoInicial: valorTroco,
@@ -45297,7 +53022,14 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       this.renderHistoricoVendasTurno();
       this.renderHistoricoTurnosFechados();
       if (window.PdvModule) window.PdvModule.renderMiniDashboardTurno();
+      if (window.PdvModule) window.PdvModule.renderCarrinho();
       window.App.showToast(`\u{1F389} Caixa aberto com R$ ${valorTroco.toFixed(2)} de troco inicial!`, "success");
+      setTimeout(() => {
+        if (window.PdvModule) window.PdvModule.focarInputLeitor();
+      }, 60);
+      setTimeout(() => {
+        if (window.PdvModule) window.PdvModule.focarInputLeitor();
+      }, 200);
     },
     // 2. Sangria / Retirada de Caixa (Modal Interativo)
     realizarSangria() {
@@ -45324,6 +53056,9 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
     fecharModalSangria() {
       const modal = document.getElementById("modal-sangria-caixa");
       if (modal) modal.classList.remove("active");
+      setTimeout(() => {
+        if (window.PdvModule) window.PdvModule.focarInputLeitor();
+      }, 60);
     },
     confirmarSangria() {
       const turno = StorageService.getTurnoAtual();
@@ -45346,7 +53081,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
         data: (/* @__PURE__ */ new Date()).toISOString(),
         valor,
         motivo,
-        operador: AuthModule.getUsuario().nome
+        operador: AuthModule.getNomeOperador()
       });
       StorageService.salvarTurno(turno);
       if (window.BackupModule && typeof window.BackupModule.fazerBackupNuvem === "function") {
@@ -45359,12 +53094,12 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       this.fecharModalSangria();
       this.renderStatusTurno();
       window.App.showToast(`\u{1F4B8} Sangria de R$ ${valor.toFixed(2)} registrada com sucesso!`, "info");
+      setTimeout(() => {
+        if (window.PdvModule) window.PdvModule.focarInputLeitor();
+      }, 60);
     },
     parseMoedaBR(valor) {
-      if (typeof valor === "number") return valor;
-      if (!valor) return 0;
-      const limpo = String(valor).replace(/\./g, "").replace(",", ".").replace(/[^\d.-]/g, "");
-      return parseFloat(limpo) || 0;
+      return StorageService.parseMoedaBR(valor);
     },
     // 3. Fechamento de Caixa (Conferência Cega & Auditoria)
     fecharTurnoCaixa() {
@@ -45404,6 +53139,9 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
     fecharModalFechamento() {
       const modal = document.getElementById("modal-fechar-caixa");
       if (modal) modal.classList.remove("active");
+      setTimeout(() => {
+        if (window.PdvModule) window.PdvModule.focarInputLeitor();
+      }, 60);
     },
     confirmarFechamentoCaixa(e) {
       if (e && typeof e.preventDefault === "function") e.preventDefault();
@@ -45457,6 +53195,10 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       this.renderHistoricoVendasTurno();
       this.renderHistoricoTurnosFechados();
       if (window.PdvModule) window.PdvModule.renderMiniDashboardTurno();
+      if (window.PdvModule) window.PdvModule.renderCarrinho();
+      setTimeout(() => {
+        if (window.PdvModule) window.PdvModule.focarInputLeitor();
+      }, 60);
       const isGerenteOuAdmin = window.AuthModule && (window.AuthModule.isGerente() || window.AuthModule.isSuperAdmin());
       let msgAlerta = `\u{1F389} Turno #${turno.id} encerrado com sucesso!`;
       let toastTipo = "success";
@@ -46236,7 +53978,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       }
       if (!turno) {
         turno = {
-          id: "TURNO-" + Date.now().toString().slice(-6),
+          id: "TURNO-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
           dataAbertura: (/* @__PURE__ */ new Date()).toISOString(),
           dataFechamento: (/* @__PURE__ */ new Date()).toISOString(),
           status: "fechado",
@@ -46260,7 +54002,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
             <div><span style="color: var(--text-muted);">Abertura:</span> <strong>${dataAb}</strong></div>
             <div><span style="color: var(--text-muted);">Fechamento:</span> <strong>${dataFc}</strong></div>
             <div><span style="color: var(--text-muted);">Operador:</span> <strong>${turno.operador || "Operador"}</strong></div>
-            <div><span style="color: var(--text-muted);">Troco Inicial:</span> <strong>R$ ${(turno.valorAbertura || 0).toFixed(2).replace(".", ",")}</strong></div>
+            <div><span style="color: var(--text-muted);">Troco Inicial:</span> <strong>R$ ${(turno.trocoInicial || turno.valorAbertura || 0).toFixed(2).replace(".", ",")}</strong></div>
           </div>
         </div>
 
@@ -46871,7 +54613,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
         }
       } else {
         const novo = {
-          id: "CLI-" + Date.now().toString().slice(-6),
+          id: "CLI-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
           nome,
           telefone,
           cpfCnpj,
@@ -47091,7 +54833,8 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
         descricao: `Pagamento de Fiado recebido no caixa via ${formaPagto}`
       });
       const venda = {
-        id: "REC-" + Date.now().toString().slice(-6),
+        id: "REC-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
+        numeroVenda: StorageService.getProximoNumeroVenda(),
         data: (/* @__PURE__ */ new Date()).toISOString(),
         itens: [{ id: "FIADO-REC", nome: `Quita\xE7\xE3o Fiado: ${c.nome}`, quantidade: 1, precoUnitario: valor }],
         subtotal: valor,
@@ -47100,7 +54843,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
         formaPagamento: formaPagto,
         valorPago: valor,
         troco: 0,
-        operador: window.AuthModule ? window.AuthModule.getUsuario().nome : "Caixa"
+        operador: window.AuthModule ? window.AuthModule.getNomeOperador() : "Caixa"
       };
       StorageService.saveVenda(venda);
       StorageService.saveClientes(clientes);
@@ -47124,8 +54867,16 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
   };
 
   // src/js/licenca.js
-  var LicencaModule2 = {
+  var LicencaModule = {
     modalAtivacaoAbertoManualmente: false,
+    // Sem essa sessão o Firestore recusa tudo: é ela que prova para as regras
+    // que este computador pertence a esta loja.
+    async garantirSessaoNuvem(chaveOpcional) {
+      const lic = StorageService.getLicenca() || {};
+      const alvo = String(chaveOpcional || lic.chaveLicenca || lic.clienteId || "").trim().toUpperCase();
+      if (!alvo) return false;
+      return garantirSessaoLoja(alvo, { deviceId: StorageService.getDeviceId() });
+    },
     init() {
       this.sincronizarComNuvem();
       this.iniciarOuvinteNuvemEmTempoReal();
@@ -47146,6 +54897,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
         if (!chave && !cnpj && !clienteId) {
           return false;
         }
+        await this.garantirSessaoNuvem(chave || clienteId);
         let cloudData = null;
         let docIdFound = null;
         let buscaConcluidaComSucesso = false;
@@ -47161,35 +54913,16 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
             console.log("[CloudLic] Direct doc get error:", e);
           }
         }
-        if (!cloudData && chave) {
+        if (!cloudData && (chave || cnpj || clienteId)) {
           try {
-            const querySnapshot = await getDocs(collection(db, "licencas"));
+            const res = await buscarLicencaNuvem({ chave, cnpj, clienteId });
             buscaConcluidaComSucesso = true;
-            querySnapshot.forEach((d) => {
-              const data = d.data();
-              if (data && (data.chaveLicenca && data.chaveLicenca.trim().toUpperCase() === chave || d.id && d.id.trim().toUpperCase() === chave)) {
-                cloudData = data;
-                docIdFound = d.id;
-              }
-            });
+            if (res && res.ok && res.licenca) {
+              cloudData = res.licenca;
+              docIdFound = res.licenca.id || res.licenca.docId || chave || clienteId;
+            }
           } catch (e) {
-          }
-        }
-        if (!cloudData && !chave && (clienteId || cnpj)) {
-          try {
-            const querySnapshot = await getDocs(collection(db, "licencas"));
-            buscaConcluidaComSucesso = true;
-            querySnapshot.forEach((d) => {
-              const data = d.data();
-              if (data) {
-                const docCnpj = (data.documento || data.cnpj || "").replace(/\D/g, "");
-                if (clienteId && d.id.toUpperCase() === clienteId || cnpj && docCnpj && docCnpj === cnpj && cnpj !== "00000000000100") {
-                  cloudData = data;
-                  docIdFound = d.id;
-                }
-              }
-            });
-          } catch (e) {
+            console.log("[CloudLic] buscarLicenca:", e);
           }
         }
         if (!cloudData && buscaConcluidaComSucesso && chave && navigator.onLine) {
@@ -47369,6 +55102,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
         const clienteId = (localLic.clienteId || "").trim().toUpperCase();
         const docIds = Array.from(new Set([chave, clienteId].filter(Boolean)));
         if (docIds.length === 0) return;
+        await this.garantirSessaoNuvem(chave || clienteId);
         for (const tId of docIds) {
           try {
             const docRef = doc(db, "licencas", tId);
@@ -47433,7 +55167,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
         const msgTag = document.getElementById("lock-terminais-msg");
         if (maxTag) maxTag.textContent = `${limite} computador(es)`;
         if (terminaisUnicos.length === 0) {
-          if (msgTag) msgTag.innerHTML = `\u26A0\uFE0F <strong>Terminal Desvinculado:</strong> Este computador foi desvinculado no Painel Master. Clique em <strong>Reconectar Este Computador</strong> abaixo para registrar o acesso.`;
+          if (msgTag) msgTag.innerHTML = `\u26A0\uFE0F <strong>Terminal Desvinculado:</strong> Este computador foi desvinculado pelo administrador. Clique em <strong>Reconectar Este Computador</strong> abaixo para registrar o acesso.`;
         } else {
           if (msgTag) msgTag.innerHTML = `Esta licen\xE7a permite o uso em at\xE9 <strong style="color: #0284c7;">${limite} computador(es)</strong> simult\xE2neo(s) (j\xE1 existem <strong>${terminaisUnicos.length}</strong> computador(es) ativo(s) vinculado(s)).`;
         }
@@ -47459,6 +55193,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
         const clienteId = (localLic.clienteId || "").trim().toUpperCase();
         const targetDocId = localLic.docIdNuvem || chave || clienteId;
         if (!targetDocId) return;
+        await this.garantirSessaoNuvem(chave || clienteId);
         const excluidas = Array.isArray(categoriasExcluidas) ? categoriasExcluidas : StorageService.getCategoriasExcluidas() || [];
         const payload = {
           categorias: Array.isArray(categorias) ? categorias : StorageService.getCategorias() || [],
@@ -47474,7 +55209,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
         console.warn("[CloudLic] Erro ao sincronizar categorias com Master:", e);
       }
     },
-    iniciarOuvinteNuvemEmTempoReal() {
+    async iniciarOuvinteNuvemEmTempoReal() {
       this.pararOuvinteNuvem();
       try {
         let localLic = StorageService.getLicenca() || {};
@@ -47482,6 +55217,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
         const clienteIdAtual = (localLic.clienteId || "").trim().toUpperCase();
         const docId = chaveAtual || clienteIdAtual;
         if (!docId) return;
+        await this.garantirSessaoNuvem(docId);
         console.log("[CloudLicListener] Iniciando ouvinte realtime exclusivo para:", docId);
         this.unsubLicenca = onSnapshot(doc(db, "licencas", docId), (snap) => {
           if (snap && snap.exists()) {
@@ -47726,10 +55462,10 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
         }
       }
       if (nomeEl) nomeEl.textContent = lic && lic.razaoSocial ? lic.razaoSocial : "Empresa";
-      if (pixKeyEl) pixKeyEl.textContent = lic && lic.chavePixSuporte ? lic.chavePixSuporte : "19989632127";
+      if (pixKeyEl) pixKeyEl.textContent = lic && lic.chavePixSuporte && lic.chavePixSuporte !== "19999997777" ? lic.chavePixSuporte : "19989632127";
       if (valorEl) valorEl.textContent = `R$ ${(lic && lic.valorMensal || 89.9).toFixed(2).replace(".", ",")}`;
       if (whatsappLink) {
-        const numClean = (lic && lic.whatsappSuporte || "19989632127").replace(/\D/g, "");
+        const numClean = (lic && lic.whatsappSuporte && lic.whatsappSuporte !== "19999997777" && lic.whatsappSuporte !== "(19) 99999-7777" ? lic.whatsappSuporte : "19989632127").replace(/\D/g, "");
         const msg = encodeURIComponent(`Ol\xE1 Douglas, preciso de suporte para liberar meu caixa da empresa "${lic && lic.razaoSocial || "Empresa"}" (Chave: ${lic && lic.chaveLicenca || ""}).`);
         whatsappLink.href = `https://wa.me/55${numClean}?text=${msg}`;
       }
@@ -47752,33 +55488,19 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       }
       let licEncontrada = null;
       const chaveClean = chave.replace(/\D/g, "");
+      await this.garantirSessaoNuvem(chave);
       try {
         let snap = await getDoc(doc(db, "licencas", chave));
         if (snap && snap.exists()) {
-          licEncontrada = snap.data();
+          licEncontrada = { id: snap.id, docId: snap.id, ...snap.data() };
         } else {
-          const querySnapshot = await getDocs(collection(db, "licencas"));
-          querySnapshot.forEach((d) => {
-            const data = d.data();
-            if (data) {
-              const docCnpj = (data.documento || data.cnpj || "").replace(/\D/g, "");
-              if (d.id.toUpperCase() === chave || data.chaveLicenca && data.chaveLicenca.toUpperCase() === chave || chaveClean && docCnpj === chaveClean) {
-                licEncontrada = { id: d.id, ...data };
-              }
-            }
-          });
+          const res = await buscarLicencaNuvem({ chave, cnpj: chaveClean, clienteId: chave });
+          if (res && res.ok && res.licenca) {
+            licEncontrada = res.licenca;
+          }
         }
       } catch (e) {
         console.log("[CloudLic] Erro Firestore:", e);
-      }
-      if (!licEncontrada) {
-        const masterSaved = localStorage.getItem("flowpdv_master_clientes");
-        if (masterSaved) {
-          const clientes = JSON.parse(masterSaved);
-          licEncontrada = clientes.find(
-            (c) => c.chaveLicenca && c.chaveLicenca.toUpperCase() === chave || c.id && c.id.toUpperCase() === chave || chaveClean && c.documento && c.documento.replace(/\D/g, "") === chaveClean
-          );
-        }
       }
       if (!licEncontrada) {
         if (btnAtivar) {
@@ -47803,7 +55525,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
           }
           const limite2 = licEncontrada.limiteTerminais || 1;
           if (erroEl) {
-            erroEl.innerHTML = "\u{1F6D1} <strong>Limite de Computadores Atingido:</strong> Esta licen\xE7a j\xE1 est\xE1 em uso em " + limite2 + " computador(es). Desvincule no Painel Master ou adquira mais acessos.";
+            erroEl.innerHTML = "\u{1F6D1} <strong>Limite de Computadores Atingido:</strong> Esta licen\xE7a j\xE1 est\xE1 em uso em " + limite2 + " computador(es). Pe\xE7a ao administrador para desvincular um computador ou adquirir mais acessos.";
             erroEl.style.display = "block";
           }
           if (window.App && typeof window.App.showToast === "function") {
@@ -47827,35 +55549,11 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
           terminais.push(infoTerminal);
         }
         try {
-          console.log("[Desvincula\xE7\xE3o Universal] Removendo terminal", myDevId, "de todas as outras licen\xE7as no Firestore...");
-          const todasLicsSnap = await getDocs(collection(db, "licencas"));
-          const idsNovaLicenca = new Set([
-            licEncontrada.id,
-            licEncontrada.docId,
-            licEncontrada.chaveLicenca,
-            licEncontrada.clienteId,
-            chave
-          ].filter(Boolean).map((s) => String(s).trim().toUpperCase()));
-          for (const dLic of todasLicsSnap.docs) {
-            const dData = dLic.data() || {};
-            const dChave = (dData.chaveLicenca || "").trim().toUpperCase();
-            const dId = dLic.id.trim().toUpperCase();
-            if (!idsNovaLicenca.has(dId) && !idsNovaLicenca.has(dChave)) {
-              let termList = this.limparTerminaisDuplicados(dData.terminaisAtivos);
-              const contemTerminal = termList.some((t) => t.id === myDevId);
-              if (contemTerminal) {
-                const termAtualizados = termList.filter((t) => t.id !== myDevId);
-                console.log(`[Desvincula\xE7\xE3o Universal] Removendo terminal ${myDevId} do doc "${dLic.id}" (${dData.nome || dData.razaoSocial})`);
-                await setDoc(doc(db, "licencas", dLic.id), {
-                  terminaisAtivos: termAtualizados,
-                  atualizadoEm: (/* @__PURE__ */ new Date()).toISOString()
-                }, { merge: true });
-              }
-            }
-          }
-        } catch (errDesvinc) {
-          console.warn("[Desvincula\xE7\xE3o Universal] Erro na varredura:", errDesvinc);
+          await desvincularTerminalNuvem({ deviceId: myDevId, chaveManter: novaChaveFinal });
+        } catch (e) {
+          console.warn("[Desvincula\xE7\xE3o] Falha ao limpar terminal em outras licen\xE7as:", e);
         }
+        await this.garantirSessaoNuvem(novaChaveFinal);
         const docIds = Array.from(new Set([licEncontrada.docId, licEncontrada.chaveLicenca, licEncontrada.id, chave].filter(Boolean)));
         for (const tId of docIds) {
           try {
@@ -47893,7 +55591,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
             btnAtivar.innerHTML = "\u{1F680} Ativar e Entrar no Sistema";
           }
           if (erroEl) {
-            erroEl.innerHTML = `\u{1F6D1} <strong>Licen\xE7a Bloqueada:</strong> O acesso da empresa "<strong>${licEncontrada.nome || licEncontrada.razaoSocial || "Minha Loja"}</strong>" est\xE1 suspenso pelo administrador no Painel Master.`;
+            erroEl.innerHTML = `\u{1F6D1} <strong>Licen\xE7a Bloqueada:</strong> O acesso da empresa "<strong>${licEncontrada.nome || licEncontrada.razaoSocial || "Minha Loja"}</strong>" est\xE1 suspenso pelo administrador.`;
             erroEl.style.display = "block";
           }
           if (window.App && typeof window.App.showToast === "function") {
@@ -47907,7 +55605,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
             btnAtivar.innerHTML = "\u{1F680} Ativar e Entrar no Sistema";
           }
           if (erroEl) {
-            erroEl.innerHTML = `\u26A0\uFE0F <strong>Licen\xE7a Vencida:</strong> A licen\xE7a da empresa "<strong>${licEncontrada.nome || licEncontrada.razaoSocial || "Minha Loja"}</strong>" venceu em <strong>${expiraEm.toLocaleDateString("pt-BR")}</strong>. Renove a mensalidade no Painel Master para liberar.`;
+            erroEl.innerHTML = `\u26A0\uFE0F <strong>Licen\xE7a Vencida:</strong> A licen\xE7a da empresa "<strong>${licEncontrada.nome || licEncontrada.razaoSocial || "Minha Loja"}</strong>" venceu em <strong>${expiraEm.toLocaleDateString("pt-BR")}</strong>. Renove a mensalidade com o administrador para liberar.`;
             erroEl.style.display = "block";
           }
           if (window.App && typeof window.App.showToast === "function") {
@@ -47925,7 +55623,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
           dataExpiracao: dataExpiracaoFinal,
           vencimento: dataNuvem ? dataNuvem.split("T")[0] : "",
           valorMensal: licEncontrada.valorMensal || 89.9,
-          chavePixSuporte: "19999997777",
+          chavePixSuporte: "19989632127",
           whatsappSuporte: "(19) 98963-2127",
           diasTolerancia: 2,
           chaveLicenca: licEncontrada.chaveLicenca || chave,
@@ -48043,15 +55741,20 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
         return;
       }
       try {
-        const querySnapshot = await getDocs(collection(db, "licencas"));
-        const cloudDocs = [];
-        querySnapshot.forEach((d) => {
-          const data = d.data();
-          if (data) cloudDocs.push({ docId: d.id, ...data });
-        });
-        const cloudData = cloudDocs.find(
-          (c) => chave && c.chaveLicenca && c.chaveLicenca.toUpperCase() === chave || chave && c.docId && c.docId.toUpperCase() === chave || clienteId && c.docId && c.docId.toUpperCase() === clienteId || cnpj && (c.documento || c.cnpj || "").replace(/\D/g, "") === cnpj
-        );
+        await this.garantirSessaoNuvem(chave || clienteId);
+        let cloudData = null;
+        if (chave) {
+          const snap = await getDoc(doc(db, "licencas", chave));
+          if (snap && snap.exists()) {
+            cloudData = { docId: snap.id, ...snap.data() };
+          }
+        }
+        if (!cloudData) {
+          const res = await buscarLicencaNuvem({ chave, cnpj, clienteId });
+          if (res && res.ok && res.licenca) {
+            cloudData = { docId: res.licenca.id || res.licenca.docId, ...res.licenca };
+          }
+        }
         if (!cloudData) {
           if (feedbackEl) {
             feedbackEl.style.background = "#fee2e2";
@@ -48111,7 +55814,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
           feedbackEl.innerHTML = `\u{1F6D1} Limite de ${limite} computador(es) atingido! (${terminais.length} em uso).`;
         }
         if (window.App && typeof window.App.showToast === "function") {
-          window.App.showToast("\u{1F6D1} Limite atingido! Desvincule no Master ou adquira mais acessos.", "error");
+          window.App.showToast("\u{1F6D1} Limite atingido! Pe\xE7a ao administrador para desvincular um computador.", "error");
         }
       } catch (err) {
         console.log("Erro ao rechecar:", err);
@@ -48167,10 +55870,10 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       if (statusTxt) {
         statusTxt.textContent = diffDias > 0 ? `Sua licen\xE7a vence em ${diffDias} dias (${expiraEm.toLocaleDateString("pt-BR")}).` : `Sua licen\xE7a vence hoje (${expiraEm.toLocaleDateString("pt-BR")}).`;
       }
-      if (pixKeyEl) pixKeyEl.textContent = lic.chavePixSuporte || "19989632127";
+      if (pixKeyEl) pixKeyEl.textContent = lic && lic.chavePixSuporte && lic.chavePixSuporte !== "19999997777" ? lic.chavePixSuporte : "19989632127";
       if (valorEl) valorEl.textContent = `R$ ${(lic.valorMensal || 89.9).toFixed(2).replace(".", ",")}`;
       if (whatsappLink) {
-        const numClean = (lic.whatsappSuporte || "19989632127").replace(/\D/g, "");
+        const numClean = (lic && lic.whatsappSuporte && lic.whatsappSuporte !== "19999997777" && lic.whatsappSuporte !== "(19) 99999-7777" ? lic.whatsappSuporte : "19989632127").replace(/\D/g, "");
         const msg = encodeURIComponent(`Ol\xE1 Douglas, segue o comprovante de pagamento da mensalidade do FlowPDV da empresa "${lic.razaoSocial || "Minha Loja"}" (Licen\xE7a: ${lic.chaveLicenca || ""}).`);
         whatsappLink.href = `https://wa.me/55${numClean}?text=${msg}`;
       }
@@ -48195,370 +55898,849 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
     }
   };
 
-  // src/js/admin-master.js
-  var AdminMasterModule = {
-    adegasCadastradas: [],
+  // src/js/cloud-sync.js
+  var COLECAO_BACKUPS = "backups_lojas";
+  var COLECAO_LEGADA = "backups_adegas";
+  var PARTES = {
+    produtos: { lote: 300, inverter: false },
+    vendas: { lote: 200, inverter: true },
+    clientes: { lote: 400, inverter: false },
+    turnosHistorico: { lote: 100, inverter: true }
+  };
+  var CHAVE_MANIFESTO = "flowpdv_partes_manifesto";
+  var CHAVE_ASSINATURAS = "flowpdv_partes_hash";
+  var CHAVE_MOV_ENVIADOS = "flowpdv_movimentos_enviados";
+  var CHAVE_MOV_RECEBIDOS = "flowpdv_ultimo_mov_sync";
+  var CloudSyncModule = {
+    debounceTimer: null,
+    ouvinteAtivo: false,
+    isProcessandoRecebimento: false,
+    marcaDaguaMovimentos: null,
+    timerReconexaoOuvinte: null,
     init() {
-      this.carregarAdegasDaNuvem();
-    },
-    async carregarAdegasDaNuvem() {
-      try {
-        const querySnapshot = await getDocs(collection(db, "licencas"));
-        const lista = [];
-        querySnapshot.forEach((d) => {
-          const data = d.data();
-          if (data) {
-            lista.push({
-              id: d.id,
-              chaveLicenca: data.chaveLicenca || d.id,
-              nome: data.nome || data.razaoSocial || "Adega Sem Nome",
-              documento: data.documento || data.cnpj || "00.000.000/0001-00",
-              logoUrl: data.logoUrl || "",
-              whatsapp: data.whatsapp || "(19) 98963-2127",
-              plano: data.plano || "Mensal Pro (R$ 89,90/m\xEAs)",
-              status: data.status || "ativa",
-              layoutPdv: data.layoutPdv || "moderno",
-              dataVencimento: data.vencimento || data.dataExpiracao ? (data.vencimento || data.dataExpiracao).includes("T") ? (data.vencimento || data.dataExpiracao).split("T")[0] : data.vencimento || data.dataExpiracao : ""
-            });
-          }
-        });
-        if (lista.length > 0) {
-          this.adegasCadastradas = lista;
-          localStorage.setItem("flowpdv_master_clientes", JSON.stringify(lista));
-        } else {
-          const saved = localStorage.getItem("flowpdv_master_clientes");
-          if (saved) {
-            this.adegasCadastradas = JSON.parse(saved);
-          }
-        }
-      } catch (e) {
-        console.log("[MasterCloud] Erro ao buscar licencas:", e);
-        const saved = localStorage.getItem("flowpdv_master_clientes");
-        if (saved) {
-          this.adegasCadastradas = JSON.parse(saved);
-        }
-      }
-      this.renderListaAdegas();
-    },
-    renderListaAdegas() {
-      const tbody = document.getElementById("admin-adegas-tbody");
-      const faturamentoEl = document.getElementById("admin-total-faturamento-mrr");
-      const totalClientesEl = document.getElementById("admin-total-clientes-count");
-      if (totalClientesEl) totalClientesEl.textContent = this.adegasCadastradas.length;
-      const ativas = this.adegasCadastradas.filter((a) => a.status === "ativa");
-      const totalMRR = ativas.length * 89.9;
-      if (faturamentoEl) faturamentoEl.textContent = `R$ ${totalMRR.toFixed(2).replace(".", ",")} / m\xEAs`;
-      if (!tbody) return;
-      if (this.adegasCadastradas.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 24px; color: var(--text-dim);">Nenhuma adega cadastrada na nuvem. Clique em "+ Novo Cliente Master" para cadastrar.</td></tr>`;
-        return;
-      }
-      tbody.innerHTML = this.adegasCadastradas.map((a) => {
-        const isAtiva = a.status === "ativa";
-        const logoHtml = a.logoUrl && a.logoUrl.length > 5 ? `<img src="${a.logoUrl}" style="width: 36px; height: 36px; object-fit: contain; border-radius: 6px; background: #fff; border: 1px solid var(--border-card);">` : `<div style="width: 36px; height: 36px; border-radius: 6px; background: rgba(124, 58, 237, 0.1); color: #7c3aed; display: flex; align-items: center; justify-content: center; font-weight: 800;">\u{1F377}</div>`;
-        const hoje = /* @__PURE__ */ new Date();
-        hoje.setHours(0, 0, 0, 0);
-        const partes = (a.dataVencimento || "").split("-");
-        let diffDias = 30;
-        if (partes.length === 3) {
-          const venc = new Date(parseInt(partes[0]), parseInt(partes[1]) - 1, parseInt(partes[2]), 0, 0, 0);
-          diffDias = Math.round((venc.getTime() - hoje.getTime()) / (1e3 * 60 * 60 * 24));
-        }
-        let statusBadgeHtml = "";
-        if (!isAtiva) {
-          statusBadgeHtml = '<span class="badge-stock zero">\u{1F6D1} Bloqueada</span>';
-        } else if (diffDias < 0) {
-          statusBadgeHtml = '<span class="badge-stock low" style="background: #fee2e2; color: #b91c1c; font-weight: 800;">\u26A0\uFE0F Vencida</span>';
-        } else if (diffDias === 0) {
-          statusBadgeHtml = '<span class="badge-stock low" style="background: #fee2e2; color: #b91c1c; font-weight: 800;">\u23F3 Vence Hoje</span>';
-        } else if (diffDias === 1) {
-          statusBadgeHtml = '<span class="badge-stock low" style="background: #fef3c7; color: #b45309; font-weight: 800;">\u23F3 Vence Amanh\xE3</span>';
-        } else if (diffDias <= 5) {
-          statusBadgeHtml = `<span class="badge-stock low">\u23F3 Vence em ${diffDias}d</span>`;
-        } else {
-          statusBadgeHtml = `<span class="badge-stock ok">\u{1F7E2} Ativa (${diffDias}d)</span>`;
-        }
-        return `
-        <tr>
-          <td>
-            <div style="display: flex; align-items: center; gap: 10px;">
-              ${logoHtml}
-              <div>
-                <strong style="color: var(--text-main); font-size: 14px; display: block;">${a.nome}</strong>
-                <span style="font-size: 11px; color: var(--text-muted);">${a.documento} \u2022 <code style="color: #7c3aed;">${a.chaveLicenca || a.id}</code></span>
-              </div>
-            </div>
-          </td>
-          <td>${a.whatsapp || "-"}</td>
-          <td><span style="font-size: 12px; color: var(--accent-amber); font-weight: 700;">${a.plano}</span></td>
-          <td><strong style="font-family: 'JetBrains Mono';">${(/* @__PURE__ */ new Date(a.dataVencimento + "T12:00:00")).toLocaleDateString("pt-BR")}</strong></td>
-          <td>
-            ${statusBadgeHtml}
-          </td>
-          <td style="text-align: right;">
-            <button type="button" class="btn-primary-action" style="padding: 4px 8px; height: 30px; font-size: 11px; display: inline-flex; background: #0284c7; color: #fff; margin-right: 4px;" onclick="AdminMasterModule.usarNesteTerminal('${a.id}')" title="Ativar esta Adega neste terminal PDV">
-              \u{1F4BB} Usar Aqui
-            </button>
-            <button type="button" class="btn-primary-action" style="padding: 4px 10px; height: 30px; font-size: 11px; display: inline-flex;" onclick="AdminMasterModule.abrirModalEditar('${a.id}')">
-              \u270F\uFE0F Editar Logo / Dados
-            </button>
-            <button type="button" class="btn-primary-action" style="padding: 4px 10px; height: 30px; font-size: 11px; display: inline-flex; background: var(--accent-green); color: #fff; margin-left: 4px;" onclick="AdminMasterModule.adicionar30Dias('${a.id}')">
-              \u2795 +30d
-            </button>
-            <button type="button" class="btn-action-sm ${isAtiva ? "danger" : ""}" style="margin-left: 4px;" onclick="AdminMasterModule.toggleBloqueio('${a.id}')" title="${isAtiva ? "Bloquear" : "Desbloquear"}">
-              ${isAtiva ? "\u{1F512}" : "\u{1F513}"}
-            </button>
-          </td>
-        </tr>
-      `;
-      }).join("");
-    },
-    async usarNesteTerminal(chaveOuId) {
-      const adega = this.adegasCadastradas.find((a) => a.id === chaveOuId || a.chaveLicenca === chaveOuId);
-      if (!adega) return;
-      const chave = adega.chaveLicenca || adega.id;
-      await LicencaModule.ativarTerminal(chave);
-      if (window.App && typeof window.App.showToast === "function") {
-        window.App.showToast(`\u{1F4BB} Terminal alternado para ${adega.nome}!`, "success");
+      this.sincronizacaoInicialAuto();
+      this.iniciarOuvinteTempoReal();
+      this.configurarMonitorConexao();
+      const turnoAtual = StorageService.getTurnoAtual();
+      if (turnoAtual && (turnoAtual.status === "aberto" || turnoAtual.dataAbertura)) {
+        setTimeout(() => {
+          this.enviarAlteracaoNuvem("turno_ativo_startup");
+        }, 500);
       }
     },
-    abrirModalNovoCliente() {
-      const modal = document.getElementById("modal-master-cliente");
-      const chaveEl = document.getElementById("master-chave-input");
-      const nomeEl = document.getElementById("master-nome-input");
-      const cnpjEl = document.getElementById("master-cnpj-input");
-      const logoEl = document.getElementById("master-logo-input");
-      const whatsEl = document.getElementById("master-whats-input");
-      const planoEl = document.getElementById("master-plano-input");
-      const vencEl = document.getElementById("master-venc-input");
-      const statusEl = document.getElementById("master-status-input");
-      const comandasEl = document.getElementById("master-comandas-select");
-      const layoutPdvEl = document.getElementById("master-layoutpdv-select");
-      if (chaveEl) chaveEl.value = "LIC-FLOW-" + Math.floor(1e5 + Math.random() * 9e5);
-      if (nomeEl) nomeEl.value = "";
-      if (cnpjEl) cnpjEl.value = "";
-      if (logoEl) logoEl.value = "";
-      if (whatsEl) whatsEl.value = "(19) 98963-2127";
-      if (planoEl) planoEl.value = "Mensal Pro (R$ 89,90/m\xEAs)";
-      if (comandasEl) comandasEl.value = "mesas_e_comandas";
-      if (vencEl) {
-        const d = /* @__PURE__ */ new Date();
-        d.setDate(d.getDate() + 30);
-        vencEl.value = d.toISOString().split("T")[0];
-      }
-      if (statusEl) statusEl.value = "ativa";
-      if (layoutPdvEl) layoutPdvEl.value = "moderno";
-      if (modal) modal.classList.add("active");
-    },
-    abrirModalEditar(id) {
-      const adega = this.adegasCadastradas.find((a) => a.id === id || a.chaveLicenca === id);
-      if (!adega) return;
-      const modal = document.getElementById("modal-master-cliente");
-      const chaveEl = document.getElementById("master-chave-input");
-      const nomeEl = document.getElementById("master-nome-input");
-      const cnpjEl = document.getElementById("master-cnpj-input");
-      const logoEl = document.getElementById("master-logo-input");
-      const whatsEl = document.getElementById("master-whats-input");
-      const planoEl = document.getElementById("master-plano-input");
-      const vencEl = document.getElementById("master-venc-input");
-      const statusEl = document.getElementById("master-status-input");
-      const comandasEl = document.getElementById("master-comandas-select");
-      const layoutPdvEl = document.getElementById("master-layoutpdv-select");
-      if (chaveEl) chaveEl.value = adega.chaveLicenca || adega.id;
-      if (nomeEl) nomeEl.value = adega.nome || "";
-      if (cnpjEl) cnpjEl.value = adega.documento || "";
-      if (logoEl) logoEl.value = adega.logoUrl || "";
-      if (whatsEl) whatsEl.value = adega.whatsapp || "";
-      if (planoEl) planoEl.value = adega.plano || "Mensal Pro (R$ 89,90/m\xEAs)";
-      if (vencEl) vencEl.value = adega.dataVencimento || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
-      if (statusEl) statusEl.value = adega.status || "ativa";
-      if (comandasEl) comandasEl.value = adega.moduloComandas || "mesas_e_comandas";
-      if (layoutPdvEl) layoutPdvEl.value = adega.layoutPdv || "moderno";
-      if (modal) modal.classList.add("active");
-    },
-    fecharModal() {
-      const modal = document.getElementById("modal-master-cliente");
-      if (modal) modal.classList.remove("active");
-    },
-    async salvarClienteMaster() {
-      const chaveEl = document.getElementById("master-chave-input");
-      const nomeEl = document.getElementById("master-nome-input");
-      const cnpjEl = document.getElementById("master-cnpj-input");
-      const logoEl = document.getElementById("master-logo-input");
-      const whatsEl = document.getElementById("master-whats-input");
-      const planoEl = document.getElementById("master-plano-input");
-      const vencEl = document.getElementById("master-venc-input");
-      const statusEl = document.getElementById("master-status-input");
-      const comandasEl = document.getElementById("master-comandas-select");
-      const layoutPdvEl = document.getElementById("master-layoutpdv-select");
-      const chave = chaveEl ? chaveEl.value.trim().toUpperCase() : "";
-      const nome = nomeEl ? nomeEl.value.trim() : "";
-      const cnpj = cnpjEl ? cnpjEl.value.trim() : "";
-      const logoUrl = logoEl ? logoEl.value.trim() : "";
-      const whatsapp = whatsEl ? whatsEl.value.trim() : "";
-      const plano = planoEl ? planoEl.value : "Mensal Pro (R$ 89,90/m\xEAs)";
-      const vencimento = vencEl ? vencEl.value : "";
-      const status = statusEl ? statusEl.value : "ativa";
-      const moduloComandas = comandasEl ? comandasEl.value : "mesas_e_comandas";
-      const layoutPdv = layoutPdvEl ? layoutPdvEl.value : "moderno";
-      if (!chave || !nome) {
+    configurarMonitorConexao() {
+      this.atualizarStatusConexaoUI(navigator.onLine);
+      window.addEventListener("online", () => {
+        console.log("[CloudSync] Conex\xE3o com a internet restabelecida!");
+        this.atualizarStatusConexaoUI("sincronizando");
         if (window.App && typeof window.App.showToast === "function") {
-          window.App.showToast("\u26A0\uFE0F Preencha a Chave de Licen\xE7a e o Nome da Adega!", "warning");
+          window.App.showToast("\u{1F310} Conex\xE3o restabelecida! Sincronizando dados com a nuvem...", "info");
         }
-        return;
-      }
-      const clienteData = {
-        id: chave,
-        chaveLicenca: chave,
-        nome,
-        razaoSocial: nome,
-        documento: cnpj,
-        cnpj,
-        logoUrl,
-        whatsapp,
-        plano,
-        vencimento,
-        status,
-        moduloComandas,
-        layoutPdv,
-        atualizadoEm: (/* @__PURE__ */ new Date()).toISOString()
-      };
-      try {
-        await setDoc(doc(db, "licencas", chave), clienteData, { merge: true });
-        console.log("[MasterCloud] Salvo no Firestore Cloud:", chave);
-      } catch (e) {
-        console.log("[MasterCloud] Erro ao salvar no Firestore:", e);
-      }
-      const idx = this.adegasCadastradas.findIndex((a) => a.id === chave || a.chaveLicenca === chave);
-      if (idx >= 0) {
-        this.adegasCadastradas[idx] = { ...this.adegasCadastradas[idx], ...clienteData, dataVencimento: vencimento };
+        setTimeout(() => {
+          this.sincronizacaoInicialAuto();
+          this.iniciarOuvinteTempoReal();
+          this.enviarAlteracaoNuvem("retorno_conexao");
+          setTimeout(() => this.atualizarStatusConexaoUI(true), 1500);
+        }, 800);
+      });
+      window.addEventListener("offline", () => {
+        console.warn("[CloudSync] Terminal desconectado da internet. Operando em modo offline.");
+        this.atualizarStatusConexaoUI(false);
+        if (window.App && typeof window.App.showToast === "function") {
+          window.App.showToast("\u26A0\uFE0F Modo Offline: Sem conex\xE3o com a internet. Suas opera\xE7\xF5es ser\xE3o salvas e sincronizadas automaticamente ao voltar a rede.", "warning", 8e3);
+        }
+      });
+    },
+    atualizarStatusConexaoUI(status) {
+      const el = document.getElementById("header-status-conexao");
+      if (!el) return;
+      if (status === "sincronizando") {
+        el.innerHTML = "\u{1F7E1} Sincronizando...";
+        el.style.background = "#fef3c7";
+        el.style.color = "#b45309";
+        el.style.borderColor = "#fde68a";
+        el.title = "Enviando e recebendo dados da nuvem";
+      } else if (status === true || status === "online") {
+        el.innerHTML = "\u{1F7E2} Online";
+        el.style.background = "#dcfce7";
+        el.style.color = "#15803d";
+        el.style.borderColor = "#bbf7d0";
+        el.title = "Conectado \xE0 nuvem e sincronizado em tempo real";
       } else {
-        this.adegasCadastradas.push({ ...clienteData, dataVencimento: vencimento });
-      }
-      localStorage.setItem("flowpdv_master_clientes", JSON.stringify(this.adegasCadastradas));
-      const localLic = StorageService.getLicenca() || {};
-      if ((localLic.chaveLicenca || "").toUpperCase() === chave) {
-        localLic.razaoSocial = nome;
-        localLic.cnpj = cnpj;
-        localLic.logoUrl = logoUrl;
-        localLic.status = status;
-        localLic.moduloComandas = moduloComandas;
-        localLic.layoutPdv = layoutPdv;
-        localLic.dataExpiracao = vencimento + "T23:59:59.000Z";
-        StorageService.saveLicenca(localLic);
-        if (window.App && typeof window.App.aplicarLayoutPdv === "function") {
-          window.App.aplicarLayoutPdv(layoutPdv);
-        }
-        if (window.ComandasModule && typeof window.ComandasModule.setModoAtendimento === "function") {
-          window.ComandasModule.setModoAtendimento(moduloComandas);
-        }
-        const config = StorageService.getConfig() || {};
-        config.nomeEmpresa = nome;
-        config.nomeLoja = nome;
-        config.cnpj = cnpj;
-        if (logoUrl) config.logoUrl = logoUrl;
-        StorageService.saveConfig(config);
-        if (window.App && typeof window.App.carregarConfiguracoes === "function") {
-          window.App.carregarConfiguracoes();
-        }
-      }
-      this.fecharModal();
-      this.renderListaAdegas();
-      if (window.App && typeof window.App.showToast === "function") {
-        window.App.showToast(`\u{1F389} Cliente e Logo da adega "${nome}" sincronizados na Nuvem Cloud Firestore!`, "success");
+        el.innerHTML = "\u{1F534} Offline";
+        el.style.background = "#fee2e2";
+        el.style.color = "#dc2626";
+        el.style.borderColor = "#fca5a5";
+        el.title = "Operando localmente. Conex\xE3o com a nuvem indispon\xEDvel";
       }
     },
-    async adicionar30Dias(id) {
-      const adega = this.adegasCadastradas.find((a) => a.id === id || a.chaveLicenca === id);
-      if (!adega) return;
-      const dataAtual = new Date(adega.dataVencimento > (/* @__PURE__ */ new Date()).toISOString().split("T")[0] ? adega.dataVencimento : /* @__PURE__ */ new Date());
-      dataAtual.setDate(dataAtual.getDate() + 30);
-      adega.dataVencimento = dataAtual.toISOString().split("T")[0];
-      adega.status = "ativa";
-      try {
-        await setDoc(doc(db, "licencas", adega.chaveLicenca || adega.id), {
-          vencimento: adega.dataVencimento,
-          status: "ativa"
-        }, { merge: true });
-      } catch (e) {
-        console.log("[MasterCloud] Erro +30d:", e);
-      }
-      localStorage.setItem("flowpdv_master_clientes", JSON.stringify(this.adegasCadastradas));
-      this.renderListaAdegas();
-      if (window.App && typeof window.App.showToast === "function") {
-        window.App.showToast(`\u{1F389} +30 Dias concedidos para ${adega.nome}! Vencimento: ${dataAtual.toLocaleDateString("pt-BR")}`, "success");
-      }
-    },
-    async toggleBloqueio(id) {
-      const adega = this.adegasCadastradas.find((a) => a.id === id || a.chaveLicenca === id);
-      if (!adega) return;
-      adega.status = adega.status === "ativa" ? "bloqueada" : "ativa";
-      try {
-        await setDoc(doc(db, "licencas", adega.chaveLicenca || adega.id), {
-          status: adega.status
-        }, { merge: true });
-      } catch (e) {
-        console.log("[MasterCloud] Erro toggleBloqueio:", e);
-      }
-      localStorage.setItem("flowpdv_master_clientes", JSON.stringify(this.adegasCadastradas));
-      this.renderListaAdegas();
-      if (window.App && typeof window.App.showToast === "function") {
-        window.App.showToast(`Status de ${adega.nome} alterado na nuvem para: ${adega.status.toUpperCase()}`, "info");
-      }
-    },
-    usarLicencaTerminalAtual() {
+    getChaveLicenca() {
       const lic = StorageService.getLicenca() || {};
-      const chaveEl = document.getElementById("master-chave-input");
-      const nomeEl = document.getElementById("master-nome-input");
-      const cnpjEl = document.getElementById("master-cnpj-input");
-      const logoEl = document.getElementById("master-logo-input");
-      if (chaveEl) chaveEl.value = lic.chaveLicenca || "";
-      if (nomeEl) nomeEl.value = lic.razaoSocial || "";
-      if (cnpjEl) cnpjEl.value = lic.cnpj || "";
-      if (logoEl) logoEl.value = lic.logoUrl || "";
-      this.atualizarPreviewLogo();
-      if (window.App && typeof window.App.showToast === "function") {
-        window.App.showToast("\u{1F3AF} Dados da licen\xE7a ativa desta m\xE1quina preenchidos no formul\xE1rio!", "info");
+      return (lic.chaveLicenca || lic.clienteId || "").trim().toUpperCase();
+    },
+    pacotePertenceALicenca(cloudData) {
+      const chaveAtual = this.getChaveLicenca();
+      const chavePacote = String(cloudData?.chaveLicenca || "").trim().toUpperCase();
+      return Boolean(chaveAtual && chavePacote && chaveAtual === chavePacote);
+    },
+    mesclarItensPorId(baseA = [], baseB = []) {
+      return mesclarItensPorId(baseA, baseB);
+    },
+    mesclarProdutosComEstoque(nuvem = [], local = [], movimentosNuvem = []) {
+      const movimentosLocais = StorageService.getMovimentosEstoque ? StorageService.getMovimentosEstoque() : [];
+      const { produtos, novosMovimentos } = consolidarProdutosComMovimentos({
+        produtosNuvem: nuvem,
+        produtosLocais: local,
+        movimentosNuvem,
+        movimentosLocais
+      });
+      if (novosMovimentos.length && StorageService.saveMovimentosEstoque) {
+        StorageService.saveMovimentosEstoque([...movimentosLocais, ...novosMovimentos]);
+      }
+      return produtos;
+    },
+    normalizarMovimentosNuvem(raw) {
+      return normalizarMovimentos(raw);
+    },
+    mapearMovimentosParaNuvem(lista) {
+      return mapearMovimentosPorId(lista);
+    },
+    // ---------------------------------------------------------------------------
+    // Persistência particionada: main doc pequeno + subcoleções `partes` e `movimentos`
+    // ---------------------------------------------------------------------------
+    async garantirSessao(chave) {
+      const alvo = String(chave || this.getChaveLicenca() || "").trim().toUpperCase();
+      if (!alvo) return false;
+      return garantirSessaoLoja(alvo, { deviceId: StorageService.getDeviceId() });
+    },
+    getManifestos() {
+      try {
+        return JSON.parse(localStorage.getItem(CHAVE_MANIFESTO) || "{}") || {};
+      } catch (e) {
+        return {};
       }
     },
-    selecionarFotoArquivo(event) {
-      const file = event.target.files ? event.target.files[0] : null;
-      if (!file) return;
-      if (file.size > 2 * 1024 * 1024) {
+    getManifesto(chave) {
+      return this.getManifestos()[chave] || {};
+    },
+    salvarManifesto(chave, manifesto) {
+      const todos = this.getManifestos();
+      todos[chave] = { ...todos[chave] || {}, ...manifesto || {} };
+      localStorage.setItem(CHAVE_MANIFESTO, JSON.stringify(todos));
+    },
+    assinar(texto) {
+      let hash = 2166136261;
+      for (let i = 0; i < texto.length; i++) {
+        hash ^= texto.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
+      }
+      return (hash >>> 0).toString(36) + ":" + texto.length;
+    },
+    getAssinaturas(chave) {
+      try {
+        const todas = JSON.parse(localStorage.getItem(CHAVE_ASSINATURAS) || "{}") || {};
+        return todas[chave] || {};
+      } catch (e) {
+        return {};
+      }
+    },
+    salvarAssinaturas(chave, assinaturas) {
+      let todas = {};
+      try {
+        todas = JSON.parse(localStorage.getItem(CHAVE_ASSINATURAS) || "{}") || {};
+      } catch (e) {
+      }
+      todas[chave] = assinaturas;
+      localStorage.setItem(CHAVE_ASSINATURAS, JSON.stringify(todas));
+    },
+    async gravarParte(chave, nome, lista, config) {
+      const ordenada = config.inverter ? [...lista || []].reverse() : lista || [];
+      const lotes = dividirEmLotes(ordenada, config.lote);
+      const atualizadoEm = (/* @__PURE__ */ new Date()).toISOString();
+      const assinaturas = this.getAssinaturas(chave);
+      const gravadas = { ...assinaturas };
+      await Promise.all(lotes.map(async (itens, indice) => {
+        const idLote = `${nome}_${indice}`;
+        const assinatura = this.assinar(JSON.stringify(itens));
+        if (assinaturas[idLote] === assinatura) return;
+        await setDoc(
+          doc(db, COLECAO_BACKUPS, chave, "partes", idLote),
+          { nome, indice, total: lotes.length, itens, atualizadoEm }
+        );
+        gravadas[idLote] = assinatura;
+      }));
+      const anterior = parseInt(this.getManifesto(chave)[nome], 10) || 0;
+      const remocoes = [];
+      for (let i = lotes.length; i < anterior; i++) {
+        const idLote = `${nome}_${i}`;
+        delete gravadas[idLote];
+        remocoes.push(deleteDoc(doc(db, COLECAO_BACKUPS, chave, "partes", idLote)).catch(() => {
+        }));
+      }
+      await Promise.all(remocoes);
+      this.salvarAssinaturas(chave, gravadas);
+      return lotes.length;
+    },
+    async lerParte(chave, nome, total) {
+      const qtd = parseInt(total, 10) || 0;
+      if (qtd <= 0) return [];
+      const snaps = await Promise.all(
+        Array.from({ length: qtd }, (_, i) => getDoc(doc(db, COLECAO_BACKUPS, chave, "partes", `${nome}_${i}`)).catch(() => null))
+      );
+      const itens = [];
+      snaps.forEach((snap) => {
+        if (!snap || !snap.exists()) return;
+        const dados = snap.data() || {};
+        if (Array.isArray(dados.itens)) itens.push(...dados.itens);
+      });
+      return PARTES[nome] && PARTES[nome].inverter ? itens.reverse() : itens;
+    },
+    async gravarPacote(chave, pacote, movimentosEstoque) {
+      await this.garantirSessao(chave);
+      const envio = { ...pacote };
+      const manifesto = {};
+      if (Array.isArray(envio.usuarios) && envio.usuarios.length === 0 && pacote.motivo !== "limpeza_manual_confirmada") {
+        delete envio.usuarios;
+      }
+      for (const [nome, config] of Object.entries(PARTES)) {
+        if (!Array.isArray(envio[nome])) continue;
+        if (nome === "produtos" && envio[nome].length === 0 && pacote.motivo !== "limpeza_manual_confirmada") {
+          delete envio[nome];
+          continue;
+        }
+        manifesto[nome] = await this.gravarParte(chave, nome, envio[nome], config);
+        envio[nome] = deleteField();
+      }
+      envio.movimentosEstoque = deleteField();
+      if (Object.keys(manifesto).length > 0) {
+        envio.partes = manifesto;
+        this.salvarManifesto(chave, manifesto);
+      }
+      await setDoc(doc(db, COLECAO_BACKUPS, chave), envio, { merge: true });
+      await this.enviarMovimentosPendentes(chave, movimentosEstoque);
+    },
+    async completarPacote(chave, dados, legado = false) {
+      if (!dados || legado || !dados.partes) return dados;
+      const manifesto = dados.partes || {};
+      this.salvarManifesto(chave, manifesto);
+      const nomes = Object.keys(PARTES).filter((nome) => manifesto[nome] !== void 0);
+      const listas = await Promise.all(nomes.map((nome) => this.lerParte(chave, nome, manifesto[nome])));
+      const completo = { ...dados };
+      nomes.forEach((nome, i) => {
+        completo[nome] = listas[i];
+      });
+      return completo;
+    },
+    async lerPacote(chave) {
+      await this.garantirSessao(chave);
+      let snap = await getDoc(doc(db, COLECAO_BACKUPS, chave));
+      let legado = false;
+      if (!snap.exists()) {
+        snap = await getDoc(doc(db, COLECAO_LEGADA, chave));
+        legado = true;
+      }
+      if (!snap.exists()) return null;
+      const dados = snap.data() || {};
+      const completo = await this.completarPacote(chave, dados, legado);
+      completo.movimentosEstoque = await this.baixarMovimentosNovos(chave, completo.movimentosEstoque);
+      return completo;
+    },
+    /**
+     * Movimentos ficam em documentos individuais: cada terminal só escreve os
+     * seus, então dois caixas nunca sobrescrevem a baixa de estoque um do outro.
+     */
+    async enviarMovimentosPendentes(chave, movimentos) {
+      const lista = Array.isArray(movimentos) ? movimentos : [];
+      if (lista.length === 0) return;
+      let enviados;
+      try {
+        enviados = new Set(JSON.parse(localStorage.getItem(CHAVE_MOV_ENVIADOS) || "[]"));
+      } catch (e) {
+        enviados = /* @__PURE__ */ new Set();
+      }
+      const pendentes = lista.filter((m) => m && m.id && !enviados.has(m.id)).slice(-300);
+      if (pendentes.length === 0) return;
+      await Promise.all(pendentes.map((m) => setDoc(
+        doc(db, COLECAO_BACKUPS, chave, "movimentos", String(m.id)),
+        m
+      )));
+      pendentes.forEach((m) => enviados.add(m.id));
+      localStorage.setItem(CHAVE_MOV_ENVIADOS, JSON.stringify(Array.from(enviados).slice(-4e3)));
+    },
+    async baixarMovimentosNovos(chave, movimentosLegado = null) {
+      const meuTerminal = StorageService.getDeviceId();
+      const desde = localStorage.getItem(CHAVE_MOV_RECEBIDOS) || new Date(Date.now() - 3 * 24 * 60 * 60 * 1e3).toISOString();
+      try {
+        const consulta = query(
+          collection(db, COLECAO_BACKUPS, chave, "movimentos"),
+          where("at", ">", desde),
+          orderBy("at"),
+          limit(800)
+        );
+        const snap = await getDocs(consulta);
+        const lista = [];
+        let marcaDagua = desde;
+        snap.forEach((d) => {
+          const mov = d.data();
+          if (!mov || !mov.id) return;
+          if (mov.at && mov.at > marcaDagua) marcaDagua = mov.at;
+          if (mov.terminalId && mov.terminalId === meuTerminal) return;
+          lista.push(mov);
+        });
+        this.marcaDaguaMovimentos = marcaDagua;
+        if (lista.length === 0) return normalizarMovimentos(movimentosLegado);
+        return lista;
+      } catch (e) {
+        console.warn("[CloudSync] N\xE3o foi poss\xEDvel ler os movimentos de estoque:", e);
+        return normalizarMovimentos(movimentosLegado);
+      }
+    },
+    confirmarMovimentosAplicados() {
+      if (this.marcaDaguaMovimentos) {
+        localStorage.setItem(CHAVE_MOV_RECEBIDOS, this.marcaDaguaMovimentos);
+        this.marcaDaguaMovimentos = null;
+      }
+    },
+    mesclarCategorias(baseA = [], baseB = []) {
+      const excluidas = (StorageService.getCategoriasExcluidas ? StorageService.getCategoriasExcluidas() : []).map((c) => String(c).toLowerCase().trim());
+      const categorias = [];
+      [...baseA || [], ...baseB || []].forEach((categoria) => {
+        const nome = String(categoria || "").trim();
+        if (nome && !excluidas.includes(nome.toLowerCase()) && !categorias.some((item) => item.toLowerCase() === nome.toLowerCase())) {
+          categorias.push(nome);
+        }
+      });
+      return categorias;
+    },
+    async sincronizacaoInicialAuto() {
+      try {
+        const chave = this.getChaveLicenca();
+        if (!chave) return;
+        const cloudData = await this.lerPacote(chave);
+        const produtosLocais = StorageService.getProdutos() || [];
+        const contasLocais = StorageService.getContasPagar() || [];
+        const clientesLocais = StorageService.getClientes() || [];
+        const vendasLocais = StorageService.getVendas() || [];
+        if (cloudData) {
+          if (!this.pacotePertenceALicenca(cloudData)) {
+            console.warn("[CloudSync] Backup inicial ignorado: licen\xE7a incompat\xEDvel.");
+            return;
+          }
+          const cloudProds = Array.isArray(cloudData.produtos) ? cloudData.produtos : [];
+          const cloudContas = Array.isArray(cloudData.contasPagar) ? cloudData.contasPagar : [];
+          const cloudClientes = Array.isArray(cloudData.clientes) ? cloudData.clientes : [];
+          const cloudVendas = Array.isArray(cloudData.vendas) ? cloudData.vendas : [];
+          if (Array.isArray(cloudData.produtosExcluidos)) {
+            const excluidos = new Set(StorageService.getProdutosExcluidosIds());
+            cloudData.produtosExcluidos.forEach((id) => excluidos.add(String(id)));
+            localStorage.setItem("adega_produtos_excluidos_ids", JSON.stringify(Array.from(excluidos)));
+          }
+          if (Array.isArray(cloudData.categoriasExcluidas) && StorageService.adicionarCategoriaExcluida) {
+            cloudData.categoriasExcluidas.forEach((c) => StorageService.adicionarCategoriaExcluida(c));
+          }
+          const produtosConsolidados = this.mesclarProdutosComEstoque(cloudProds, produtosLocais, cloudData.movimentosEstoque);
+          const contasConsolidadas = this.mesclarItensPorId(cloudContas, contasLocais);
+          const clientesConsolidados = this.mesclarItensPorId(cloudClientes, clientesLocais);
+          const vendasConsolidadas = this.mesclarItensPorId(cloudVendas, vendasLocais);
+          StorageService.saveProdutos(produtosConsolidados);
+          StorageService.saveContasPagar(contasConsolidadas);
+          StorageService.saveClientes(clientesConsolidados);
+          localStorage.setItem("adega_vendas", JSON.stringify(vendasConsolidadas));
+          this.confirmarMovimentosAplicados();
+          if (Array.isArray(cloudData.comandas)) {
+            StorageService.saveComandas(mesclarComandas(cloudData.comandas, StorageService.getComandas()));
+          }
+          const categoriasLocais = StorageService.getCategorias() || [];
+          const categoriasConsolidadas = this.mesclarCategorias(cloudData.categorias, categoriasLocais);
+          if (categoriasConsolidadas.length > 0) {
+            StorageService.salvarCategorias(categoriasConsolidadas);
+          }
+          if (Array.isArray(cloudData.usuarios) && cloudData.usuarios.length > 0) {
+            StorageService.saveUsuarios(cloudData.usuarios);
+          }
+          if (Array.isArray(cloudData.turnosHistorico) && cloudData.turnosHistorico.length > 0) {
+            StorageService.salvarHistoricoTurnos(cloudData.turnosHistorico);
+          }
+          if (produtosConsolidados.length > cloudProds.length || contasConsolidadas.length > cloudContas.length || clientesConsolidados.length > cloudClientes.length || vendasConsolidadas.length > cloudVendas.length || categoriasConsolidadas.length > (cloudData.categorias || []).length) {
+            console.log("[CloudSync] Consolidando novos itens locais para a nuvem...");
+            this.enviarAlteracaoNuvem("consolidacao_unificada");
+          }
+          if (window.EstoqueModule && typeof window.EstoqueModule.renderTabelaProdutos === "function") {
+            window.EstoqueModule.renderTabelaProdutos();
+          }
+          if (window.GerenciaModule && typeof window.GerenciaModule.renderContasPagar === "function") {
+            window.GerenciaModule.renderContasPagar();
+          }
+          if (window.ClientesModule && typeof window.ClientesModule.renderTabela === "function") {
+            window.ClientesModule.renderTabela();
+          }
+        } else {
+          if (produtosLocais.length > 0 || contasLocais.length > 0) {
+            console.log("[CloudSync] Primeira inicializa\xE7\xE3o: enviando base local para a nuvem...");
+            this.enviarAlteracaoNuvem("inicializacao");
+          }
+        }
+      } catch (e) {
+        console.warn("[CloudSync] Erro na sincroniza\xE7\xE3o inicial:", e);
+      }
+    },
+    unsubOuvinte: null,
+    async iniciarOuvinteTempoReal() {
+      if (this.ouvinteAtivo) return;
+      try {
+        const chave = this.getChaveLicenca();
+        if (!chave) return;
+        this.ouvinteAtivo = true;
+        const autenticado = await this.garantirSessao(chave);
+        if (!autenticado) {
+          this.ouvinteAtivo = false;
+          this.reagendarOuvinte();
+          return;
+        }
+        this.unsubOuvinte = onSnapshot(doc(db, COLECAO_BACKUPS, chave), async (snap) => {
+          if (!snap || !snap.exists()) return;
+          const resumo = snap.data();
+          if (!resumo) return;
+          if (!this.pacotePertenceALicenca(resumo)) {
+            console.warn("[CloudSync] Pacote ignorado: licen\xE7a incompat\xEDvel.");
+            return;
+          }
+          const myDevId = StorageService.getDeviceId();
+          if (resumo.origemTerminal === myDevId) {
+            return;
+          }
+          let cloudData = resumo;
+          try {
+            cloudData = await this.completarPacote(chave, resumo);
+            cloudData.movimentosEstoque = await this.baixarMovimentosNovos(chave, resumo.movimentosEstoque);
+          } catch (e) {
+            console.warn("[CloudSync] Falha ao carregar as partes do pacote recebido:", e);
+          }
+          if (Array.isArray(cloudData.produtosExcluidos)) {
+            const excluidos = new Set(StorageService.getProdutosExcluidosIds());
+            cloudData.produtosExcluidos.forEach((id) => excluidos.add(String(id)));
+            localStorage.setItem("adega_produtos_excluidos_ids", JSON.stringify(Array.from(excluidos)));
+          }
+          console.log("[CloudSync] Altera\xE7\xE3o recebida de outro terminal:", cloudData.motivo || "nuvem");
+          this.aplicarDadosRecebidos(cloudData, { silencioso: false });
+        }, (err) => {
+          console.warn("[CloudSync] Erro no ouvinte em tempo real:", err);
+          this.ouvinteAtivo = false;
+          this.unsubOuvinte = null;
+          this.reagendarOuvinte();
+        });
+      } catch (e) {
+        console.warn("[CloudSync] Erro ao iniciar ouvinte:", e);
+        this.ouvinteAtivo = false;
+        this.reagendarOuvinte();
+      }
+    },
+    reagendarOuvinte() {
+      if (this.timerReconexaoOuvinte) return;
+      this.timerReconexaoOuvinte = setTimeout(() => {
+        this.timerReconexaoOuvinte = null;
+        this.iniciarOuvinteTempoReal();
+      }, 3e4);
+    },
+    async trocarEmpresaSincronizacao(novaChave) {
+      try {
+        if (this.unsubOuvinte && typeof this.unsubOuvinte === "function") {
+          this.unsubOuvinte();
+          this.unsubOuvinte = null;
+        }
+        this.ouvinteAtivo = false;
+        if (this.timerReconexaoOuvinte) {
+          clearTimeout(this.timerReconexaoOuvinte);
+          this.timerReconexaoOuvinte = null;
+        }
+        if (!novaChave) return;
+        console.log("[CloudSync] Trocando sincroniza\xE7\xE3o para nova empresa:", novaChave);
+        localStorage.removeItem(CHAVE_MOV_ENVIADOS);
+        localStorage.removeItem(CHAVE_MOV_RECEBIDOS);
+        localStorage.removeItem(CHAVE_MANIFESTO);
+        localStorage.removeItem(CHAVE_ASSINATURAS);
+        this.marcaDaguaMovimentos = null;
+        await encerrarSessaoLoja();
+        const cloudData = await this.lerPacote(novaChave);
+        if (cloudData) {
+          if (cloudData.chaveLicenca && String(cloudData.chaveLicenca).trim().toUpperCase() !== String(novaChave).trim().toUpperCase()) {
+            console.warn("[CloudSync] Base de empresa rejeitada: licen\xE7a incompat\xEDvel.");
+            return;
+          }
+          console.log("[CloudSync] Dados da nova empresa encontrados na nuvem. Aplicando...");
+          this.carregarBaseCompletaNovaEmpresa(cloudData);
+          if (cloudData.dataBackupFormatada || cloudData.dataBackup) {
+            const dataFmt = cloudData.dataBackupFormatada || cloudData.dataBackup;
+            localStorage.setItem("flowpdv_ultimo_backup_timestamp", dataFmt);
+            localStorage.setItem("flowpdv_ultimo_backup_info", JSON.stringify({
+              data: dataFmt,
+              totalProdutos: (cloudData.produtos || []).length,
+              totalClientes: (cloudData.clientes || []).length
+            }));
+          } else {
+            localStorage.removeItem("flowpdv_ultimo_backup_timestamp");
+            localStorage.removeItem("flowpdv_ultimo_backup_info");
+          }
+        } else {
+          console.log("[CloudSync] Nova empresa sem dados pr\xE9vios na nuvem. Base limpa iniciada.");
+          StorageService.saveProdutos([]);
+          StorageService.saveClientes([]);
+          StorageService.salvarHistoricoTurnos([]);
+          localStorage.setItem("adega_vendas", JSON.stringify([]));
+          localStorage.removeItem("flowpdv_ultimo_backup_timestamp");
+          localStorage.removeItem("flowpdv_ultimo_backup_info");
+          localStorage.removeItem("flowpdv_ultimo_backup_data");
+        }
+        this.iniciarOuvinteTempoReal();
+        if (window.BackupModule && typeof window.BackupModule.atualizarStatusBackupUI === "function") {
+          window.BackupModule.atualizarStatusBackupUI();
+        }
+        if (window.AuthModule && typeof window.AuthModule.init === "function") {
+          window.AuthModule.init();
+        }
+        if (window.AuditModule && typeof window.AuditModule.limparCacheLogsLicenca === "function") {
+          window.AuditModule.limparCacheLogsLicenca();
+        }
+        if (window.EstoqueModule) {
+          if (typeof window.EstoqueModule.verificarAlertasValidade === "function") window.EstoqueModule.verificarAlertasValidade();
+          if (typeof window.EstoqueModule.renderBarraCategorias === "function") window.EstoqueModule.renderBarraCategorias();
+          if (typeof window.EstoqueModule.renderTabelaProdutos === "function") window.EstoqueModule.renderTabelaProdutos();
+        }
+        if (window.PdvModule) {
+          if (typeof window.PdvModule.renderCarrinho === "function") window.PdvModule.renderCarrinho();
+          if (typeof window.PdvModule.renderBotoesCategorias === "function") window.PdvModule.renderBotoesCategorias();
+        }
+        if (window.ClientesModule && typeof window.ClientesModule.renderTabela === "function") {
+          window.ClientesModule.renderTabela();
+        }
+        if (window.CaixaModule && typeof window.CaixaModule.renderHistoricoTurnosFechados === "function") {
+          window.CaixaModule.renderHistoricoTurnosFechados();
+        }
+      } catch (err) {
+        console.error("[CloudSync] Erro na troca de sincroniza\xE7\xE3o da empresa:", err);
+      }
+    },
+    carregarBaseCompletaNovaEmpresa(cloudData) {
+      if (!cloudData) return;
+      if (Array.isArray(cloudData.produtos) && cloudData.produtos.length > 0) {
+        StorageService.saveProdutos(cloudData.produtos);
+      } else {
+        StorageService.saveProdutos([]);
+      }
+      if (Array.isArray(cloudData.produtosExcluidos)) {
+        localStorage.setItem("adega_produtos_excluidos_ids", JSON.stringify(cloudData.produtosExcluidos));
+      } else {
+        localStorage.removeItem("adega_produtos_excluidos_ids");
+      }
+      if (Array.isArray(cloudData.clientes)) {
+        StorageService.saveClientes(cloudData.clientes);
+      } else {
+        StorageService.saveClientes([]);
+      }
+      if (Array.isArray(cloudData.turnosHistorico)) {
+        StorageService.salvarHistoricoTurnos(cloudData.turnosHistorico);
+      } else {
+        StorageService.salvarHistoricoTurnos([]);
+      }
+      if (Array.isArray(cloudData.vendas)) {
+        localStorage.setItem("adega_vendas", JSON.stringify(cloudData.vendas));
+      } else {
+        localStorage.setItem("adega_vendas", JSON.stringify([]));
+      }
+      if (Array.isArray(cloudData.usuarios) && cloudData.usuarios.length > 0) {
+        StorageService.saveUsuarios(cloudData.usuarios);
+      }
+      if (Array.isArray(cloudData.categorias) && cloudData.categorias.length > 0) {
+        StorageService.salvarCategorias(cloudData.categorias);
+      }
+      if (Array.isArray(cloudData.contasPagar)) {
+        StorageService.saveContasPagar(cloudData.contasPagar);
+      } else {
+        StorageService.saveContasPagar([]);
+      }
+    },
+    isUsuarioEditando() {
+      const modalEditarConfig = document.getElementById("modal-editar-config-loja");
+      if (modalEditarConfig && modalEditarConfig.style.display !== "none" && modalEditarConfig.style.display !== "") return true;
+      const modalProd = document.getElementById("modal-novo-produto");
+      if (modalProd && modalProd.classList.contains("active")) return true;
+      const modalOp = document.getElementById("modal-novo-operador");
+      if (modalOp && modalOp.classList.contains("active")) return true;
+      const modalCli = document.getElementById("modal-novo-cliente");
+      if (modalCli && modalCli.classList.contains("active")) return true;
+      const active = document.activeElement;
+      if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) {
+        return true;
+      }
+      return false;
+    },
+    aplicarDadosRecebidos(cloudData, opts = {}) {
+      if (this.isProcessandoRecebimento) return;
+      if (!this.pacotePertenceALicenca(cloudData)) return;
+      this.isProcessandoRecebimento = true;
+      let precisaReenviarBaseConsolidada = false;
+      try {
+        let houveAlteracao = false;
+        if (Array.isArray(cloudData.usuarios) && cloudData.usuarios.length > 0) {
+          StorageService.saveUsuarios(cloudData.usuarios);
+          houveAlteracao = true;
+          if (window.AuthModule) {
+            if (typeof window.AuthModule.renderCardsLogin === "function") window.AuthModule.renderCardsLogin();
+            if (typeof window.AuthModule.renderTabelaOperadoresConfig === "function") window.AuthModule.renderTabelaOperadoresConfig();
+          }
+        }
+        if (Array.isArray(cloudData.produtos)) {
+          const excluidos = new Set(StorageService.getProdutosExcluidosIds());
+          const produtosNuvemAtivos = cloudData.produtos.filter((item) => item && !excluidos.has(String(item.id)));
+          const produtosLocaisAtivos = StorageService.getProdutos().filter((item) => item && !excluidos.has(String(item.id)));
+          const produtosConsolidados = this.mesclarProdutosComEstoque(produtosNuvemAtivos, produtosLocaisAtivos, cloudData.movimentosEstoque);
+          StorageService.saveProdutos(produtosConsolidados);
+          precisaReenviarBaseConsolidada = precisaReenviarBaseConsolidada || produtosConsolidados.length > cloudData.produtos.length;
+          houveAlteracao = true;
+          if (window.EstoqueModule && typeof window.EstoqueModule.renderTabelaProdutos === "function") {
+            window.EstoqueModule.renderTabelaProdutos();
+          }
+          if (window.PdvModule && typeof window.PdvModule.renderBotoesCategorias === "function") {
+            window.PdvModule.renderBotoesCategorias();
+          }
+        }
+        if (Array.isArray(cloudData.categoriasExcluidas) && StorageService.adicionarCategoriaExcluida) {
+          cloudData.categoriasExcluidas.forEach((c) => StorageService.adicionarCategoriaExcluida(c));
+        }
+        if (Array.isArray(cloudData.categorias)) {
+          const categoriasConsolidadas = this.mesclarCategorias(cloudData.categorias, StorageService.getCategorias());
+          if (categoriasConsolidadas.length > 0) StorageService.salvarCategorias(categoriasConsolidadas);
+          precisaReenviarBaseConsolidada = precisaReenviarBaseConsolidada || categoriasConsolidadas.length > cloudData.categorias.length;
+          houveAlteracao = true;
+          if (window.PdvModule && typeof window.PdvModule.renderBotoesCategorias === "function") {
+            window.PdvModule.renderBotoesCategorias();
+          }
+          if (window.EstoqueModule && typeof window.EstoqueModule.renderBarraCategorias === "function") {
+            window.EstoqueModule.renderBarraCategorias();
+          }
+          if (window.GerenciaModule && typeof window.GerenciaModule.renderGestaoCategorias === "function") {
+            window.GerenciaModule.renderGestaoCategorias();
+          }
+          if (window.EstoqueModule && typeof window.EstoqueModule.preencherSelectCategorias === "function") {
+            window.EstoqueModule.preencherSelectCategorias();
+          }
+        }
+        if (Array.isArray(cloudData.clientes)) {
+          const clientesConsolidados = this.mesclarItensPorId(cloudData.clientes, StorageService.getClientes());
+          StorageService.saveClientes(clientesConsolidados);
+          precisaReenviarBaseConsolidada = precisaReenviarBaseConsolidada || clientesConsolidados.length > cloudData.clientes.length;
+          houveAlteracao = true;
+          if (window.ClientesModule && typeof window.ClientesModule.renderTabela === "function") {
+            window.ClientesModule.renderTabela();
+          }
+        }
+        if (Array.isArray(cloudData.turnosHistorico)) {
+          const turnosConsolidados = this.mesclarItensPorId(cloudData.turnosHistorico, StorageService.getHistoricoTurnos());
+          StorageService.salvarHistoricoTurnos(turnosConsolidados);
+          precisaReenviarBaseConsolidada = precisaReenviarBaseConsolidada || turnosConsolidados.length > cloudData.turnosHistorico.length;
+          houveAlteracao = true;
+          if (window.CaixaModule && typeof window.CaixaModule.renderHistoricoTurnosFechados === "function") {
+            window.CaixaModule.renderHistoricoTurnosFechados();
+          }
+        }
+        if (Array.isArray(cloudData.contasPagar)) {
+          const contasConsolidadas = this.mesclarItensPorId(cloudData.contasPagar, StorageService.getContasPagar());
+          StorageService.saveContasPagar(contasConsolidadas);
+          precisaReenviarBaseConsolidada = precisaReenviarBaseConsolidada || contasConsolidadas.length > cloudData.contasPagar.length;
+          houveAlteracao = true;
+          if (window.GerenciaModule && window.GerenciaModule.subAbaAtiva === "financeiro") {
+            window.GerenciaModule.renderContasPagar();
+          }
+        }
+        if (Array.isArray(cloudData.comandas)) {
+          StorageService.saveComandas(mesclarComandas(cloudData.comandas, StorageService.getComandas()));
+          houveAlteracao = true;
+          if (window.ComandasModule && typeof window.ComandasModule.renderGrid === "function") {
+            window.ComandasModule.renderGrid();
+          }
+        }
+        if (Array.isArray(cloudData.vendas)) {
+          const vendasConsolidadas = this.mesclarItensPorId(cloudData.vendas, StorageService.getVendas());
+          localStorage.setItem("adega_vendas", JSON.stringify(vendasConsolidadas));
+          precisaReenviarBaseConsolidada = precisaReenviarBaseConsolidada || vendasConsolidadas.length > cloudData.vendas.length;
+        }
+        if (cloudData.config && typeof cloudData.config === "object") {
+          StorageService.saveConfig(cloudData.config);
+          if (!this.isUsuarioEditando() && window.App && typeof window.App.carregarConfiguracoes === "function") {
+            window.App.carregarConfiguracoes();
+          }
+        }
+        if (cloudData.atualizadoEm) {
+          localStorage.setItem("flowpdv_ultimo_sync_cloud", cloudData.atualizadoEm);
+        }
+        this.confirmarMovimentosAplicados();
+        if (opts.manual && window.App && typeof window.App.showToast === "function") {
+          window.App.showToast("\u2601\uFE0F Dados sincronizados com sucesso!", "success");
+        }
+      } catch (e) {
+        console.error("[CloudSync] Erro ao aplicar dados recebidos:", e);
+      } finally {
+        this.isProcessandoRecebimento = false;
+        if (precisaReenviarBaseConsolidada) {
+          setTimeout(() => this.enviarAlteracaoNuvem("consolidacao_recebida"), 0);
+        }
+      }
+    },
+    enviarAlteracaoNuvem(motivo = "geral") {
+      if (this.isProcessandoRecebimento) return;
+      if (this.debounceTimer) {
+        clearTimeout(this.debounceTimer);
+      }
+      const delay = motivo === "turno_excluido" || motivo === "produtos" || motivo === "comandas" || motivo === "categorias_exclusao" || motivo === "categoria_criada" ? 50 : 500;
+      this.debounceTimer = setTimeout(async () => {
+        try {
+          const chave = this.getChaveLicenca();
+          if (!chave) return;
+          const myDevId = StorageService.getDeviceId();
+          const lic = StorageService.getLicenca() || {};
+          const config = StorageService.getConfig() || {};
+          const produtos = StorageService.getProdutos() || [];
+          const usuarios = StorageService.getUsuarios() || [];
+          const categorias = StorageService.getCategorias() || [];
+          const clientes = StorageService.getClientes() || [];
+          const contasPagar = StorageService.getContasPagar() || [];
+          const turnosHistorico = StorageService.getHistoricoTurnos() || [];
+          const turnosExcluidos = StorageService.getTurnosExcluidosIds() || [];
+          const produtosExcluidos = StorageService.getProdutosExcluidosIds() || [];
+          const vendas = StorageService.getVendas() || [];
+          const turnoAtual = StorageService.getTurnoAtual() || null;
+          const comandas = StorageService.getComandas ? StorageService.getComandas() : [];
+          const movimentosEstoque = StorageService.getMovimentosEstoque ? StorageService.getMovimentosEstoque() : [];
+          const pacote = {
+            chaveLicenca: chave,
+            origemTerminal: myDevId,
+            razaoSocial: lic.razaoSocial || config.nomeEmpresa || config.nomeLoja || "Minha Loja",
+            cnpj: lic.cnpj || config.cnpj || "",
+            produtos,
+            produtosExcluidos,
+            usuarios,
+            categorias,
+            categoriasExcluidas: StorageService.getCategoriasExcluidas ? StorageService.getCategoriasExcluidas() : [],
+            clientes,
+            contasPagar,
+            turnosHistorico,
+            turnosExcluidos,
+            turnoAtual,
+            turnosAtivos: {
+              [myDevId]: turnoAtual
+            },
+            vendas,
+            comandas,
+            config,
+            motivo,
+            atualizadoEm: (/* @__PURE__ */ new Date()).toISOString(),
+            dataBackupFormatada: (/* @__PURE__ */ new Date()).toLocaleString("pt-BR"),
+            totalProdutos: produtos.length,
+            totalUsuarios: usuarios.length,
+            totalClientes: clientes.length,
+            totalTurnos: turnosHistorico.length
+          };
+          if (produtos.length === 0 && motivo !== "limpeza_manual_confirmada") {
+            delete pacote.produtos;
+          }
+          if (usuarios.length === 0 && motivo !== "limpeza_manual_confirmada") {
+            delete pacote.usuarios;
+          }
+          await this.gravarPacote(chave, pacote, movimentosEstoque);
+          localStorage.setItem("flowpdv_ultimo_sync_cloud", pacote.atualizadoEm);
+          console.log("[CloudSync] Altera\xE7\xE3o salva na nuvem com sucesso:", motivo);
+        } catch (e) {
+          console.warn("[CloudSync] Falha ao enviar altera\xE7\xE3o para a nuvem (offline):", e);
+        }
+      }, 500);
+    },
+    async salvarBackupGarantidoImediato(chaveAlvo) {
+      try {
+        const chave = (chaveAlvo || this.getChaveLicenca() || "").trim().toUpperCase();
+        if (!chave) return;
+        const myDevId = StorageService.getDeviceId();
+        const lic = StorageService.getLicenca() || {};
+        const config = StorageService.getConfig() || {};
+        const produtos = StorageService.getProdutos() || [];
+        const usuarios = StorageService.getUsuarios() || [];
+        const categorias = StorageService.getCategorias() || [];
+        const clientes = StorageService.getClientes() || [];
+        const contasPagar = StorageService.getContasPagar() || [];
+        const turnosHistorico = StorageService.getHistoricoTurnos() || [];
+        const turnosExcluidos = StorageService.getTurnosExcluidosIds() || [];
+        const produtosExcluidos = StorageService.getProdutosExcluidosIds() || [];
+        const vendas = StorageService.getVendas() || [];
+        const turnoAtual = StorageService.getTurnoAtual() || null;
+        const comandas = StorageService.getComandas ? StorageService.getComandas() : [];
+        const movimentosEstoque = StorageService.getMovimentosEstoque ? StorageService.getMovimentosEstoque() : [];
+        const pacote = {
+          chaveLicenca: chave,
+          origemTerminal: myDevId,
+          razaoSocial: lic.razaoSocial || config.nomeEmpresa || config.nomeLoja || "Minha Loja",
+          cnpj: lic.cnpj || config.cnpj || "",
+          produtos,
+          produtosExcluidos,
+          usuarios,
+          categorias,
+          clientes,
+          contasPagar,
+          turnosHistorico,
+          turnosExcluidos,
+          turnoAtual,
+          vendas,
+          comandas,
+          config,
+          motivo: "snapshot_pre_troca_licenca",
+          atualizadoEm: (/* @__PURE__ */ new Date()).toISOString(),
+          dataBackupFormatada: (/* @__PURE__ */ new Date()).toLocaleString("pt-BR"),
+          totalProdutos: produtos.length,
+          totalUsuarios: usuarios.length,
+          totalClientes: clientes.length,
+          totalTurnos: turnosHistorico.length
+        };
+        await this.gravarPacote(chave, pacote, movimentosEstoque);
+        console.log("[CloudSync] Backup de seguran\xE7a imediato salvo na nuvem com sucesso para chave:", chave);
+        return true;
+      } catch (e) {
+        console.warn("[CloudSync] Erro ao salvar backup garantido imediato:", e);
+        return false;
+      }
+    },
+    async forcarEnvioBaseLocalParaNuvem() {
+      const chave = this.getChaveLicenca();
+      if (!chave) {
         if (window.App && typeof window.App.showToast === "function") {
-          window.App.showToast("\u26A0\uFE0F Escolha uma imagem de at\xE9 2MB!", "warning");
+          window.App.showToast("\u274C Nenhuma licen\xE7a ativa.", "error");
         }
         return;
       }
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const base64Url = e.target.result;
-        const logoEl = document.getElementById("master-logo-input");
-        if (logoEl) logoEl.value = base64Url;
-        this.atualizarPreviewLogo();
-        if (window.App && typeof window.App.showToast === "function") {
-          window.App.showToast("\u{1F4F8} Foto de capa carregada com sucesso!", "success");
-        }
-      };
-      reader.readAsDataURL(file);
+      await this.salvarBackupGarantidoImediato(chave);
+      const prods = (StorageService.getProdutos() || []).length;
+      if (window.App && typeof window.App.showToast === "function") {
+        window.App.showToast(`\u2601\uFE0F Base com ${prods} produto(s) enviada para a nuvem!`, "success");
+      }
     },
-    atualizarPreviewLogo() {
-      const logoEl = document.getElementById("master-logo-input");
-      const boxEl = document.getElementById("master-logo-preview-box");
-      const imgEl = document.getElementById("master-preview-img");
-      const url = logoEl ? logoEl.value.trim() : "";
-      if (url && (url.startsWith("http") || url.startsWith("data:image") || url.startsWith("file://"))) {
-        if (imgEl) imgEl.src = url;
-        if (boxEl) boxEl.style.display = "block";
-      } else {
-        if (boxEl) boxEl.style.display = "none";
+    async forcarBaixarBaseNuvem() {
+      const chave = this.getChaveLicenca();
+      if (!chave) return;
+      try {
+        const cloudData = await this.lerPacote(chave);
+        if (cloudData) {
+          this.carregarBaseCompletaNovaEmpresa(cloudData);
+          const prods = (cloudData.produtos || []).length;
+          if (window.App && typeof window.App.showToast === "function") {
+            window.App.showToast(`\u2B07\uFE0F ${prods} produto(s) sincronizados da nuvem!`, "success");
+          }
+        }
+      } catch (e) {
+        console.warn("[CloudSync] Erro ao baixar da nuvem:", e);
       }
     }
   };
 
   // src/js/backup.js
-  var COLECAO_BACKUPS = "backups_lojas";
-  var COLECAO_LEGADA = "backups_adegas";
+  var COLECAO_BACKUPS2 = "backups_lojas";
+  var COLECAO_LEGADA2 = "backups_adegas";
   var BackupModule = {
     init() {
       this.verificarBackupDiarioAutomatico();
@@ -48636,10 +56818,10 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
           totalProdutos: produtos.length,
           totalClientes: clientes.length,
           totalUsuarios: usuarios.length,
-          versaoApp: "1.8.0",
+          versaoApp: "3.1.0",
           atualizadoEm: (/* @__PURE__ */ new Date()).toISOString()
         };
-        await setDoc(doc(db, COLECAO_BACKUPS, chave), backupData, { merge: true });
+        await CloudSyncModule.gravarPacote(chave, backupData, StorageService.getMovimentosEstoque());
         const hoje = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
         localStorage.setItem("flowpdv_ultimo_backup_data", hoje);
         localStorage.setItem("flowpdv_ultimo_backup_timestamp", backupData.dataBackupFormatada);
@@ -48674,16 +56856,11 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       }
       try {
         if (window.App) window.App.showToast("\u{1F504} Buscando backup na nuvem...", "info");
-        let docSnap = await getDoc(doc(db, COLECAO_BACKUPS, chave));
-        if (!docSnap.exists()) {
-          const snapLegado = await getDoc(doc(db, COLECAO_LEGADA, chave));
-          if (snapLegado.exists()) docSnap = snapLegado;
-        }
-        if (!docSnap.exists()) {
+        const data = await CloudSyncModule.lerPacote(chave);
+        if (!data) {
           if (window.App) window.App.showToast("\u26A0\uFE0F Nenhum backup encontrado na nuvem para esta licen\xE7a.", "warning");
           return;
         }
-        const data = docSnap.data();
         const qtdProd = Array.isArray(data.produtos) ? data.produtos.length : 0;
         const qtdCli = Array.isArray(data.clientes) ? data.clientes.length : 0;
         const dataBkp = data.dataBackupFormatada || "Recente";
@@ -48783,16 +56960,17 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
         statusEl.innerHTML = `\u{1F7E1} Nenhum backup salvo na nuvem para esta licen\xE7a. Clique ao lado para sincronizar agora.`;
       }
       try {
-        let docSnap = await getDoc(doc(db, COLECAO_BACKUPS, chave));
+        await CloudSyncModule.garantirSessao(chave);
+        let docSnap = await getDoc(doc(db, COLECAO_BACKUPS2, chave));
         if (!docSnap.exists()) {
-          const snapLegado = await getDoc(doc(db, COLECAO_LEGADA, chave));
+          const snapLegado = await getDoc(doc(db, COLECAO_LEGADA2, chave));
           if (snapLegado.exists()) docSnap = snapLegado;
         }
         if (docSnap && docSnap.exists()) {
           const data = docSnap.data() || {};
           const bkpData = data.dataBackupFormatada || data.dataBackup || "Recente";
-          const totalP = Array.isArray(data.produtos) ? data.produtos.length : 0;
-          const totalC = Array.isArray(data.clientes) ? data.clientes.length : 0;
+          const totalP = Array.isArray(data.produtos) ? data.produtos.length : parseInt(data.totalProdutos, 10) || 0;
+          const totalC = Array.isArray(data.clientes) ? data.clientes.length : parseInt(data.totalClientes, 10) || 0;
           localStorage.setItem("flowpdv_ultimo_backup_timestamp", bkpData);
           localStorage.setItem("flowpdv_ultimo_backup_info", JSON.stringify({
             data: bkpData,
@@ -48804,625 +56982,6 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
           statusEl.innerHTML = `\u{1F7E1} Nenhum backup salvo na nuvem para esta licen\xE7a. Clique ao lado para sincronizar agora.`;
         }
       } catch (e) {
-      }
-    }
-  };
-
-  // src/js/cloud-sync.js
-  var COLECAO_BACKUPS2 = "backups_lojas";
-  var COLECAO_LEGADA2 = "backups_adegas";
-  var CloudSyncModule = {
-    debounceTimer: null,
-    ouvinteAtivo: false,
-    isProcessandoRecebimento: false,
-    init() {
-      this.sincronizacaoInicialAuto();
-      this.iniciarOuvinteTempoReal();
-      this.configurarMonitorConexao();
-      const turnoAtual = StorageService.getTurnoAtual();
-      if (turnoAtual && (turnoAtual.status === "aberto" || turnoAtual.dataAbertura)) {
-        setTimeout(() => {
-          this.enviarAlteracaoNuvem("turno_ativo_startup");
-        }, 500);
-      }
-    },
-    configurarMonitorConexao() {
-      this.atualizarStatusConexaoUI(navigator.onLine);
-      window.addEventListener("online", () => {
-        console.log("[CloudSync] Conex\xE3o com a internet restabelecida!");
-        this.atualizarStatusConexaoUI("sincronizando");
-        if (window.App && typeof window.App.showToast === "function") {
-          window.App.showToast("\u{1F310} Conex\xE3o restabelecida! Sincronizando dados com a nuvem...", "info");
-        }
-        setTimeout(() => {
-          this.sincronizacaoInicialAuto();
-          this.enviarAlteracaoNuvem("retorno_conexao");
-          setTimeout(() => this.atualizarStatusConexaoUI(true), 1500);
-        }, 800);
-      });
-      window.addEventListener("offline", () => {
-        console.warn("[CloudSync] Terminal desconectado da internet. Operando em modo offline.");
-        this.atualizarStatusConexaoUI(false);
-        if (window.App && typeof window.App.showToast === "function") {
-          window.App.showToast("\u26A0\uFE0F Modo Offline: Sem conex\xE3o com a internet. Suas opera\xE7\xF5es ser\xE3o salvas e sincronizadas automaticamente ao voltar a rede.", "warning", 8e3);
-        }
-      });
-    },
-    atualizarStatusConexaoUI(status) {
-      const el = document.getElementById("header-status-conexao");
-      if (!el) return;
-      if (status === "sincronizando") {
-        el.innerHTML = "\u{1F7E1} Sincronizando...";
-        el.style.background = "#fef3c7";
-        el.style.color = "#b45309";
-        el.style.borderColor = "#fde68a";
-        el.title = "Enviando e recebendo dados da nuvem";
-      } else if (status === true || status === "online") {
-        el.innerHTML = "\u{1F7E2} Online";
-        el.style.background = "#dcfce7";
-        el.style.color = "#15803d";
-        el.style.borderColor = "#bbf7d0";
-        el.title = "Conectado \xE0 nuvem e sincronizado em tempo real";
-      } else {
-        el.innerHTML = "\u{1F534} Offline";
-        el.style.background = "#fee2e2";
-        el.style.color = "#dc2626";
-        el.style.borderColor = "#fca5a5";
-        el.title = "Operando localmente. Conex\xE3o com a nuvem indispon\xEDvel";
-      }
-    },
-    getChaveLicenca() {
-      const lic = StorageService.getLicenca() || {};
-      return (lic.chaveLicenca || lic.clienteId || "").trim().toUpperCase();
-    },
-    pacotePertenceALicenca(cloudData) {
-      const chaveAtual = this.getChaveLicenca();
-      const chavePacote = String(cloudData?.chaveLicenca || "").trim().toUpperCase();
-      return Boolean(chaveAtual && chavePacote && chaveAtual === chavePacote);
-    },
-    mesclarItensPorId(baseA = [], baseB = []) {
-      const mapa = /* @__PURE__ */ new Map();
-      (baseA || []).forEach((item) => {
-        if (item && (item.id || item.codigoBarras)) {
-          const key = String(item.id || item.codigoBarras);
-          mapa.set(key, item);
-        }
-      });
-      (baseB || []).forEach((item) => {
-        if (item && (item.id || item.codigoBarras)) {
-          const key = String(item.id || item.codigoBarras);
-          if (!mapa.has(key)) {
-            mapa.set(key, item);
-          } else {
-            const existente = mapa.get(key);
-            const timeExistente = existente.atualizadoEm ? new Date(existente.atualizadoEm).getTime() : 0;
-            const timeNovo = item.atualizadoEm ? new Date(item.atualizadoEm).getTime() : 0;
-            if (timeNovo && timeExistente) {
-              if (timeNovo >= timeExistente) {
-                mapa.set(key, { ...existente, ...item });
-              } else {
-                mapa.set(key, { ...item, ...existente });
-              }
-            } else if (timeNovo && !timeExistente) {
-              mapa.set(key, { ...existente, ...item });
-            } else if (!timeNovo && timeExistente) {
-              mapa.set(key, { ...item, ...existente });
-            } else {
-              mapa.set(key, { ...existente, ...item });
-            }
-          }
-        }
-      });
-      return Array.from(mapa.values());
-    },
-    mesclarCategorias(baseA = [], baseB = []) {
-      const excluidas = (StorageService.getCategoriasExcluidas ? StorageService.getCategoriasExcluidas() : []).map((c) => String(c).toLowerCase().trim());
-      const categorias = [];
-      [...baseA || [], ...baseB || []].forEach((categoria) => {
-        const nome = String(categoria || "").trim();
-        if (nome && !excluidas.includes(nome.toLowerCase()) && !categorias.some((item) => item.toLowerCase() === nome.toLowerCase())) {
-          categorias.push(nome);
-        }
-      });
-      return categorias;
-    },
-    async sincronizacaoInicialAuto() {
-      try {
-        const chave = this.getChaveLicenca();
-        if (!chave) return;
-        let docSnap = await getDoc(doc(db, COLECAO_BACKUPS2, chave));
-        if (!docSnap.exists()) {
-          const snapLegado = await getDoc(doc(db, COLECAO_LEGADA2, chave));
-          if (snapLegado.exists()) docSnap = snapLegado;
-        }
-        const produtosLocais = StorageService.getProdutos() || [];
-        const contasLocais = StorageService.getContasPagar() || [];
-        const clientesLocais = StorageService.getClientes() || [];
-        const vendasLocais = StorageService.getVendas() || [];
-        if (docSnap && docSnap.exists()) {
-          const cloudData = docSnap.data() || {};
-          if (!this.pacotePertenceALicenca(cloudData)) {
-            console.warn("[CloudSync] Backup inicial ignorado: licen\xE7a incompat\xEDvel.");
-            return;
-          }
-          const cloudProds = Array.isArray(cloudData.produtos) ? cloudData.produtos : [];
-          const cloudContas = Array.isArray(cloudData.contasPagar) ? cloudData.contasPagar : [];
-          const cloudClientes = Array.isArray(cloudData.clientes) ? cloudData.clientes : [];
-          const cloudVendas = Array.isArray(cloudData.vendas) ? cloudData.vendas : [];
-          if (Array.isArray(cloudData.produtosExcluidos)) {
-            const excluidos = new Set(StorageService.getProdutosExcluidosIds());
-            cloudData.produtosExcluidos.forEach((id) => excluidos.add(String(id)));
-            localStorage.setItem("adega_produtos_excluidos_ids", JSON.stringify(Array.from(excluidos)));
-          }
-          if (Array.isArray(cloudData.categoriasExcluidas) && StorageService.adicionarCategoriaExcluida) {
-            cloudData.categoriasExcluidas.forEach((c) => StorageService.adicionarCategoriaExcluida(c));
-          }
-          const produtosConsolidados = this.mesclarItensPorId(cloudProds, produtosLocais);
-          const contasConsolidadas = this.mesclarItensPorId(cloudContas, contasLocais);
-          const clientesConsolidados = this.mesclarItensPorId(cloudClientes, clientesLocais);
-          const vendasConsolidadas = this.mesclarItensPorId(cloudVendas, vendasLocais);
-          StorageService.saveProdutos(produtosConsolidados);
-          StorageService.saveContasPagar(contasConsolidadas);
-          StorageService.saveClientes(clientesConsolidados);
-          localStorage.setItem("adega_vendas", JSON.stringify(vendasConsolidadas));
-          const categoriasLocais = StorageService.getCategorias() || [];
-          const categoriasConsolidadas = this.mesclarCategorias(cloudData.categorias, categoriasLocais);
-          if (categoriasConsolidadas.length > 0) {
-            StorageService.salvarCategorias(categoriasConsolidadas);
-          }
-          if (Array.isArray(cloudData.usuarios) && cloudData.usuarios.length > 0) {
-            StorageService.saveUsuarios(cloudData.usuarios);
-          }
-          if (Array.isArray(cloudData.turnosHistorico) && cloudData.turnosHistorico.length > 0) {
-            StorageService.salvarHistoricoTurnos(cloudData.turnosHistorico);
-          }
-          if (produtosConsolidados.length > cloudProds.length || contasConsolidadas.length > cloudContas.length || clientesConsolidados.length > cloudClientes.length || vendasConsolidadas.length > cloudVendas.length || categoriasConsolidadas.length > (cloudData.categorias || []).length) {
-            console.log("[CloudSync] Consolidando novos itens locais para a nuvem...");
-            this.enviarAlteracaoNuvem("consolidacao_unificada");
-          }
-          if (window.EstoqueModule && typeof window.EstoqueModule.renderTabelaProdutos === "function") {
-            window.EstoqueModule.renderTabelaProdutos();
-          }
-          if (window.GerenciaModule && typeof window.GerenciaModule.renderContasPagar === "function") {
-            window.GerenciaModule.renderContasPagar();
-          }
-          if (window.ClientesModule && typeof window.ClientesModule.renderTabela === "function") {
-            window.ClientesModule.renderTabela();
-          }
-        } else {
-          if (produtosLocais.length > 0 || contasLocais.length > 0) {
-            console.log("[CloudSync] Primeira inicializa\xE7\xE3o: enviando base local para a nuvem...");
-            this.enviarAlteracaoNuvem("inicializacao");
-          }
-        }
-      } catch (e) {
-        console.warn("[CloudSync] Erro na sincroniza\xE7\xE3o inicial:", e);
-      }
-    },
-    unsubOuvinte: null,
-    iniciarOuvinteTempoReal() {
-      if (this.ouvinteAtivo) return;
-      try {
-        const chave = this.getChaveLicenca();
-        if (!chave) return;
-        this.ouvinteAtivo = true;
-        this.unsubOuvinte = onSnapshot(doc(db, COLECAO_BACKUPS2, chave), (snap) => {
-          if (!snap || !snap.exists()) return;
-          const cloudData = snap.data();
-          if (!cloudData) return;
-          if (!this.pacotePertenceALicenca(cloudData)) {
-            console.warn("[CloudSync] Pacote ignorado: licen\xE7a incompat\xEDvel.");
-            return;
-          }
-          const myDevId = StorageService.getDeviceId();
-          if (cloudData.origemTerminal === myDevId) {
-            return;
-          }
-          if (Array.isArray(cloudData.produtosExcluidos)) {
-            const excluidos = new Set(StorageService.getProdutosExcluidosIds());
-            cloudData.produtosExcluidos.forEach((id) => excluidos.add(String(id)));
-            localStorage.setItem("adega_produtos_excluidos_ids", JSON.stringify(Array.from(excluidos)));
-          }
-          console.log("[CloudSync] Altera\xE7\xE3o recebida de outro terminal:", cloudData.motivo || "nuvem");
-          this.aplicarDadosRecebidos(cloudData, { silencioso: false });
-        }, (err) => {
-          console.warn("[CloudSync] Erro no ouvinte em tempo real:", err);
-        });
-      } catch (e) {
-        console.warn("[CloudSync] Erro ao iniciar ouvinte:", e);
-      }
-    },
-    async trocarEmpresaSincronizacao(novaChave) {
-      try {
-        if (this.unsubOuvinte && typeof this.unsubOuvinte === "function") {
-          this.unsubOuvinte();
-          this.unsubOuvinte = null;
-        }
-        this.ouvinteAtivo = false;
-        if (!novaChave) return;
-        console.log("[CloudSync] Trocando sincroniza\xE7\xE3o para nova empresa:", novaChave);
-        let docSnap = await getDoc(doc(db, COLECAO_BACKUPS2, novaChave));
-        if (!docSnap.exists()) {
-          const snapLegado = await getDoc(doc(db, COLECAO_LEGADA2, novaChave));
-          if (snapLegado.exists()) docSnap = snapLegado;
-        }
-        if (docSnap && docSnap.exists()) {
-          const cloudData = docSnap.data() || {};
-          if (cloudData.chaveLicenca && String(cloudData.chaveLicenca).trim().toUpperCase() !== String(novaChave).trim().toUpperCase()) {
-            console.warn("[CloudSync] Base de empresa rejeitada: licen\xE7a incompat\xEDvel.");
-            return;
-          }
-          console.log("[CloudSync] Dados da nova empresa encontrados na nuvem. Aplicando...");
-          this.carregarBaseCompletaNovaEmpresa(cloudData);
-          if (cloudData.dataBackupFormatada || cloudData.dataBackup) {
-            const dataFmt = cloudData.dataBackupFormatada || cloudData.dataBackup;
-            localStorage.setItem("flowpdv_ultimo_backup_timestamp", dataFmt);
-            localStorage.setItem("flowpdv_ultimo_backup_info", JSON.stringify({
-              data: dataFmt,
-              totalProdutos: (cloudData.produtos || []).length,
-              totalClientes: (cloudData.clientes || []).length
-            }));
-          } else {
-            localStorage.removeItem("flowpdv_ultimo_backup_timestamp");
-            localStorage.removeItem("flowpdv_ultimo_backup_info");
-          }
-        } else {
-          console.log("[CloudSync] Nova empresa sem dados pr\xE9vios na nuvem. Base limpa iniciada.");
-          StorageService.saveProdutos([]);
-          StorageService.saveClientes([]);
-          StorageService.salvarHistoricoTurnos([]);
-          localStorage.setItem("adega_vendas", JSON.stringify([]));
-          localStorage.removeItem("flowpdv_ultimo_backup_timestamp");
-          localStorage.removeItem("flowpdv_ultimo_backup_info");
-          localStorage.removeItem("flowpdv_ultimo_backup_data");
-        }
-        this.iniciarOuvinteTempoReal();
-        if (window.BackupModule && typeof window.BackupModule.atualizarStatusBackupUI === "function") {
-          window.BackupModule.atualizarStatusBackupUI();
-        }
-        if (window.AuthModule && typeof window.AuthModule.init === "function") {
-          window.AuthModule.init();
-        }
-        if (window.AuditModule && typeof window.AuditModule.limparCacheLogsLicenca === "function") {
-          window.AuditModule.limparCacheLogsLicenca();
-        }
-        if (window.EstoqueModule) {
-          if (typeof window.EstoqueModule.verificarAlertasValidade === "function") window.EstoqueModule.verificarAlertasValidade();
-          if (typeof window.EstoqueModule.renderBarraCategorias === "function") window.EstoqueModule.renderBarraCategorias();
-          if (typeof window.EstoqueModule.renderTabelaProdutos === "function") window.EstoqueModule.renderTabelaProdutos();
-        }
-        if (window.PdvModule) {
-          if (typeof window.PdvModule.renderCarrinho === "function") window.PdvModule.renderCarrinho();
-          if (typeof window.PdvModule.renderBotoesCategorias === "function") window.PdvModule.renderBotoesCategorias();
-        }
-        if (window.ClientesModule && typeof window.ClientesModule.renderTabela === "function") {
-          window.ClientesModule.renderTabela();
-        }
-        if (window.CaixaModule && typeof window.CaixaModule.renderHistoricoTurnosFechados === "function") {
-          window.CaixaModule.renderHistoricoTurnosFechados();
-        }
-      } catch (err) {
-        console.error("[CloudSync] Erro na troca de sincroniza\xE7\xE3o da empresa:", err);
-      }
-    },
-    carregarBaseCompletaNovaEmpresa(cloudData) {
-      if (!cloudData) return;
-      if (Array.isArray(cloudData.produtos) && cloudData.produtos.length > 0) {
-        StorageService.saveProdutos(cloudData.produtos);
-      } else {
-        StorageService.saveProdutos([]);
-      }
-      if (Array.isArray(cloudData.produtosExcluidos)) {
-        localStorage.setItem("adega_produtos_excluidos_ids", JSON.stringify(cloudData.produtosExcluidos));
-      } else {
-        localStorage.removeItem("adega_produtos_excluidos_ids");
-      }
-      if (Array.isArray(cloudData.clientes)) {
-        StorageService.saveClientes(cloudData.clientes);
-      } else {
-        StorageService.saveClientes([]);
-      }
-      if (Array.isArray(cloudData.turnosHistorico)) {
-        StorageService.salvarHistoricoTurnos(cloudData.turnosHistorico);
-      } else {
-        StorageService.salvarHistoricoTurnos([]);
-      }
-      if (Array.isArray(cloudData.vendas)) {
-        localStorage.setItem("adega_vendas", JSON.stringify(cloudData.vendas));
-      } else {
-        localStorage.setItem("adega_vendas", JSON.stringify([]));
-      }
-      if (Array.isArray(cloudData.usuarios) && cloudData.usuarios.length > 0) {
-        StorageService.saveUsuarios(cloudData.usuarios);
-      }
-      if (Array.isArray(cloudData.categorias) && cloudData.categorias.length > 0) {
-        StorageService.salvarCategorias(cloudData.categorias);
-      }
-      if (Array.isArray(cloudData.contasPagar)) {
-        StorageService.saveContasPagar(cloudData.contasPagar);
-      } else {
-        StorageService.saveContasPagar([]);
-      }
-    },
-    isUsuarioEditando() {
-      const modalEditarConfig = document.getElementById("modal-editar-config-loja");
-      if (modalEditarConfig && modalEditarConfig.style.display !== "none") return true;
-      const modalProd = document.getElementById("modal-produto");
-      if (modalProd && modalProd.style.display !== "none") return true;
-      const modalOp = document.getElementById("modal-operador");
-      if (modalOp && modalOp.style.display !== "none") return true;
-      const modalCli = document.getElementById("modal-cliente");
-      if (modalCli && modalCli.style.display !== "none") return true;
-      const active = document.activeElement;
-      if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) {
-        return true;
-      }
-      return false;
-    },
-    aplicarDadosRecebidos(cloudData, opts = {}) {
-      if (this.isProcessandoRecebimento) return;
-      if (!this.pacotePertenceALicenca(cloudData)) return;
-      this.isProcessandoRecebimento = true;
-      let precisaReenviarBaseConsolidada = false;
-      try {
-        let houveAlteracao = false;
-        if (Array.isArray(cloudData.usuarios) && cloudData.usuarios.length > 0) {
-          StorageService.saveUsuarios(cloudData.usuarios);
-          houveAlteracao = true;
-          if (window.AuthModule) {
-            if (typeof window.AuthModule.renderCardsLogin === "function") window.AuthModule.renderCardsLogin();
-            if (typeof window.AuthModule.renderTabelaOperadoresConfig === "function") window.AuthModule.renderTabelaOperadoresConfig();
-          }
-        }
-        if (Array.isArray(cloudData.produtos)) {
-          const excluidos = new Set(StorageService.getProdutosExcluidosIds());
-          const produtosNuvemAtivos = cloudData.produtos.filter((item) => item && !excluidos.has(String(item.id)));
-          const produtosLocaisAtivos = StorageService.getProdutos().filter((item) => item && !excluidos.has(String(item.id)));
-          const produtosConsolidados = this.mesclarItensPorId(produtosNuvemAtivos, produtosLocaisAtivos);
-          StorageService.saveProdutos(produtosConsolidados);
-          precisaReenviarBaseConsolidada = precisaReenviarBaseConsolidada || produtosConsolidados.length > cloudData.produtos.length;
-          houveAlteracao = true;
-          if (window.EstoqueModule && typeof window.EstoqueModule.renderTabelaProdutos === "function") {
-            window.EstoqueModule.renderTabelaProdutos();
-          }
-          if (window.PdvModule && typeof window.PdvModule.renderBotoesCategorias === "function") {
-            window.PdvModule.renderBotoesCategorias();
-          }
-        }
-        if (Array.isArray(cloudData.categoriasExcluidas) && StorageService.adicionarCategoriaExcluida) {
-          cloudData.categoriasExcluidas.forEach((c) => StorageService.adicionarCategoriaExcluida(c));
-        }
-        if (Array.isArray(cloudData.categorias)) {
-          const categoriasConsolidadas = this.mesclarCategorias(cloudData.categorias, StorageService.getCategorias());
-          if (categoriasConsolidadas.length > 0) StorageService.salvarCategorias(categoriasConsolidadas);
-          precisaReenviarBaseConsolidada = precisaReenviarBaseConsolidada || categoriasConsolidadas.length > cloudData.categorias.length;
-          houveAlteracao = true;
-          if (window.PdvModule && typeof window.PdvModule.renderBotoesCategorias === "function") {
-            window.PdvModule.renderBotoesCategorias();
-          }
-          if (window.EstoqueModule && typeof window.EstoqueModule.renderBarraCategorias === "function") {
-            window.EstoqueModule.renderBarraCategorias();
-          }
-          if (window.GerenciaModule && typeof window.GerenciaModule.renderGestaoCategorias === "function") {
-            window.GerenciaModule.renderGestaoCategorias();
-          }
-          if (window.EstoqueModule && typeof window.EstoqueModule.preencherSelectCategorias === "function") {
-            window.EstoqueModule.preencherSelectCategorias();
-          }
-        }
-        if (Array.isArray(cloudData.clientes)) {
-          const clientesConsolidados = this.mesclarItensPorId(cloudData.clientes, StorageService.getClientes());
-          StorageService.saveClientes(clientesConsolidados);
-          precisaReenviarBaseConsolidada = precisaReenviarBaseConsolidada || clientesConsolidados.length > cloudData.clientes.length;
-          houveAlteracao = true;
-          if (window.ClientesModule && typeof window.ClientesModule.renderTabela === "function") {
-            window.ClientesModule.renderTabela();
-          }
-        }
-        if (Array.isArray(cloudData.turnosHistorico)) {
-          const turnosConsolidados = this.mesclarItensPorId(cloudData.turnosHistorico, StorageService.getHistoricoTurnos());
-          StorageService.salvarHistoricoTurnos(turnosConsolidados);
-          precisaReenviarBaseConsolidada = precisaReenviarBaseConsolidada || turnosConsolidados.length > cloudData.turnosHistorico.length;
-          houveAlteracao = true;
-          if (window.CaixaModule && typeof window.CaixaModule.renderHistoricoTurnosFechados === "function") {
-            window.CaixaModule.renderHistoricoTurnosFechados();
-          }
-        }
-        if (Array.isArray(cloudData.contasPagar)) {
-          const contasConsolidadas = this.mesclarItensPorId(cloudData.contasPagar, StorageService.getContasPagar());
-          StorageService.saveContasPagar(contasConsolidadas);
-          precisaReenviarBaseConsolidada = precisaReenviarBaseConsolidada || contasConsolidadas.length > cloudData.contasPagar.length;
-          houveAlteracao = true;
-          if (window.GerenciaModule && window.GerenciaModule.subAbaAtiva === "financeiro") {
-            window.GerenciaModule.renderContasPagar();
-          }
-        }
-        if (Array.isArray(cloudData.comandas)) {
-          StorageService.saveComandas(cloudData.comandas);
-          houveAlteracao = true;
-          if (window.ComandasModule && typeof window.ComandasModule.renderGrid === "function") {
-            window.ComandasModule.renderGrid();
-          }
-        }
-        if (Array.isArray(cloudData.vendas)) {
-          const vendasConsolidadas = this.mesclarItensPorId(cloudData.vendas, StorageService.getVendas());
-          localStorage.setItem("adega_vendas", JSON.stringify(vendasConsolidadas));
-          precisaReenviarBaseConsolidada = precisaReenviarBaseConsolidada || vendasConsolidadas.length > cloudData.vendas.length;
-        }
-        if (cloudData.config && typeof cloudData.config === "object") {
-          StorageService.saveConfig(cloudData.config);
-          if (!this.isUsuarioEditando() && window.App && typeof window.App.carregarConfiguracoes === "function") {
-            window.App.carregarConfiguracoes();
-          }
-        }
-        if (cloudData.atualizadoEm) {
-          localStorage.setItem("flowpdv_ultimo_sync_cloud", cloudData.atualizadoEm);
-        }
-        if (opts.manual && window.App && typeof window.App.showToast === "function") {
-          window.App.showToast("\u2601\uFE0F Dados sincronizados com sucesso!", "success");
-        }
-      } catch (e) {
-        console.error("[CloudSync] Erro ao aplicar dados recebidos:", e);
-      } finally {
-        this.isProcessandoRecebimento = false;
-        if (precisaReenviarBaseConsolidada) {
-          setTimeout(() => this.enviarAlteracaoNuvem("consolidacao_recebida"), 0);
-        }
-      }
-    },
-    enviarAlteracaoNuvem(motivo = "geral") {
-      if (this.isProcessandoRecebimento) return;
-      if (this.debounceTimer) {
-        clearTimeout(this.debounceTimer);
-      }
-      const delay = motivo === "turno_excluido" || motivo === "produtos" || motivo === "comandas" || motivo === "categorias_exclusao" || motivo === "categoria_criada" ? 50 : 500;
-      this.debounceTimer = setTimeout(async () => {
-        try {
-          const chave = this.getChaveLicenca();
-          if (!chave) return;
-          const myDevId = StorageService.getDeviceId();
-          const lic = StorageService.getLicenca() || {};
-          const config = StorageService.getConfig() || {};
-          const produtos = StorageService.getProdutos() || [];
-          const usuarios = StorageService.getUsuarios() || [];
-          const categorias = StorageService.getCategorias() || [];
-          const clientes = StorageService.getClientes() || [];
-          const contasPagar = StorageService.getContasPagar() || [];
-          const turnosHistorico = StorageService.getHistoricoTurnos() || [];
-          const turnosExcluidos = StorageService.getTurnosExcluidosIds() || [];
-          const produtosExcluidos = StorageService.getProdutosExcluidosIds() || [];
-          const vendas = StorageService.getVendas() || [];
-          const turnoAtual = StorageService.getTurnoAtual() || null;
-          const comandas = StorageService.getComandas ? StorageService.getComandas() : [];
-          const pacote = {
-            chaveLicenca: chave,
-            origemTerminal: myDevId,
-            razaoSocial: lic.razaoSocial || config.nomeEmpresa || config.nomeLoja || "Minha Loja",
-            cnpj: lic.cnpj || config.cnpj || "",
-            produtos,
-            produtosExcluidos,
-            usuarios,
-            categorias,
-            categoriasExcluidas: StorageService.getCategoriasExcluidas ? StorageService.getCategoriasExcluidas() : [],
-            clientes,
-            contasPagar,
-            turnosHistorico,
-            turnosExcluidos,
-            turnoAtual,
-            turnosAtivos: {
-              [myDevId]: turnoAtual
-            },
-            vendas,
-            comandas,
-            config,
-            motivo,
-            atualizadoEm: (/* @__PURE__ */ new Date()).toISOString(),
-            dataBackupFormatada: (/* @__PURE__ */ new Date()).toLocaleString("pt-BR"),
-            totalProdutos: produtos.length,
-            totalUsuarios: usuarios.length,
-            totalClientes: clientes.length,
-            totalTurnos: turnosHistorico.length
-          };
-          if (produtos.length === 0 && motivo !== "limpeza_manual_confirmada") {
-            delete pacote.produtos;
-          }
-          if (usuarios.length === 0 && motivo !== "limpeza_manual_confirmada") {
-            delete pacote.usuarios;
-          }
-          const docRef = doc(db, COLECAO_BACKUPS2, chave);
-          await setDoc(docRef, pacote, { merge: true });
-          localStorage.setItem("flowpdv_ultimo_sync_cloud", pacote.atualizadoEm);
-          console.log("[CloudSync] Altera\xE7\xE3o salva na nuvem com sucesso:", motivo);
-        } catch (e) {
-          console.warn("[CloudSync] Falha ao enviar altera\xE7\xE3o para a nuvem (offline):", e);
-        }
-      }, 500);
-    },
-    async salvarBackupGarantidoImediato(chaveAlvo) {
-      try {
-        const chave = (chaveAlvo || this.getChaveLicenca() || "").trim().toUpperCase();
-        if (!chave) return;
-        const myDevId = StorageService.getDeviceId();
-        const lic = StorageService.getLicenca() || {};
-        const config = StorageService.getConfig() || {};
-        const produtos = StorageService.getProdutos() || [];
-        const usuarios = StorageService.getUsuarios() || [];
-        const categorias = StorageService.getCategorias() || [];
-        const clientes = StorageService.getClientes() || [];
-        const contasPagar = StorageService.getContasPagar() || [];
-        const turnosHistorico = StorageService.getHistoricoTurnos() || [];
-        const turnosExcluidos = StorageService.getTurnosExcluidosIds() || [];
-        const produtosExcluidos = StorageService.getProdutosExcluidosIds() || [];
-        const vendas = StorageService.getVendas() || [];
-        const turnoAtual = StorageService.getTurnoAtual() || null;
-        const comandas = StorageService.getComandas ? StorageService.getComandas() : [];
-        const pacote = {
-          chaveLicenca: chave,
-          origemTerminal: myDevId,
-          razaoSocial: lic.razaoSocial || config.nomeEmpresa || config.nomeLoja || "Minha Loja",
-          cnpj: lic.cnpj || config.cnpj || "",
-          produtos,
-          produtosExcluidos,
-          usuarios,
-          categorias,
-          clientes,
-          contasPagar,
-          turnosHistorico,
-          turnosExcluidos,
-          turnoAtual,
-          vendas,
-          comandas,
-          config,
-          motivo: "snapshot_pre_troca_licenca",
-          atualizadoEm: (/* @__PURE__ */ new Date()).toISOString(),
-          dataBackupFormatada: (/* @__PURE__ */ new Date()).toLocaleString("pt-BR"),
-          totalProdutos: produtos.length,
-          totalUsuarios: usuarios.length,
-          totalClientes: clientes.length,
-          totalTurnos: turnosHistorico.length
-        };
-        const docRef = doc(db, COLECAO_BACKUPS2, chave);
-        await setDoc(docRef, pacote, { merge: true });
-        console.log("[CloudSync] Backup de seguran\xE7a imediato salvo na nuvem com sucesso para chave:", chave);
-        return true;
-      } catch (e) {
-        console.warn("[CloudSync] Erro ao salvar backup garantido imediato:", e);
-        return false;
-      }
-    },
-    async forcarEnvioBaseLocalParaNuvem() {
-      const chave = this.getChaveLicenca();
-      if (!chave) {
-        if (window.App && typeof window.App.showToast === "function") {
-          window.App.showToast("\u274C Nenhuma licen\xE7a ativa.", "error");
-        }
-        return;
-      }
-      await this.salvarBackupGarantidoImediato(chave);
-      const prods = (StorageService.getProdutos() || []).length;
-      if (window.App && typeof window.App.showToast === "function") {
-        window.App.showToast(`\u2601\uFE0F Base com ${prods} produto(s) enviada para a nuvem!`, "success");
-      }
-    },
-    async forcarBaixarBaseNuvem() {
-      const chave = this.getChaveLicenca();
-      if (!chave) return;
-      try {
-        let docSnap = await getDoc(doc(db, COLECAO_BACKUPS2, chave));
-        if (!docSnap.exists()) {
-          const snapLegado = await getDoc(doc(db, COLECAO_LEGADA2, chave));
-          if (snapLegado.exists()) docSnap = snapLegado;
-        }
-        if (docSnap && docSnap.exists()) {
-          const cloudData = docSnap.data() || {};
-          this.carregarBaseCompletaNovaEmpresa(cloudData);
-          const prods = (cloudData.produtos || []).length;
-          if (window.App && typeof window.App.showToast === "function") {
-            window.App.showToast(`\u2B07\uFE0F ${prods} produto(s) sincronizados da nuvem!`, "success");
-          }
-        }
-      } catch (e) {
-        console.warn("[CloudSync] Erro ao baixar da nuvem:", e);
       }
     }
   };
@@ -49842,7 +57401,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
         }
       } else {
         const nova = {
-          id: "DESP-" + Date.now().toString().slice(-6),
+          id: "DESP-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
           descricao,
           fornecedor,
           categoria,
@@ -49912,7 +57471,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
           proximoVenc = d.toISOString().split("T")[0];
         }
         const novaRecorrente = {
-          id: "DESP-" + Date.now().toString().slice(-6),
+          id: "DESP-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
           descricao: c.descricao,
           fornecedor: c.fornecedor || "",
           categoria: c.categoria || "Geral",
@@ -50624,7 +58183,14 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
         novoEstoque = qtd;
       }
       produtos[index].estoque = novoEstoque;
+      produtos[index].atualizadoEm = (/* @__PURE__ */ new Date()).toISOString();
       StorageService.saveProdutos(produtos);
+      StorageService.registrarMovimentoEstoque({
+        produtoId: p.id,
+        delta: novoEstoque - estoqueAnterior,
+        origem: "ajuste_gerencia",
+        refId: tipoOperacao
+      });
       AuditModule.registrarLog("ajuste_estoque", `Ajuste manual de estoque no item "${p.nome}": ${estoqueAnterior} \u2794 ${novoEstoque} (${tipoAjuste})`, {
         produtoId: p.id,
         produtoNome: p.nome,
@@ -50730,7 +58296,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       const displayFiscal = document.getElementById("cfg-display-fiscal");
       if (displayFiscal) {
         if (!isFiscalLicenciado) {
-          displayFiscal.innerHTML = `<span style="color: #94a3b8; font-weight: 700;">\u26AA Desativado no Master Admin</span>`;
+          displayFiscal.innerHTML = `<span style="color: #94a3b8; font-weight: 700;">\u26AA Desativado pelo administrador</span>`;
         } else if (!cfg.habilitado) {
           displayFiscal.innerHTML = `<span style="color: #64748b; font-weight: 700;">\u26AA N\xE3o Fiscal (Desativado)</span>`;
         } else {
@@ -50741,7 +58307,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       const displayTef = document.getElementById("cfg-display-tef");
       if (displayTef) {
         if (!isTefLicenciado) {
-          displayTef.innerHTML = `<span style="color: #94a3b8; font-weight: 700;">\u26AA Desativado no Master Admin</span>`;
+          displayTef.innerHTML = `<span style="color: #94a3b8; font-weight: 700;">\u26AA Desativado pelo administrador</span>`;
         } else if (!tefCfg.habilitado) {
           displayTef.innerHTML = `<span style="color: #64748b; font-weight: 700;">\u26AA TEF Desativado</span>`;
         } else {
@@ -50752,7 +58318,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
     abrirModalConfigFiscal() {
       if (!StorageService.isModuloAtivo("fiscalNfce")) {
         if (window.App && typeof window.App.showToast === "function") {
-          window.App.showToast("\u{1F3DB}\uFE0F O m\xF3dulo Fiscal NFC-e est\xE1 desativado para esta licen\xE7a no Master Admin.", "info");
+          window.App.showToast("\u{1F3DB}\uFE0F O m\xF3dulo Fiscal NFC-e est\xE1 desativado para esta licen\xE7a pelo administrador.", "info");
         }
         return;
       }
@@ -50838,7 +58404,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
     abrirModalConfigTef() {
       if (!StorageService.isModuloAtivo("tefCartao")) {
         if (window.App && typeof window.App.showToast === "function") {
-          window.App.showToast("\u{1F4B3} O m\xF3dulo TEF / Cart\xE3o est\xE1 desativado para esta licen\xE7a no Master Admin.", "info");
+          window.App.showToast("\u{1F4B3} O m\xF3dulo TEF / Cart\xE3o est\xE1 desativado para esta licen\xE7a pelo administrador.", "info");
         }
         return;
       }
@@ -50991,15 +58557,26 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
         };
       });
       const formasPagamento = [];
-      if (venda.pagamentoDividido && venda.parcela1 && venda.parcela2) {
-        formasPagamento.push({
-          forma_pagamento: this.obterCodigoSefazPagamento(venda.parcela1.forma),
-          valor_pagamento: parseFloat(venda.parcela1.valor) || 0
+      if (venda.pagamentoDividido && Array.isArray(venda.pagamentos) && venda.pagamentos.length > 0) {
+        venda.pagamentos.forEach((p) => {
+          formasPagamento.push({
+            forma_pagamento: this.obterCodigoSefazPagamento(p.forma),
+            valor_pagamento: parseFloat(p.valor) || 0
+          });
         });
-        formasPagamento.push({
-          forma_pagamento: this.obterCodigoSefazPagamento(venda.parcela2.forma),
-          valor_pagamento: parseFloat(venda.parcela2.valor) || 0
-        });
+      } else if (venda.pagamentoDividido && (venda.parcela1 || venda.parcela2)) {
+        if (venda.parcela1) {
+          formasPagamento.push({
+            forma_pagamento: this.obterCodigoSefazPagamento(venda.parcela1.forma),
+            valor_pagamento: parseFloat(venda.parcela1.valor) || 0
+          });
+        }
+        if (venda.parcela2) {
+          formasPagamento.push({
+            forma_pagamento: this.obterCodigoSefazPagamento(venda.parcela2.forma),
+            valor_pagamento: parseFloat(venda.parcela2.valor) || 0
+          });
+        }
       } else {
         formasPagamento.push({
           forma_pagamento: this.obterCodigoSefazPagamento(venda.formaPagamento),
@@ -51480,7 +59057,15 @@ Por favor, escolha uma categoria no campo em vermelho antes de confirmar.`);
           if (item.produtoExistenteId) {
             const idx = produtosAtuais.findIndex((p) => p.id === item.produtoExistenteId);
             if (idx >= 0) {
-              produtosAtuais[idx].estoque = Math.round(((produtosAtuais[idx].estoque || 0) + qtdFinal) * 1e3) / 1e3;
+              const estoqueAntes = produtosAtuais[idx].estoque || 0;
+              produtosAtuais[idx].estoque = Math.round((estoqueAntes + qtdFinal) * 1e3) / 1e3;
+              produtosAtuais[idx].atualizadoEm = (/* @__PURE__ */ new Date()).toISOString();
+              StorageService.registrarMovimentoEstoque({
+                produtoId: produtosAtuais[idx].id,
+                delta: qtdFinal,
+                origem: "xml",
+                refId: item.produtoExistenteId
+              });
               produtosAtuais[idx].precoCusto = item.precoCustoFinal;
               if (item.precoVendaFinal > 0) {
                 produtosAtuais[idx].precoVenda = item.precoVendaFinal;
@@ -51782,7 +59367,7 @@ Por favor, escolha uma categoria no campo em vermelho antes de confirmar.`);
       const display = document.getElementById("cfg-display-balanca");
       if (!display) return;
       if (!isBalancaLicenciada) {
-        display.innerHTML = `<span style="color: #94a3b8; font-weight: 700;">\u26AA Desativado no Master Admin</span>`;
+        display.innerHTML = `<span style="color: #94a3b8; font-weight: 700;">\u26AA Desativado pelo administrador</span>`;
         return;
       }
       if (!cfg.habilitado) {
@@ -51803,7 +59388,7 @@ Por favor, escolha uma categoria no campo em vermelho antes de confirmar.`);
     abrirModalConfig() {
       if (!StorageService.isModuloAtivo("balancaPeso")) {
         if (window.App && typeof window.App.showToast === "function") {
-          window.App.showToast("\u2696\uFE0F O m\xF3dulo Balan\xE7a est\xE1 desativado para esta licen\xE7a no Master Admin.", "info");
+          window.App.showToast("\u2696\uFE0F O m\xF3dulo Balan\xE7a est\xE1 desativado para esta licen\xE7a pelo administrador.", "info");
         }
         return;
       }
@@ -51997,7 +59582,7 @@ Por favor, escolha uma categoria no campo em vermelho antes de confirmar.`);
     testarComunicacao() {
       if (!StorageService.isModuloAtivo("balancaPeso")) {
         if (window.App && typeof window.App.showToast === "function") {
-          window.App.showToast("\u2696\uFE0F O m\xF3dulo Balan\xE7a est\xE1 desativado para esta licen\xE7a no Master Admin.", "info");
+          window.App.showToast("\u2696\uFE0F O m\xF3dulo Balan\xE7a est\xE1 desativado para esta licen\xE7a pelo administrador.", "info");
         }
         return;
       }
@@ -52180,7 +59765,7 @@ NSU: ${nsuGerado}`
     testarTefConfig() {
       if (!StorageService.isModuloAtivo("tefCartao")) {
         if (window.App && typeof window.App.showToast === "function") {
-          window.App.showToast("\u{1F4B3} O m\xF3dulo TEF / Cart\xE3o est\xE1 desativado para esta licen\xE7a no Master Admin.", "info");
+          window.App.showToast("\u{1F4B3} O m\xF3dulo TEF / Cart\xE3o est\xE1 desativado para esta licen\xE7a pelo administrador.", "info");
         }
         return;
       }
@@ -52837,7 +60422,7 @@ NSU: ${nsuGerado}`
       }
     },
     salvarComandas(lista) {
-      localStorage.setItem("flowpdv_comandas_mesas", JSON.stringify(lista));
+      StorageService.saveComandas(Array.isArray(lista) ? lista : []);
       if (window.CloudSyncModule && typeof window.CloudSyncModule.enviarAlteracaoNuvem === "function") {
         window.CloudSyncModule.enviarAlteracaoNuvem("comandas");
       }
@@ -53462,7 +61047,7 @@ NSU: ${nsuGerado}`
       }
       c.status = "ocupada";
       if (!c.abertaEm) c.abertaEm = (/* @__PURE__ */ new Date()).toISOString();
-      c.operador = AuthModule.getUsuario().nome;
+      c.operador = AuthModule.getNomeOperador();
       c.total = c.itens.reduce((acc, i) => acc + (parseFloat(i.total) || 0), 0);
       this.salvarComandas(comandas);
       this.renderGridComandas();
@@ -53840,8 +61425,7 @@ NSU: ${nsuGerado}`
       window.EstoqueModule = EstoqueModule;
       window.CaixaModule = CaixaModule;
       window.ClientesModule = ClientesModule;
-      window.LicencaModule = LicencaModule2;
-      window.AdminMasterModule = AdminMasterModule;
+      window.LicencaModule = LicencaModule;
       window.BackupModule = BackupModule;
       window.CloudSyncModule = CloudSyncModule;
       window.ThermalPrintModule = ThermalPrintModule;
@@ -53867,9 +61451,8 @@ NSU: ${nsuGerado}`
       TefModule.init();
       EtiquetasModule.init();
       ComandasModule.init();
-      LicencaModule2.init();
+      LicencaModule.init();
       this.aplicarLayoutPdv(StorageService.getLicenca()?.layoutPdv);
-      AdminMasterModule.init();
       BackupModule.init();
       CloudSyncModule.init();
       this.bindNavegacao();
@@ -53892,6 +61475,7 @@ NSU: ${nsuGerado}`
       if (!tabPdv) return;
       const classico = layout === "classico";
       tabPdv.classList.toggle("pdv-layout-classico", classico);
+      document.body.classList.toggle("pdv-layout-classico", classico);
       const moderno = tabPdv.querySelector(".pdv-layout");
       const shell = document.getElementById("classic-pdv-shell");
       if (!moderno || !shell) return;
@@ -53904,7 +61488,7 @@ NSU: ${nsuGerado}`
       }
     },
     entrarPorPerfil(usuario) {
-      const ehGerente = usuario && ["gerente", "superadmin", "admin"].includes(usuario.cargo);
+      const ehGerente = usuario && (usuario.cargo === "gerente" || usuario.cargo === "superadmin" || usuario.cargo === "admin");
       const licenca = StorageService.getLicenca() || {};
       if (!licenca.chaveLicenca || licenca.status === "pendente_ativacao" || licenca.status === "bloqueada") {
         return;
@@ -53919,7 +61503,9 @@ NSU: ${nsuGerado}`
         });
       }
       document.body.classList.toggle("pdv-operador-restrito", !ehGerente);
-      this.trocarAba(ehGerente ? "gerencia" : "pdv");
+      const isClassico = licenca.layoutPdv === "classico";
+      const abaDestino = isClassico && ehGerente ? "gerencia" : "pdv";
+      this.trocarAba(abaDestino);
     },
     verificarValidadesAoIniciar() {
       if (window.EstoqueModule && typeof window.EstoqueModule.verificarAlertasValidade === "function") {
@@ -53955,7 +61541,12 @@ NSU: ${nsuGerado}`
         window.EstoqueModule.resetarFiltrosEstoque();
       }
       if (nomeAba === "pdv") {
-        PdvModule.focarInputLeitor();
+        setTimeout(() => {
+          PdvModule.focarInputLeitor();
+        }, 50);
+        setTimeout(() => {
+          PdvModule.focarInputLeitor();
+        }, 200);
       } else if (nomeAba === "estoque") {
         EstoqueModule.renderBarraCategorias();
         EstoqueModule.renderTabelaProdutos();
@@ -53971,34 +61562,23 @@ NSU: ${nsuGerado}`
         this.verificarAcessoGerencia();
       } else if (nomeAba === "config") {
         this.verificarAcessoConfiguracoes();
-      } else if (nomeAba === "master") {
-        AdminMasterModule.renderListaAdegas();
       }
     },
     atualizarPermissoesUsuario() {
-      let u = null;
-      try {
-        if (window.AuthModule && typeof window.AuthModule.getUsuario === "function") {
-          u = window.AuthModule.getUsuario();
-        } else if (window.AuthModule && window.AuthModule.usuarioAtual) {
-          u = window.AuthModule.usuarioAtual;
-        }
-        if (!u) {
-          const saved = sessionStorage.getItem("flowpdv_usuario_logado");
-          if (saved) u = JSON.parse(saved);
-        }
-      } catch (e) {
-      }
-      const isGerente = !!(u && (u.cargo === "gerente" || u.cargo === "admin" || u.cargo === "superadmin" || u.login === "admin"));
+      const isGerente = !!(window.AuthModule && typeof window.AuthModule.isGerente === "function" && window.AuthModule.isGerente());
       const navGerenciaBtn = document.getElementById("nav-btn-gerencia");
       if (navGerenciaBtn) {
         navGerenciaBtn.style.display = isGerente ? "flex" : "none";
+      }
+      const classicBtnAdmin = document.getElementById("classic-btn-painel-gerente");
+      if (classicBtnAdmin) {
+        classicBtnAdmin.style.display = isGerente ? "inline-flex" : "none";
       }
       document.querySelectorAll(".nav-btn").forEach((btn) => {
         if (btn.dataset.tab === "pdv") return;
         if (!isGerente) {
           btn.style.display = "none";
-        } else if (btn.id !== "nav-btn-gerencia" && btn.id !== "nav-btn-master") {
+        } else if (btn.id !== "nav-btn-gerencia") {
           btn.style.display = "flex";
         }
       });
@@ -54024,7 +61604,7 @@ NSU: ${nsuGerado}`
           if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "BUTTON")) {
             if (e.key === "Enter" && e.target.id === "ativacao-chave-input") {
               e.preventDefault();
-              LicencaModule2.ativarTerminal();
+              LicencaModule.ativarTerminal();
             }
             return;
           }
@@ -54107,6 +61687,11 @@ NSU: ${nsuGerado}`
         }
         const modalPerguntaClube = document.getElementById("modal-pergunta-clube");
         if (modalPerguntaClube && modalPerguntaClube.classList.contains("active")) {
+          if (Date.now() - (PdvModule._aberturaPerguntaClubeTimestamp || 0) < 350) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
           if (e.key === "Enter") {
             e.preventDefault();
             e.stopPropagation();
@@ -54118,6 +61703,60 @@ NSU: ${nsuGerado}`
             e.stopPropagation();
             PdvModule.responderPerguntaClube(false);
             return;
+          }
+        }
+        const modalPerguntaCpf = document.getElementById("modal-pergunta-cpf-nota");
+        if (modalPerguntaCpf && modalPerguntaCpf.classList.contains("active")) {
+          const fasePergunta = document.getElementById("cpf-nota-fase-pergunta");
+          const isFasePergunta = fasePergunta && fasePergunta.style.display !== "none";
+          if (isFasePergunta) {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              e.stopPropagation();
+              PdvModule.responderPerguntaCpfNota(true);
+              return;
+            }
+            if (e.key === "Escape") {
+              e.preventDefault();
+              e.stopPropagation();
+              PdvModule.responderPerguntaCpfNota(false);
+              return;
+            }
+          } else {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              e.stopPropagation();
+              PdvModule.confirmarCpfNotaDigitado();
+              return;
+            }
+            if (e.key === "Escape") {
+              e.preventDefault();
+              e.stopPropagation();
+              PdvModule.cancelarDigitacaoCpfNota();
+              return;
+            }
+          }
+        }
+        const modalBuscaF2 = document.getElementById("modal-busca-produtos");
+        if (modalBuscaF2 && modalBuscaF2.classList.contains("active")) {
+          if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "Enter" || e.key === "Escape") {
+            if (document.activeElement?.id !== "busca-rapida-input") {
+              e.preventDefault();
+              e.stopPropagation();
+              PdvModule.handleBuscaRapidaKeydown(e);
+              return;
+            }
+          }
+        }
+        const modalReimpressaoF12 = document.getElementById("modal-reimpressao-cupom-pdv");
+        if (modalReimpressaoF12 && modalReimpressaoF12.classList.contains("active")) {
+          if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Enter" || e.key === "Escape") {
+            if (document.activeElement?.id !== "reimpressao-busca-input") {
+              e.preventDefault();
+              e.stopPropagation();
+              PdvModule.handleReimpressaoKeydown(e);
+              return;
+            }
           }
         }
         if (e.key === "Escape") {
@@ -54137,13 +61776,34 @@ NSU: ${nsuGerado}`
             e.stopPropagation();
             if (modalAberto.id === "modal-criar-categoria-rapida-xml" && window.XmlImporterModule) {
               window.XmlImporterModule.fecharModalCriarCategoriaRapida();
+              window._ultimoModalFechadoTimestamp = Date.now();
+              return;
+            }
+            if (modalAberto.id === "modal-busca-produtos" && window.PdvModule) {
+              window.PdvModule.fecharBuscaProdutos();
+              window._ultimoModalFechadoTimestamp = Date.now();
+              return;
+            }
+            if (modalAberto.id === "modal-reimpressao-cupom-pdv" && window.PdvModule) {
+              window.PdvModule.fecharModalReimpressaoCupom();
+              window._ultimoModalFechadoTimestamp = Date.now();
               return;
             }
             modalAberto.classList.remove("active");
-            if (this.abaAtiva === "pdv") PdvModule.focarInputLeitor();
+            window._ultimoModalFechadoTimestamp = Date.now();
+            if (this.abaAtiva === "pdv") {
+              setTimeout(() => {
+                PdvModule.focarInputLeitor();
+              }, 50);
+            }
             return;
           }
           if (this.abaAtiva === "pdv") {
+            if (window._ultimoModalFechadoTimestamp && Date.now() - window._ultimoModalFechadoTimestamp < 400) {
+              e.preventDefault();
+              e.stopPropagation();
+              return;
+            }
             e.preventDefault();
             PdvModule.solicitarCancelarCarrinho();
             return;
@@ -54153,6 +61813,17 @@ NSU: ${nsuGerado}`
         if (modalPagamento && modalPagamento.classList.contains("active")) {
           const modalTipoVoucher = document.getElementById("modal-tipo-voucher");
           if (modalTipoVoucher && modalTipoVoucher.classList.contains("active")) {
+            const numKey = e.code && e.code.startsWith("Digit") ? parseInt(e.code.replace("Digit", ""), 10) : e.code && e.code.startsWith("Numpad") ? parseInt(e.code.replace("Numpad", ""), 10) : !isNaN(parseInt(e.key, 10)) ? parseInt(e.key, 10) : null;
+            if (numKey !== null && numKey >= 1) {
+              const index = numKey - 1;
+              const opcoes = PdvModule.voucherTipoOpcoes || [];
+              if (index < opcoes.length) {
+                e.preventDefault();
+                e.stopPropagation();
+                PdvModule.confirmarTipoVoucherSelecionado(index);
+                return;
+              }
+            }
             if (e.key === "ArrowUp" || e.key === "ArrowLeft") {
               e.preventDefault();
               e.stopPropagation();
@@ -54180,6 +61851,17 @@ NSU: ${nsuGerado}`
           }
           const modalVoucher = document.getElementById("modal-selecao-voucher");
           if (modalVoucher && modalVoucher.classList.contains("active")) {
+            const numKey = e.code && e.code.startsWith("Digit") ? parseInt(e.code.replace("Digit", ""), 10) : e.code && e.code.startsWith("Numpad") ? parseInt(e.code.replace("Numpad", ""), 10) : !isNaN(parseInt(e.key, 10)) ? parseInt(e.key, 10) : null;
+            if (numKey !== null && numKey >= 1) {
+              const index = numKey - 1;
+              const opcoes = PdvModule.voucherOpcoesAtuais || [];
+              if (index < opcoes.length) {
+                e.preventDefault();
+                e.stopPropagation();
+                PdvModule.confirmarVoucherSelecionado(index);
+                return;
+              }
+            }
             if (e.key === "ArrowUp" || e.key === "ArrowLeft") {
               e.preventDefault();
               e.stopPropagation();
@@ -54208,6 +61890,10 @@ NSU: ${nsuGerado}`
           const barcodeInput = document.getElementById("pdv-barcode-input");
           if (barcodeInput && document.activeElement === barcodeInput) {
             barcodeInput.blur();
+          }
+          const classicBarcodeInput = document.getElementById("classic-pdv-barcode-input");
+          if (classicBarcodeInput && document.activeElement === classicBarcodeInput) {
+            classicBarcodeInput.blur();
           }
           if (e.key === "F1") {
             e.preventDefault();
@@ -54463,7 +62149,7 @@ NSU: ${nsuGerado}`
           brandIcon.innerHTML = `<span style="font-size: 56px; pointer-events: none; user-select: none; display: block; margin: 0 auto;">${lic && lic.icone ? lic.icone : cfg && cfg.icone ? cfg.icone : "\u{1F3EA}"}</span>`;
           const classicLogo = document.getElementById("classic-client-logo");
           if (classicLogo) {
-            classicLogo.src = "src/assets/icon.png";
+            classicLogo.src = "src/assets/flow-logo-premium-cart-transparent.png";
           }
         }
       }
@@ -54925,20 +62611,9 @@ NSU: ${nsuGerado}`
       const pinInput = document.getElementById("pin-login-input");
       const erroMsg = document.getElementById("pin-login-erro-msg");
       if (erroMsg) erroMsg.style.display = "none";
-      if (cargo === "operador") {
-        const userOperador = { id: "USR-001", nome: "Operador Caixa 01", cargo: "operador", pin: "1234" };
-        AuthModule.usuarioAtual = userOperador;
-        sessionStorage.setItem("adega_usuario_logado", JSON.stringify(userOperador));
-        AuthModule.atualizarHeaderUsuario();
-        if (window.CaixaModule) {
-          window.CaixaModule.renderHistoricoTurnosFechados();
-          window.CaixaModule.renderHistoricoVendasTurno();
-        }
-        this.fecharModalTrocarUsuario();
-        this.showToast("\u{1F464} Perfil alterado para Operador de Caixa!", "success");
-        return;
+      if (label) {
+        label.textContent = cargo === "operador" ? "Digite o PIN do Operador de Caixa:" : "Digite o PIN de Acesso do Gerente:";
       }
-      if (label) label.textContent = "Digite o PIN de Acesso do Gerente:";
       if (pinInput) {
         pinInput.value = "";
         setTimeout(() => pinInput.focus(), 100);
@@ -54949,34 +62624,21 @@ NSU: ${nsuGerado}`
       const erroMsg = document.getElementById("pin-login-erro-msg");
       const pin = pinInput ? pinInput.value.trim() : "";
       const cargoAlvo = this.perfilPendenteTroca || "gerente";
-      if (cargoAlvo === "operador") {
-        const userOperador = { id: "USR-001", nome: "Operador Caixa 01", cargo: "operador" };
-        AuthModule.usuarioAtual = userOperador;
-        sessionStorage.setItem("adega_usuario_logado", JSON.stringify(userOperador));
-        AuthModule.atualizarHeaderUsuario();
-        this.fecharModalTrocarUsuario();
-        this.showToast("\u{1F513} Perfil alterado com sucesso!", "success");
-        return;
-      }
       if (!pin) {
         if (erroMsg) {
-          erroMsg.textContent = "\u26A0\uFE0F Digite o PIN de Acesso!";
+          erroMsg.textContent = "Digite o PIN de acesso.";
           erroMsg.style.display = "block";
         }
         return;
       }
-      const res = AuthModule.trocarUsuario(pin);
+      const res = AuthModule.trocarUsuario(pin, cargoAlvo);
       if (res.success) {
         if (erroMsg) erroMsg.style.display = "none";
-        if (window.CaixaModule) {
-          window.CaixaModule.renderHistoricoTurnosFechados();
-          window.CaixaModule.renderHistoricoVendasTurno();
-        }
         this.fecharModalTrocarUsuario();
-        this.showToast("\u{1F513} Perfil alterado com sucesso!", "success");
+        this.showToast("Perfil alterado com sucesso!", "success");
       } else {
         if (erroMsg) {
-          erroMsg.textContent = "\u274C PIN de acesso incorreto!";
+          erroMsg.textContent = res.erro || "PIN de acesso incorreto.";
           erroMsg.style.display = "block";
         }
         if (pinInput) {
@@ -55062,10 +62724,12 @@ NSU: ${nsuGerado}`
         }
         return;
       }
-      const pinGerente = localStorage.getItem("flowpdv_pin_gerente") || StorageService.getLicenca()?.pinGerente || "1234";
+      const pinGerente = String(
+        localStorage.getItem("flowpdv_pin_gerente") || StorageService.getLicenca()?.pinGerente || ""
+      ).trim();
       const usuarios = StorageService.getUsuarios() || [];
       const gerenteObj = usuarios.find((u) => u.cargo === "gerente" && String(u.pin).trim() === pin);
-      if (pin === String(pinGerente).trim() || gerenteObj) {
+      if (pinGerente && pin === pinGerente || gerenteObj) {
         this.gerenciaDesbloqueadaTemp = true;
         if (overlay) overlay.style.display = "none";
         if (erroMsg) erroMsg.style.display = "none";
@@ -55368,8 +63032,7 @@ NSU: ${nsuGerado}`
   window.EstoqueModule = EstoqueModule;
   window.CaixaModule = CaixaModule;
   window.ClientesModule = ClientesModule;
-  window.LicencaModule = LicencaModule2;
-  window.AdminMasterModule = AdminMasterModule;
+  window.LicencaModule = LicencaModule;
   window.ThermalPrintModule = ThermalPrintModule;
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", () => App.init());
@@ -55431,7 +63094,6 @@ exceljs/dist/exceljs.min.js:
 @firebase/util/dist/index.esm2017.js:
 @firebase/util/dist/index.esm2017.js:
 @firebase/util/dist/index.esm2017.js:
-@firebase/util/dist/index.esm2017.js:
 @firebase/logger/dist/esm/index.esm2017.js:
 @firebase/firestore/dist/index.esm2017.js:
 @firebase/firestore/dist/index.esm2017.js:
@@ -55464,14 +63126,6 @@ exceljs/dist/exceljs.min.js:
    *)
 
 @firebase/util/dist/index.esm2017.js:
-@firebase/util/dist/index.esm2017.js:
-@firebase/firestore/dist/index.esm2017.js:
-@firebase/firestore/dist/index.esm2017.js:
-@firebase/firestore/dist/index.esm2017.js:
-@firebase/firestore/dist/index.esm2017.js:
-@firebase/firestore/dist/index.esm2017.js:
-@firebase/firestore/dist/index.esm2017.js:
-@firebase/firestore/dist/index.esm2017.js:
   (**
    * @license
    * Copyright 2022 Google LLC
@@ -55488,9 +63142,6 @@ exceljs/dist/exceljs.min.js:
    * See the License for the specific language governing permissions and
    * limitations under the License.
    *)
-
-@firebase/util/dist/index.esm2017.js:
-@firebase/firestore/dist/index.esm2017.js:
   (**
    * @license
    * Copyright 2017 Google LLC
@@ -55541,6 +63192,31 @@ exceljs/dist/exceljs.min.js:
    *)
 
 @firebase/util/dist/index.esm2017.js:
+@firebase/firestore/dist/index.esm2017.js:
+@firebase/firestore/dist/index.esm2017.js:
+@firebase/firestore/dist/index.esm2017.js:
+@firebase/firestore/dist/index.esm2017.js:
+@firebase/firestore/dist/index.esm2017.js:
+@firebase/firestore/dist/index.esm2017.js:
+@firebase/firestore/dist/index.esm2017.js:
+  (**
+   * @license
+   * Copyright 2022 Google LLC
+   *
+   * Licensed under the Apache License, Version 2.0 (the "License");
+   * you may not use this file except in compliance with the License.
+   * You may obtain a copy of the License at
+   *
+   *   http://www.apache.org/licenses/LICENSE-2.0
+   *
+   * Unless required by applicable law or agreed to in writing, software
+   * distributed under the License is distributed on an "AS IS" BASIS,
+   * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   * See the License for the specific language governing permissions and
+   * limitations under the License.
+   *)
+
+@firebase/util/dist/index.esm2017.js:
 @firebase/component/dist/esm/index.esm2017.js:
 @firebase/app/dist/esm/index.esm2017.js:
 @firebase/app/dist/esm/index.esm2017.js:
@@ -55548,6 +63224,8 @@ exceljs/dist/exceljs.min.js:
 @firebase/firestore/dist/index.esm2017.js:
 @firebase/firestore/dist/index.esm2017.js:
 @firebase/firestore/dist/index.esm2017.js:
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
   (**
    * @license
    * Copyright 2019 Google LLC
@@ -55581,6 +63259,38 @@ firebase/app/dist/esm/index.esm.js:
 @firebase/firestore/dist/index.esm2017.js:
 @firebase/firestore/dist/index.esm2017.js:
 @firebase/firestore/dist/index.esm2017.js:
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
   (**
    * @license
    * Copyright 2020 Google LLC
@@ -55600,6 +63310,7 @@ firebase/app/dist/esm/index.esm.js:
 
 @firebase/util/dist/index.esm2017.js:
 @firebase/firestore/dist/index.esm2017.js:
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
   (**
    * @license
    * Copyright 2021 Google LLC
@@ -55767,6 +63478,56 @@ firebase/app/dist/esm/index.esm.js:
   (**
    * @license
    * Copyright 2017 Google LLC
+   *
+   * Licensed under the Apache License, Version 2.0 (the "License");
+   * you may not use this file except in compliance with the License.
+   * You may obtain a copy of the License at
+   *
+   *   http://www.apache.org/licenses/LICENSE-2.0
+   *
+   * Unless required by applicable law or agreed to in writing, software
+   * distributed under the License is distributed on an "AS IS" BASIS,
+   * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   * See the License for the specific language governing permissions and
+   * limitations under the License.
+   *)
+
+@firebase/firestore/dist/index.esm2017.js:
+  (**
+   * @license
+   * Copyright 2017 Google LLC
+   *
+   * Licensed under the Apache License, Version 2.0 (the "License");
+   * you may not use this file except in compliance with the License.
+   * You may obtain a copy of the License at
+   *
+   *   http://www.apache.org/licenses/LICENSE-2.0
+   *
+   * Unless required by applicable law or agreed to in writing, software
+   * distributed under the License is distributed on an "AS IS" BASIS,
+   * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   * See the License for the specific language governing permissions and
+   * limitations under the License.
+   *)
+  (**
+   * @license
+   * Copyright 2025 Google LLC
+   *
+   * Licensed under the Apache License, Version 2.0 (the "License");
+   * you may not use this file except in compliance with the License.
+   * You may obtain a copy of the License at
+   *
+   *   http://www.apache.org/licenses/LICENSE-2.0
+   *
+   * Unless required by applicable law or agreed to in writing, software
+   * distributed under the License is distributed on an "AS IS" BASIS,
+   * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   * See the License for the specific language governing permissions and
+   * limitations under the License.
+   *)
+  (**
+   * @license
+   * Copyright 2021 Google LLC
    *
    * Licensed under the Apache License, Version 2.0 (the "License");
    * you may not use this file except in compliance with the License.
@@ -56548,6 +64309,360 @@ firebase/app/dist/esm/index.esm.js:
   (**
    * @license
    * Copyright 2023 Google LLC
+   *
+   * Licensed under the Apache License, Version 2.0 (the "License");
+   * you may not use this file except in compliance with the License.
+   * You may obtain a copy of the License at
+   *
+   *   http://www.apache.org/licenses/LICENSE-2.0
+   *
+   * Unless required by applicable law or agreed to in writing, software
+   * distributed under the License is distributed on an "AS IS" BASIS,
+   * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   * See the License for the specific language governing permissions and
+   * limitations under the License.
+   *)
+
+@firebase/functions/dist/esm/index.esm2017.js:
+  (**
+   * @license
+   * Copyright 2017 Google LLC
+   *
+   * Licensed under the Apache License, Version 2.0 (the "License");
+   * you may not use this file except in compliance with the License.
+   * You may obtain a copy of the License at
+   *
+   *   http://www.apache.org/licenses/LICENSE-2.0
+   *
+   * Unless required by applicable law or agreed to in writing, software
+   * distributed under the License is distributed on an "AS IS" BASIS,
+   * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   * See the License for the specific language governing permissions and
+   * limitations under the License.
+   *)
+  (**
+   * @license
+   * Copyright 2020 Google LLC
+   *
+   * Licensed under the Apache License, Version 2.0 (the "License");
+   * you may not use this file except in compliance with the License.
+   * You may obtain a copy of the License at
+   *
+   *   http://www.apache.org/licenses/LICENSE-2.0
+   *
+   * Unless required by applicable law or agreed to in writing, software
+   * distributed under the License is distributed on an "AS IS" BASIS,
+   * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   * See the License for the specific language governing permissions and
+   * limitations under the License.
+   *)
+
+@firebase/functions/dist/esm/index.esm2017.js:
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+  (**
+   * @license
+   * Copyright 2019 Google LLC
+   *
+   * Licensed under the Apache License, Version 2.0 (the "License");
+   * you may not use this file except in compliance with the License.
+   * You may obtain a copy of the License at
+   *
+   *   http://www.apache.org/licenses/LICENSE-2.0
+   *
+   * Unless required by applicable law or agreed to in writing, software
+   * distributed under the License is distributed on an "AS IS" BASIS,
+   * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   * See the License for the specific language governing permissions and
+   * limitations under the License.
+   *)
+  (**
+   * @license
+   * Copyright 2020 Google LLC
+   *
+   * Licensed under the Apache License, Version 2.0 (the "License");
+   * you may not use this file except in compliance with the License.
+   * You may obtain a copy of the License at
+   *
+   *   http://www.apache.org/licenses/LICENSE-2.0
+   *
+   * Unless required by applicable law or agreed to in writing, software
+   * distributed under the License is distributed on an "AS IS" BASIS,
+   * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   * See the License for the specific language governing permissions and
+   * limitations under the License.
+   *)
+
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+  (**
+   * @license
+   * Copyright 2020 Google LLC
+   *
+   * Licensed under the Apache License, Version 2.0 (the "License");
+   * you may not use this file except in compliance with the License.
+   * You may obtain a copy of the License at
+   *
+   *   http://www.apache.org/licenses/LICENSE-2.0
+   *
+   * Unless required by applicable law or agreed to in writing, software
+   * distributed under the License is distributed on an "AS IS" BASIS,
+   * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   * See the License for the specific language governing permissions and
+   * limitations under the License.
+   *)
+  (**
+   * @license
+   * Copyright 2019 Google LLC
+   *
+   * Licensed under the Apache License, Version 2.0 (the "License");
+   * you may not use this file except in compliance with the License.
+   * You may obtain a copy of the License at
+   *
+   *   http://www.apache.org/licenses/LICENSE-2.0
+   *
+   * Unless required by applicable law or agreed to in writing, software
+   * distributed under the License is distributed on an "AS IS" BASIS,
+   * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   * See the License for the specific language governing permissions and
+   * limitations under the License.
+   *)
+
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+  (**
+   * @license
+   * Copyright 2020 Google LLC
+   *
+   * Licensed under the Apache License, Version 2.0 (the "License");
+   * you may not use this file except in compliance with the License.
+   * You may obtain a copy of the License at
+   *
+   *   http://www.apache.org/licenses/LICENSE-2.0
+   *
+   * Unless required by applicable law or agreed to in writing, software
+   * distributed under the License is distributed on an "AS IS" BASIS,
+   * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   * See the License for the specific language governing permissions and
+   * limitations under the License.
+   *)
+  (**
+   * @license
+   * Copyright 2022 Google LLC
+   *
+   * Licensed under the Apache License, Version 2.0 (the "License");
+   * you may not use this file except in compliance with the License.
+   * You may obtain a copy of the License at
+   *
+   *   http://www.apache.org/licenses/LICENSE-2.0
+   *
+   * Unless required by applicable law or agreed to in writing, software
+   * distributed under the License is distributed on an "AS IS" BASIS,
+   * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   * See the License for the specific language governing permissions and
+   * limitations under the License.
+   *)
+  (**
+   * @license
+   * Copyright 2023 Google LLC
+   *
+   * Licensed under the Apache License, Version 2.0 (the "License");
+   * you may not use this file except in compliance with the License.
+   * You may obtain a copy of the License at
+   *
+   *   http://www.apache.org/licenses/LICENSE-2.0
+   *
+   * Unless required by applicable law or agreed to in writing, software
+   * distributed under the License is distributed on an "AS IS" BASIS,
+   * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   * See the License for the specific language governing permissions and
+   * limitations under the License.
+   *)
+
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+  (**
+   * @license
+   * Copyright 2019 Google LLC
+   *
+   * Licensed under the Apache License, Version 2.0 (the "License");
+   * you may not use this file except in compliance with the License.
+   * You may obtain a copy of the License at
+   *
+   *   http://www.apache.org/licenses/LICENSE-2.0
+   *
+   * Unless required by applicable law or agreed to in writing, software
+   * distributed under the License is distributed on an "AS IS" BASIS,
+   * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   * See the License for the specific language governing permissions and
+   * limitations under the License.
+   *)
+  (**
+   * @license
+   * Copyright 2020 Google LLC
+   *
+   * Licensed under the Apache License, Version 2.0 (the "License");
+   * you may not use this file except in compliance with the License.
+   * You may obtain a copy of the License at
+   *
+   *   http://www.apache.org/licenses/LICENSE-2.0
+   *
+   * Unless required by applicable law or agreed to in writing, software
+   * distributed under the License is distributed on an "AS IS" BASIS,
+   * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   * See the License for the specific language governing permissions and
+   * limitations under the License.
+   *)
+  (**
+   * @license
+   * Copyright 2025 Google LLC
+   *
+   * Licensed under the Apache License, Version 2.0 (the "License");
+   * you may not use this file except in compliance with the License.
+   * You may obtain a copy of the License at
+   *
+   *   http://www.apache.org/licenses/LICENSE-2.0
+   *
+   * Unless required by applicable law or agreed to in writing, software
+   * distributed under the License is distributed on an "AS IS" BASIS,
+   * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   * See the License for the specific language governing permissions and
+   * limitations under the License.
+   *)
+
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+  (**
+   * @license
+   * Copyright 2020 Google LLC
+   *
+   * Licensed under the Apache License, Version 2.0 (the "License");
+   * you may not use this file except in compliance with the License.
+   * You may obtain a copy of the License at
+   *
+   *   http://www.apache.org/licenses/LICENSE-2.0
+   *
+   * Unless required by applicable law or agreed to in writing, software
+   * distributed under the License is distributed on an "AS IS" BASIS,
+   * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   * See the License for the specific language governing permissions and
+   * limitations under the License.
+   *)
+  (**
+   * @license
+   * Copyright 2019 Google LLC
+   *
+   * Licensed under the Apache License, Version 2.0 (the "License");
+   * you may not use this file except in compliance with the License.
+   * You may obtain a copy of the License at
+   *
+   *   http://www.apache.org/licenses/LICENSE-2.0
+   *
+   * Unless required by applicable law or agreed to in writing, software
+   * distributed under the License is distributed on an "AS IS" BASIS,
+   * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   * See the License for the specific language governing permissions and
+   * limitations under the License.
+   *)
+  (**
+   * @license
+   * Copyright 2020 Google LLC.
+   *
+   * Licensed under the Apache License, Version 2.0 (the "License");
+   * you may not use this file except in compliance with the License.
+   * You may obtain a copy of the License at
+   *
+   *   http://www.apache.org/licenses/LICENSE-2.0
+   *
+   * Unless required by applicable law or agreed to in writing, software
+   * distributed under the License is distributed on an "AS IS" BASIS,
+   * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   * See the License for the specific language governing permissions and
+   * limitations under the License.
+   *)
+
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+  (**
+   * @license
+   * Copyright 2020 Google LLC
+   *
+   * Licensed under the Apache License, Version 2.0 (the "License");
+   * you may not use this file except in compliance with the License.
+   * You may obtain a copy of the License at
+   *
+   *   http://www.apache.org/licenses/LICENSE-2.0
+   *
+   * Unless required by applicable law or agreed to in writing, software
+   * distributed under the License is distributed on an "AS IS" BASIS,
+   * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   * See the License for the specific language governing permissions and
+   * limitations under the License.
+   *)
+  (**
+   * @license
+   * Copyright 2021 Google LLC
+   *
+   * Licensed under the Apache License, Version 2.0 (the "License");
+   * you may not use this file except in compliance with the License.
+   * You may obtain a copy of the License at
+   *
+   *   http://www.apache.org/licenses/LICENSE-2.0
+   *
+   * Unless required by applicable law or agreed to in writing, software
+   * distributed under the License is distributed on an "AS IS" BASIS,
+   * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   * See the License for the specific language governing permissions and
+   * limitations under the License.
+   *)
+  (**
+   * @license
+   * Copyright 2019 Google LLC
+   *
+   * Licensed under the Apache License, Version 2.0 (the "License");
+   * you may not use this file except in compliance with the License.
+   * You may obtain a copy of the License at
+   *
+   *   http://www.apache.org/licenses/LICENSE-2.0
+   *
+   * Unless required by applicable law or agreed to in writing, software
+   * distributed under the License is distributed on an "AS IS" BASIS,
+   * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   * See the License for the specific language governing permissions and
+   * limitations under the License.
+   *)
+
+@firebase/auth/dist/esm2017/index-35c79a8a.js:
+  (**
+   * @license
+   * Copyright 2020 Google LLC
+   *
+   * Licensed under the Apache License, Version 2.0 (the "License");
+   * you may not use this file except in compliance with the License.
+   * You may obtain a copy of the License at
+   *
+   *   http://www.apache.org/licenses/LICENSE-2.0
+   *
+   * Unless required by applicable law or agreed to in writing, software
+   * distributed under the License is distributed on an "AS IS" BASIS,
+   * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   * See the License for the specific language governing permissions and
+   * limitations under the License.
+   *)
+  (**
+   * @license
+   * Copyright 2020 Google LLC.
+   *
+   * Licensed under the Apache License, Version 2.0 (the "License");
+   * you may not use this file except in compliance with the License.
+   * You may obtain a copy of the License at
+   *
+   *   http://www.apache.org/licenses/LICENSE-2.0
+   *
+   * Unless required by applicable law or agreed to in writing, software
+   * distributed under the License is distributed on an "AS IS" BASIS,
+   * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   * See the License for the specific language governing permissions and
+   * limitations under the License.
+   *)
+  (**
+   * @license
+   * Copyright 2021 Google LLC
    *
    * Licensed under the Apache License, Version 2.0 (the "License");
    * you may not use this file except in compliance with the License.

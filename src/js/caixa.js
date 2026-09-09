@@ -137,7 +137,19 @@ export const CaixaModule = {
       const tot = v.total || 0;
       totalVendas += tot;
 
-      if (v.pagamentoDividido && v.parcela1 && v.parcela2) {
+      if (v.pagamentoDividido && Array.isArray(v.pagamentos)) {
+        let dinheiroVenda = 0;
+        v.pagamentos.forEach(p => {
+          const val = parseFloat(p.valor) || 0;
+          if (p.forma === 'Dinheiro') dinheiroVenda += val;
+          else if (p.forma === 'PIX') totalPix += val;
+          else if (p.forma === 'Débito') totalDebito += val;
+          else if (p.forma === 'Crédito') totalCredito += val;
+          else if (p.forma === 'Fiado') totalFiado += val;
+        });
+        const trocoVenda = parseFloat(v.troco) || 0;
+        totalDinheiro += Math.max(0, dinheiroVenda - trocoVenda);
+      } else if (v.pagamentoDividido && (v.parcela1 || v.parcela2)) {
         const addParcela = (forma, valor) => {
           const val = parseFloat(valor) || 0;
           if (forma === 'Dinheiro') totalDinheiro += val;
@@ -146,8 +158,8 @@ export const CaixaModule = {
           else if (forma === 'Crédito') totalCredito += val;
           else if (forma === 'Fiado') totalFiado += val;
         };
-        addParcela(v.parcela1.forma, v.parcela1.valor);
-        addParcela(v.parcela2.forma, v.parcela2.valor);
+        if (v.parcela1) addParcela(v.parcela1.forma, v.parcela1.valor);
+        if (v.parcela2) addParcela(v.parcela2.forma, v.parcela2.valor);
       } else {
         if (v.formaPagamento === 'Dinheiro') totalDinheiro += tot;
         else if (v.formaPagamento === 'PIX') totalPix += tot;
@@ -242,15 +254,22 @@ export const CaixaModule = {
   fecharModalAbertura() {
     const modal = document.getElementById('modal-abrir-caixa');
     if (modal) modal.classList.remove('active');
+    setTimeout(() => {
+      if (window.PdvModule) window.PdvModule.focarInputLeitor();
+    }, 60);
   },
 
   confirmarAberturaCaixa() {
     const input = document.getElementById('abertura-troco-input');
     const valorTroco = parseFloat(input?.value) || 0;
     const usuario = AuthModule.getUsuario();
+    if (!usuario) {
+      window.App.showToast('Faça login para abrir o caixa.', 'warning');
+      return;
+    }
 
     const novoTurno = {
-      id: 'TRN-' + Date.now().toString().slice(-6),
+      id: 'TRN-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
       operador: usuario.nome,
       dataAbertura: new Date().toISOString(),
       trocoInicial: valorTroco,
@@ -278,7 +297,14 @@ export const CaixaModule = {
     this.renderHistoricoVendasTurno();
     this.renderHistoricoTurnosFechados();
     if (window.PdvModule) window.PdvModule.renderMiniDashboardTurno();
+    if (window.PdvModule) window.PdvModule.renderCarrinho();
     window.App.showToast(`🎉 Caixa aberto com R$ ${valorTroco.toFixed(2)} de troco inicial!`, 'success');
+    setTimeout(() => {
+      if (window.PdvModule) window.PdvModule.focarInputLeitor();
+    }, 60);
+    setTimeout(() => {
+      if (window.PdvModule) window.PdvModule.focarInputLeitor();
+    }, 200);
   },
 
   // 2. Sangria / Retirada de Caixa (Modal Interativo)
@@ -310,6 +336,9 @@ export const CaixaModule = {
   fecharModalSangria() {
     const modal = document.getElementById('modal-sangria-caixa');
     if (modal) modal.classList.remove('active');
+    setTimeout(() => {
+      if (window.PdvModule) window.PdvModule.focarInputLeitor();
+    }, 60);
   },
 
   confirmarSangria() {
@@ -338,7 +367,7 @@ export const CaixaModule = {
       data: new Date().toISOString(),
       valor: valor,
       motivo: motivo,
-      operador: AuthModule.getUsuario().nome
+      operador: AuthModule.getNomeOperador()
     });
 
     StorageService.salvarTurno(turno);
@@ -357,13 +386,13 @@ export const CaixaModule = {
     this.fecharModalSangria();
     this.renderStatusTurno();
     window.App.showToast(`💸 Sangria de R$ ${valor.toFixed(2)} registrada com sucesso!`, 'info');
+    setTimeout(() => {
+      if (window.PdvModule) window.PdvModule.focarInputLeitor();
+    }, 60);
   },
 
   parseMoedaBR(valor) {
-    if (typeof valor === 'number') return valor;
-    if (!valor) return 0;
-    const limpo = String(valor).replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, '');
-    return parseFloat(limpo) || 0;
+    return StorageService.parseMoedaBR(valor);
   },
 
   // 3. Fechamento de Caixa (Conferência Cega & Auditoria)
@@ -405,6 +434,9 @@ export const CaixaModule = {
   fecharModalFechamento() {
     const modal = document.getElementById('modal-fechar-caixa');
     if (modal) modal.classList.remove('active');
+    setTimeout(() => {
+      if (window.PdvModule) window.PdvModule.focarInputLeitor();
+    }, 60);
   },
 
   confirmarFechamentoCaixa(e) {
@@ -471,6 +503,10 @@ export const CaixaModule = {
     this.renderHistoricoVendasTurno();
     this.renderHistoricoTurnosFechados();
     if (window.PdvModule) window.PdvModule.renderMiniDashboardTurno();
+    if (window.PdvModule) window.PdvModule.renderCarrinho();
+    setTimeout(() => {
+      if (window.PdvModule) window.PdvModule.focarInputLeitor();
+    }, 60);
 
     const isGerenteOuAdmin = window.AuthModule && (window.AuthModule.isGerente() || window.AuthModule.isSuperAdmin());
     let msgAlerta = `🎉 Turno #${turno.id} encerrado com sucesso!`;
@@ -1377,7 +1413,7 @@ export const CaixaModule = {
 
     if (!turno) {
       turno = {
-        id: 'TURNO-' + Date.now().toString().slice(-6),
+        id: 'TURNO-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
         dataAbertura: new Date().toISOString(),
         dataFechamento: new Date().toISOString(),
         status: 'fechado',
@@ -1404,7 +1440,7 @@ export const CaixaModule = {
             <div><span style="color: var(--text-muted);">Abertura:</span> <strong>${dataAb}</strong></div>
             <div><span style="color: var(--text-muted);">Fechamento:</span> <strong>${dataFc}</strong></div>
             <div><span style="color: var(--text-muted);">Operador:</span> <strong>${turno.operador || 'Operador'}</strong></div>
-            <div><span style="color: var(--text-muted);">Troco Inicial:</span> <strong>R$ ${(turno.valorAbertura || 0).toFixed(2).replace('.', ',')}</strong></div>
+            <div><span style="color: var(--text-muted);">Troco Inicial:</span> <strong>R$ ${(turno.trocoInicial || turno.valorAbertura || 0).toFixed(2).replace('.', ',')}</strong></div>
           </div>
         </div>
 

@@ -27,7 +27,7 @@ export const FiscalModule = {
     const displayFiscal = document.getElementById('cfg-display-fiscal');
     if (displayFiscal) {
       if (!isFiscalLicenciado) {
-        displayFiscal.innerHTML = `<span style="color: #94a3b8; font-weight: 700;">⚪ Desativado no Master Admin</span>`;
+        displayFiscal.innerHTML = `<span style="color: #94a3b8; font-weight: 700;">⚪ Desativado pelo administrador</span>`;
       } else if (!cfg.habilitado) {
         displayFiscal.innerHTML = `<span style="color: #64748b; font-weight: 700;">⚪ Não Fiscal (Desativado)</span>`;
       } else {
@@ -41,7 +41,7 @@ export const FiscalModule = {
     const displayTef = document.getElementById('cfg-display-tef');
     if (displayTef) {
       if (!isTefLicenciado) {
-        displayTef.innerHTML = `<span style="color: #94a3b8; font-weight: 700;">⚪ Desativado no Master Admin</span>`;
+        displayTef.innerHTML = `<span style="color: #94a3b8; font-weight: 700;">⚪ Desativado pelo administrador</span>`;
       } else if (!tefCfg.habilitado) {
         displayTef.innerHTML = `<span style="color: #64748b; font-weight: 700;">⚪ TEF Desativado</span>`;
       } else {
@@ -53,7 +53,7 @@ export const FiscalModule = {
   abrirModalConfigFiscal() {
     if (!StorageService.isModuloAtivo('fiscalNfce')) {
       if (window.App && typeof window.App.showToast === 'function') {
-        window.App.showToast('🏛️ O módulo Fiscal NFC-e está desativado para esta licença no Master Admin.', 'info');
+        window.App.showToast('🏛️ O módulo Fiscal NFC-e está desativado para esta licença pelo administrador.', 'info');
       }
       return;
     }
@@ -152,7 +152,7 @@ export const FiscalModule = {
   abrirModalConfigTef() {
     if (!StorageService.isModuloAtivo('tefCartao')) {
       if (window.App && typeof window.App.showToast === 'function') {
-        window.App.showToast('💳 O módulo TEF / Cartão está desativado para esta licença no Master Admin.', 'info');
+        window.App.showToast('💳 O módulo TEF / Cartão está desativado para esta licença pelo administrador.', 'info');
       }
       return;
     }
@@ -336,15 +336,26 @@ export const FiscalModule = {
 
     // Mapeamento das Formas de Pagamento
     const formasPagamento = [];
-    if (venda.pagamentoDividido && venda.parcela1 && venda.parcela2) {
-      formasPagamento.push({
-        forma_pagamento: this.obterCodigoSefazPagamento(venda.parcela1.forma),
-        valor_pagamento: parseFloat(venda.parcela1.valor) || 0
+    if (venda.pagamentoDividido && Array.isArray(venda.pagamentos) && venda.pagamentos.length > 0) {
+      venda.pagamentos.forEach(p => {
+        formasPagamento.push({
+          forma_pagamento: this.obterCodigoSefazPagamento(p.forma),
+          valor_pagamento: parseFloat(p.valor) || 0
+        });
       });
-      formasPagamento.push({
-        forma_pagamento: this.obterCodigoSefazPagamento(venda.parcela2.forma),
-        valor_pagamento: parseFloat(venda.parcela2.valor) || 0
-      });
+    } else if (venda.pagamentoDividido && (venda.parcela1 || venda.parcela2)) {
+      if (venda.parcela1) {
+        formasPagamento.push({
+          forma_pagamento: this.obterCodigoSefazPagamento(venda.parcela1.forma),
+          valor_pagamento: parseFloat(venda.parcela1.valor) || 0
+        });
+      }
+      if (venda.parcela2) {
+        formasPagamento.push({
+          forma_pagamento: this.obterCodigoSefazPagamento(venda.parcela2.forma),
+          valor_pagamento: parseFloat(venda.parcela2.valor) || 0
+        });
+      }
     } else {
       formasPagamento.push({
         forma_pagamento: this.obterCodigoSefazPagamento(venda.formaPagamento),

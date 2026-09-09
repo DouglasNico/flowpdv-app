@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>FlowPDV — Sistema de Frente de Caixa e Gestão Comercial</title>
+  <link rel="icon" type="image/png" href="src/assets/flow-icon-premium-cart-transparent.png">
+  <link rel="shortcut icon" href="src/assets/flow-icon-premium-cart-transparent.png">
   <link rel="stylesheet" href="src/css/style.css">
 </head>
 <body>
@@ -22,7 +24,7 @@
     <!-- Esquerda: Logotipo Oficial e Navegação em Abas -->
     <div class="header-left-group">
       <div class="header-brand">
-        <img src="src/assets/logoflow.png" alt="FlowPDV" class="header-brand-logo-img">
+        <img src="src/assets/flow-logo-premium-cart-transparent.png" alt="FlowPDV" class="header-brand-logo-img">
       </div>
 
       <nav class="app-nav">
@@ -49,11 +51,6 @@
         </button>
         <button type="button" class="nav-btn" data-tab="config" id="nav-btn-config">
           <span>⚙️ Configurações</span>
-        </button>
-        
-        <button type="button" class="nav-btn" data-tab="master" id="nav-btn-master" style="display: none; background: rgba(124, 58, 237, 0.15); border-color: #7c3aed; color: #7c3aed;">
-          <span>👑 Master SaaS</span>
-          <kbd>F10</kbd>
         </button>
       </nav>
     </div>
@@ -260,31 +257,30 @@
       <div id="classic-pdv-shell" aria-label="PDV Clássico">
         <header class="classic-header">
             <div class="classic-logo-title">
-              <svg viewBox="0 0 24 24" width="28" height="28" fill="white">
-                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
-              </svg>
-              <span class="classic-title-text">FLOWPDV</span>
+              <img src="src/assets/flow-logo-premium-cart-transparent.png" alt="FlowPDV" class="classic-header-logo">
             </div>
             <div class="classic-header-info">
               <span id="classic-clock">00:00:00</span>
               <span class="divider">|</span>
               <span id="classic-operator-name">Operador: ---</span>
               <button id="classic-btn-trocar-operador" onclick="AuthModule.logout()">Trocar de Operador</button>
+              <button type="button" id="classic-btn-painel-gerente" class="classic-btn-admin" onclick="App.trocarAba('gerencia')" style="display: none;" title="Acessar Painel do Gerente / Administrador">
+                👔 Painel do Administrador
+              </button>
             </div>
             <div class="classic-window-controls">
-              <span onclick="if(window.electronAPI && window.electronAPI.minimizarApp) window.electronAPI.minimizarApp();">−</span>
-              <span onclick="App.solicitarFechamentoApp()">✕</span>
+              <span onclick="App.solicitarFechamentoApp()" title="Fechar PDV [ESC/ALT+F4]">✕</span>
             </div>
           </header>
 
         <div class="classic-status-bar">
-          <h2 id="classic-status-text">CAIXA LIVRE</h2>
+          <h2 id="classic-status-text">CAIXA FECHADO</h2>
         </div>
 
         <div class="classic-main-content">
           <div class="classic-left-pane">
               <div class="classic-cart-img">
-                <img id="classic-client-logo" src="src/assets/icon.png" alt="Logo Cliente" style="width: 100%; max-height: 100%; object-fit: contain; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.3));" onerror="this.src='src/assets/icon.png'">
+                <img id="classic-client-logo" src="src/assets/flow-logo-premium-cart-transparent.png" alt="Logo Cliente" style="max-height: 92%; max-width: 92%; width: auto; height: auto; object-fit: contain;" onerror="this.src='src/assets/flow-logo-premium-cart-transparent.png'">
               </div>
             <div class="classic-field-box">
               <label>CÓDIGO DE BARRAS</label>
@@ -306,8 +302,8 @@
               <table class="classic-pdv-table">
                 <thead>
                   <tr>
-                    <th style="width: 60px;">NºItem</th>
-                    <th style="width: 120px;">Código</th>
+                    <th>NºItem</th>
+                    <th>Código</th>
                     <th>Descrição</th>
                     <th style="text-align: center;">Qtd</th>
                     <th style="text-align: right;">Vlr. Unit.</th>
@@ -328,7 +324,7 @@
               <label>CÓDIGO</label>
               <input type="text" id="classic-pdv-barcode-input" style="text-transform: uppercase;" autocomplete="off" autofocus>
             </div>
-            <div class="classic-shortcuts" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px;">
+            <div class="classic-shortcuts" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 15px;">
               <div class="shortcut-col">
                 <span><strong>F2</strong> - Buscar Prod</span>
                 <span><strong>F4</strong> - Finalizar Venda</span>
@@ -341,6 +337,7 @@
               </div>
               <div class="shortcut-col">
                 <span><strong>F10</strong> - Abrir/Fechar Caixa</span>
+                <span><strong>F12</strong> - Reimprimir Cupom</span>
                 <span><strong>DEL</strong> - Excluir Item</span>
                 <span><strong>ESC</strong> - Cancelar Venda</span>
               </div>
@@ -746,6 +743,9 @@
             <h2 style="margin: 0; font-size: 19px; font-weight: 800; color: var(--text-main); display: flex; align-items: center; gap: 8px;">
               <span>👔 Central do Dono & Gerência</span>
               <span style="background: rgba(124, 58, 237, 0.12); color: #7c3aed; font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 6px; border: 1px solid rgba(124, 58, 237, 0.25);">👑 Modo Gestor</span>
+              <button type="button" class="btn-voltar-caixa-f1" onclick="App.trocarAba('pdv')" title="Retornar à tela de Vendas / Caixa [F1]" style="margin-left: 8px; display: inline-flex; align-items: center; gap: 6px; background: #0f172a; color: #ffffff; border: 1.5px solid #1e293b; border-radius: 7px; padding: 4px 11px; font-size: 11.5px; font-weight: 800; cursor: pointer; transition: all 0.2s ease;">
+                🛒 Voltar ao Caixa <kbd style="background: rgba(255,255,255,0.22); padding: 1px 5px; border-radius: 4px; font-size: 10px;">F1</kbd>
+              </button>
             </h2>
             <p style="margin: 2px 0 0 0; font-size: 12px; color: var(--text-muted);">Painel financeiro, curva ABC, categorias autônomas e auditoria em tempo real.</p>
           </div>
@@ -1179,7 +1179,7 @@
                   <div style="display: flex; align-items: center; gap: 8px;">
                     <span style="font-size: 14px;">🚀</span>
                     <strong style="font-size: 13px; color: var(--text-main); font-weight: 800;">Atualizações do Sistema</strong>
-                    <span id="cfg-current-version-badge" style="background: #e2e8f0; color: var(--text-main); font-size: 10px; font-weight: 800; font-family: 'JetBrains Mono'; padding: 1px 6px; border-radius: 4px;">v3.0.0</span>
+                    <span id="cfg-current-version-badge" style="background: #e2e8f0; color: var(--text-main); font-size: 10px; font-weight: 800; font-family: 'JetBrains Mono'; padding: 1px 6px; border-radius: 4px;">v3.1.0</span>
                   </div>
                   <span id="cfg-update-status" style="font-size: 12px; color: var(--text-muted); display: block; margin-top: 2px;">
                     Verifique melhorias e novas versões do FlowPDV com 1 clique.
@@ -1196,176 +1196,8 @@
       </div>
     </section>
 
-    <!-- ---------------------------------------- -->
-    <!-- ABA 7: MASTER SAAS (SUPER ADMIN)         -->
-    <!-- ---------------------------------------- -->
-    <section class="tab-panel" id="tab-master">
-      <div class="view-container" style="max-width: 1300px; margin: 0 auto; padding: 10px 16px; width: 100%; box-sizing: border-box; height: calc(100vh - 75px); display: flex; flex-direction: column;">
-        
-        <!-- Header Master -->
-        <div class="view-header" style="margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
-          <div class="view-title-group">
-            <h2 style="font-size: 20px; font-weight: 800; margin: 0; color: #7c3aed; display: flex; align-items: center; gap: 8px;">
-              👑 Painel Master SaaS (Super Administrador)
-            </h2>
-            <p style="font-size: 12px; margin: 2px 0 0 0; color: var(--text-muted);">Gerenciamento central de clientes, licenças, módulos e faturamento na Nuvem.</p>
-          </div>
-
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <button type="button" class="btn-primary-action" style="height: 38px; font-size: 13px; font-weight: 800; background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff;" onclick="AdminMasterModule.abrirModalNovoCliente()">
-              ➕ Novo Cliente Master
-            </button>
-            <button type="button" class="btn-primary-action" style="height: 38px; font-size: 13px; font-weight: 700; background: #f1f5f9; color: var(--text-main); border: 1px solid #cbd5e1;" onclick="AdminMasterModule.carregarAdegasDaNuvem()">
-              🔄 Atualizar Nuvem
-            </button>
-          </div>
-        </div>
-
-        <!-- Métricas SaaS -->
-        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px;">
-          <div class="summary-metric-card" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px 18px; box-shadow: var(--shadow-sm);">
-            <span style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">👥 Total de Clientes Cadastrados</span>
-            <strong id="admin-total-clientes-count" style="font-size: 24px; font-weight: 900; color: var(--text-main); font-family: 'JetBrains Mono'; display: block; margin-top: 4px;">0</strong>
-            <span style="font-size: 11px; color: var(--text-dim);">Estabelecimentos na Nuvem</span>
-          </div>
-          <div class="summary-metric-card" style="background: #ffffff; border: 1px solid #c7d2fe; border-radius: 12px; padding: 14px 18px; box-shadow: var(--shadow-sm);">
-            <span style="font-size: 11px; font-weight: 700; color: #4f46e5; text-transform: uppercase;">💵 MRR Estimado (Faturamento Mensal)</span>
-            <strong id="admin-total-faturamento-mrr" style="font-size: 24px; font-weight: 900; color: #4f46e5; font-family: 'JetBrains Mono'; display: block; margin-top: 4px;">R$ 0,00 / mês</strong>
-            <span style="font-size: 11px; color: var(--text-dim);">Receita recorrente ativa</span>
-          </div>
-        </div>
-
-        <!-- Tabela de Clientes Master -->
-        <div class="data-table-card" style="padding: 0; box-shadow: var(--shadow-sm); width: 100%; box-sizing: border-box; flex: 1; display: flex; flex-direction: column; overflow: hidden; border-radius: 10px;">
-          <div class="table-responsive" style="flex: 1; overflow-y: auto;">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Estabelecimento / Chave</th>
-                  <th>WhatsApp</th>
-                  <th>Plano</th>
-                  <th>Vencimento</th>
-                  <th>Status</th>
-                  <th style="text-align: right;">Ações de Controle</th>
-                </tr>
-              </thead>
-              <tbody id="admin-adegas-tbody">
-                <!-- Preenchido via AdminMasterModule -->
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-      </div>
-    </section>
-
   </main>
 
-  <!-- MODAL: CADASTRO / EDIÇÃO DE CLIENTE MASTER SAAS -->
-  <div class="modal-overlay" id="modal-master-cliente">
-    <div class="modal-content-box" style="max-width: 540px;">
-      <div class="modal-header-bar">
-        <h3 id="modal-master-cliente-title">👑 Gestão de Cliente Master SaaS</h3>
-        <button type="button" class="btn-close-modal" onclick="AdminMasterModule.fecharModal()">✕</button>
-      </div>
-      <div class="modal-body-content">
-        <div style="display: flex; justify-content: flex-end; margin-bottom: 8px;">
-          <button type="button" class="btn-action-sm" style="font-size: 11px; color: #7c3aed; font-weight: 700; background: rgba(124, 58, 237, 0.08); border-color: rgba(124, 58, 237, 0.2);" onclick="AdminMasterModule.usarLicencaTerminalAtual()">
-            🎯 Puxar Dados Desta Máquina
-          </button>
-        </div>
-        <form onsubmit="event.preventDefault(); AdminMasterModule.salvarClienteMaster();">
-          <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 10px;">
-            <div class="form-group-custom">
-              <label class="form-label-custom">Chave de Licença *</label>
-              <input type="text" id="master-chave-input" class="form-input-custom" style="font-family: 'JetBrains Mono'; text-transform: uppercase;" required>
-            </div>
-            <div class="form-group-custom">
-              <label class="form-label-custom">Nome da Adega / Loja *</label>
-              <input type="text" id="master-nome-input" class="form-input-custom" placeholder="Ex: Adega do Douglas" required>
-            </div>
-          </div>
-          <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 10px;">
-            <div class="form-group-custom">
-              <label class="form-label-custom">CNPJ / CPF</label>
-              <input type="text" id="master-cnpj-input" class="form-input-custom" placeholder="00.000.000/0001-00">
-            </div>
-            <div class="form-group-custom">
-              <label class="form-label-custom">WhatsApp</label>
-              <input type="text" id="master-whats-input" class="form-input-custom" placeholder="(19) 98963-2127">
-            </div>
-          </div>
-          <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 10px;">
-            <div class="form-group-custom">
-              <label class="form-label-custom">Plano Contratado</label>
-              <select id="master-plano-input" class="form-input-custom">
-                <option value="Mensal Pro (R$ 89,90/mês)">Mensal Pro (R$ 89,90/mês)</option>
-                <option value="Semestral (R$ 499,00)">Semestral (R$ 499,00)</option>
-                <option value="Anual VIP (R$ 890,00)">Anual VIP (R$ 890,00)</option>
-                <option value="Vitalício Especial">Vitalício Especial</option>
-                <option value="Degustação (7 Dias Grátis)">Degustação (7 Dias Grátis)</option>
-              </select>
-            </div>
-            <div class="form-group-custom">
-              <label class="form-label-custom">Status da Licença</label>
-              <select id="master-status-input" class="form-input-custom">
-                <option value="ativa">🟢 Ativa</option>
-                <option value="bloqueada">🔴 Bloqueada / Pendente</option>
-                <option value="teste">🟡 Teste / Degustação</option>
-              </select>
-            </div>
-          </div>
-          <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 10px;">
-            <div class="form-group-custom">
-              <label class="form-label-custom">Data de Vencimento</label>
-              <input type="date" id="master-venc-input" class="form-input-custom">
-            </div>
-            <div class="form-group-custom">
-              <label class="form-label-custom">Módulo de Atendimento</label>
-              <select id="master-comandas-select" class="form-input-custom">
-                <option value="mesas_e_comandas">🍽️ Mesas & Comandas (Padrão)</option>
-                <option value="apenas_mesas">🪑 Apenas Mesas</option>
-                <option value="apenas_comandas">🏷️ Apenas Comandas</option>
-                <option value="desativado">🚫 Desativado (Ocultar)</option>
-              </select>
-            </div>
-          </div>
-          <div style="display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; margin-bottom: 10px;">
-            <div class="form-group-custom">
-              <label class="form-label-custom">Modelo do PDV (Frente de Caixa)</label>
-              <select id="master-layoutpdv-select" class="form-input-custom">
-                <option value="moderno">💻 Moderno (Touch/Mouse com Botões)</option>
-                <option value="classico">🛒 Clássico (Mercado - Foco no Teclado e Atalhos)</option>
-              </select>
-            </div>
-          </div>
-          <div class="form-group-custom" style="margin-bottom: 16px;">
-            <label class="form-label-custom">URL da Logo (ou selecione arquivo)</label>
-            <div style="display: flex; gap: 6px;">
-              <input type="text" id="master-logo-input" class="form-input-custom" placeholder="https://... ou base64" oninput="AdminMasterModule.atualizarPreviewLogo()">
-              <label class="btn-action-sm" style="height: 38px; display: inline-flex; align-items: center; padding: 0 10px; cursor: pointer; white-space: nowrap; margin: 0;">
-                📁 Foto
-                <input type="file" accept="image/*" style="display: none;" onchange="AdminMasterModule.selecionarFotoArquivo(event)">
-              </label>
-            </div>
-            <div id="master-logo-preview-box" style="display: none; margin-top: 8px; text-align: center;">
-              <img id="master-preview-img" src="" style="max-height: 48px; border-radius: 6px; border: 1px solid var(--border-card);">
-            </div>
-          </div>
-          <div style="display: flex; gap: 10px;">
-            <button type="submit" class="btn-primary-action" style="flex: 1; justify-content: center; height: 44px; font-size: 14px; font-weight: 800; background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff;">
-              💾 Salvar na Nuvem Cloud
-            </button>
-            <button type="button" class="btn-primary-action" style="background: #f1f5f9; color: var(--text-main); height: 44px; padding: 0 20px; border: 1px solid #cbd5e1;" onclick="AdminMasterModule.fecharModal()">
-              Cancelar
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  </div>
-
-  <!-- ========================================== -->
   <!-- TELA DE BLOQUEIO POR LIMITE DE TERMINAIS   -->
   <!-- ========================================== -->
   <div class="lock-screen-overlay" id="lock-screen-terminais-overlay" style="z-index: 99999; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); background: rgba(15, 23, 42, 0.85);">
@@ -1387,7 +1219,7 @@
         💡 <strong>Como liberar este computador?</strong>
         <ul style="margin-top: 6px; margin-left: 16px; line-height: 1.6; font-size: 12px; color: #64748b;">
           <li>Aumente o limite de computadores no suporte; ou</li>
-          <li>Desvincule os computadores antigos no <strong>Painel Master</strong>.</li>
+          <li>Peça ao administrador para desvincular os computadores antigos.</li>
         </ul>
       </div>
 
@@ -1427,7 +1259,7 @@
 
       <div style="background: #f8fafc; border: 1px solid var(--border-card); border-radius: 12px; padding: 16px; margin-bottom: 18px;">
         <div style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 4px;">Chave PIX para Pagamento:</div>
-        <div class="pix-copia-cola-box" id="lock-pix-key" style="font-size: 15px; font-weight: 800; color: #0284c7; background: #e0f2fe; padding: 8px 12px; border-radius: 6px; border: 1px dashed #38bdf8; font-family: 'JetBrains Mono'; margin-bottom: 10px; word-break: break-all;">19999997777</div>
+        <div class="pix-copia-cola-box" id="lock-pix-key" style="font-size: 15px; font-weight: 800; color: #0284c7; background: #e0f2fe; padding: 8px 12px; border-radius: 6px; border: 1px dashed #38bdf8; font-family: 'JetBrains Mono'; margin-bottom: 10px; word-break: break-all;">19989632127</div>
 
         <div style="font-size: 15px; font-weight: 800; color: var(--text-main);">
           Valor da Mensalidade: <span style="color: var(--accent-green);" id="lock-valor-mensal">R$ 89,90</span>
@@ -1435,7 +1267,7 @@
       </div>
 
       <div style="display: flex; flex-direction: column; gap: 10px;">
-        <a id="lock-whatsapp-btn" href="https://wa.me/5519999997777" target="_blank" class="btn-primary-action" style="width: 100%; justify-content: center; height: 48px; background: #25d366; font-size: 14px; font-weight: 800; color: #ffffff; text-decoration: none; box-shadow: 0 4px 14px rgba(37, 211, 102, 0.4);">
+        <a id="lock-whatsapp-btn" href="https://wa.me/5519989632127" target="_blank" class="btn-primary-action" style="width: 100%; justify-content: center; height: 48px; background: #25d366; font-size: 14px; font-weight: 800; color: #ffffff; text-decoration: none; box-shadow: 0 4px 14px rgba(37, 211, 102, 0.4);">
           💬 Enviar Comprovante no WhatsApp
         </a>
 
@@ -1458,7 +1290,7 @@
       <div class="lock-icon-huge" style="font-size: 56px; margin-bottom: 10px;">💻</div>
       <div class="lock-title" style="font-size: 22px; font-weight: 900; color: var(--text-main); margin-bottom: 6px;">Limite de Computadores Atingido</div>
       <div class="lock-desc" style="font-size: 13px; color: var(--text-muted); line-height: 1.5; margin-bottom: 18px;" id="lock-terminais-msg">
-        Esta licença permite o uso em até <strong id="lock-terminais-max-tag" style="color: #0284c7;">1 computador(es)</strong> simultâneo(s). Este computador não está autorizado ou foi desvinculado no Painel Master.
+        Esta licença permite o uso em até <strong id="lock-terminais-max-tag" style="color: #0284c7;">1 computador(es)</strong> simultâneo(s). Este computador não está autorizado ou foi desvinculado pelo administrador.
       </div>
 
       <div id="lock-terminais-inline-feedback" style="display: none; padding: 10px 14px; border-radius: 8px; font-size: 13px; font-weight: 700; margin-bottom: 14px; text-align: center;"></div>
@@ -1503,7 +1335,7 @@
           </button>
         </div>
         <div id="renovacao-pix-key" style="font-size: 14px; font-weight: 800; color: #0284c7; background: #e0f2fe; padding: 8px 12px; border-radius: 6px; border: 1px dashed #38bdf8; font-family: 'JetBrains Mono'; word-break: break-all; margin-bottom: 10px;">
-          19999997777
+          19989632127
         </div>
         <div style="display: flex; justify-content: space-between; align-items: center;">
           <span style="font-size: 12px; font-weight: 700; color: var(--text-main);">Valor da Mensalidade:</span>
@@ -1512,7 +1344,7 @@
       </div>
 
       <div style="display: flex; flex-direction: column; gap: 8px;">
-        <a id="renovacao-whatsapp-btn" href="https://wa.me/5519999997777" target="_blank" class="btn-primary-action" style="width: 100%; justify-content: center; height: 44px; background: #25d366; font-size: 13px; font-weight: 800; color: #ffffff; text-decoration: none; box-shadow: 0 4px 12px rgba(37, 211, 102, 0.35);">
+        <a id="renovacao-whatsapp-btn" href="https://wa.me/5519989632127" target="_blank" class="btn-primary-action" style="width: 100%; justify-content: center; height: 44px; background: #25d366; font-size: 13px; font-weight: 800; color: #ffffff; text-decoration: none; box-shadow: 0 4px 12px rgba(37, 211, 102, 0.35);">
           💬 Enviar Comprovante no WhatsApp
         </a>
         <button type="button" class="btn-primary-action" style="width: 100%; justify-content: center; height: 40px; background: #f1f5f9; color: var(--text-main); font-size: 12px; font-weight: 700; border: 1px solid var(--border-card); box-shadow: none;" onclick="LicencaModule.fecharModalPagamentoLicenca()">
@@ -1534,7 +1366,7 @@
       </div>
       <div class="modal-body-content">
         <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
-          Selecione o perfil desejado. Para o perfil <strong>Gerente</strong>, será solicitada a senha de acesso.
+          Selecione o perfil e informe o PIN correspondente. Operador e Gerente exigem autenticação.
         </p>
 
         <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 18px;">
@@ -1608,7 +1440,7 @@
   <div class="modal-overlay" id="modal-nova-atualizacao" style="z-index: 10001; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); background: rgba(15, 23, 42, 0.75);">
     <div class="modal-content-box" style="max-width: 480px; text-align: center; border: 1px solid var(--border-subtle); box-shadow: var(--shadow-lg); padding: 32px 28px;">
       <div style="margin-bottom: 16px; display: flex; justify-content: center;">
-        <img src="src/assets/icon.png" alt="FlowPDV" style="width: 68px; height: 68px; border-radius: 16px; object-fit: cover; box-shadow: 0 8px 24px rgba(2, 132, 199, 0.35); border: 2px solid rgba(255, 255, 255, 0.15);">
+        <img src="src/assets/flow-icon-premium-cart-transparent.png" alt="FlowPDV" style="width: 68px; height: 68px; object-fit: contain; filter: drop-shadow(0 8px 18px rgba(249, 115, 22, 0.35));">
       </div>
       <h3 style="font-size: 20px; font-weight: 800; color: var(--text-main); margin-bottom: 6px;">Nova Atualização Disponível!</h3>
       <div style="display: inline-block; background: #e0f2fe; color: #0369a1; font-weight: 800; font-size: 13px; font-family: 'JetBrains Mono'; padding: 4px 12px; border-radius: 20px; margin-bottom: 16px;" id="modal-update-tag-version">
@@ -2043,7 +1875,7 @@
       <button type="button" class="btn-close-modal" style="position: absolute; top: 16px; right: 18px; font-size: 22px; color: #64748b; background: transparent; border: none; cursor: pointer; padding: 4px 8px; font-weight: 800;" onclick="LicencaModule.fecharModalAtivacao()">✕</button>
       
       <div style="margin-bottom: 16px; display: flex; justify-content: center;">
-        <img src="src/assets/icon.png" alt="FlowPDV" style="width: 72px; height: 72px; border-radius: 18px; object-fit: cover; box-shadow: 0 8px 24px rgba(2, 132, 199, 0.35); border: 2px solid rgba(255, 255, 255, 0.15);">
+        <img src="src/assets/flow-icon-premium-cart-transparent.png" alt="FlowPDV" style="width: 72px; height: 72px; object-fit: contain; filter: drop-shadow(0 8px 18px rgba(249, 115, 22, 0.35));">
       </div>
       
       <h3 id="ativacao-modal-titulo" style="font-size: 22px; font-weight: 900; color: var(--text-main); margin-bottom: 6px; letter-spacing: -0.5px;">Ativação de Licença FlowPDV</h3>
@@ -2072,87 +1904,7 @@
 
   <!-- Scripts -->
   <!-- ========================================== -->
-  <!-- MODAL: CADASTRAR / EDITAR CLIENTE MASTER   -->
-  <!-- ========================================== -->
-  <div class="modal-overlay" id="modal-master-cliente">
-    <div class="modal-content-box" style="max-width: 540px;">
-      <div class="modal-header-bar">
-        <h3>👑 Gerenciar Cliente / Logo na Nuvem</h3>
-        <button type="button" class="btn-close-modal" onclick="AdminMasterModule.fecharModal()">✕</button>
-      </div>
-      <div class="modal-body-content">
-        <form onsubmit="event.preventDefault(); AdminMasterModule.salvarClienteMaster();">
-          <button type="button" class="btn-primary-action" style="background: rgba(124, 58, 237, 0.1); color: #7c3aed; width: 100%; justify-content: center; margin-bottom: 14px; font-weight: 800;" onclick="AdminMasterModule.usarLicencaTerminalAtual()">
-            🎯 Preencher com a Licença Ativa Desta Máquina
-          </button>
-          <div style="margin-bottom: 12px;">
-            <label class="form-label-custom">🔑 Chave de Licença do Cliente:</label>
-            <input type="text" id="master-chave-input" class="form-input-custom" placeholder="ex: LIC-FLOW-884210" required style="font-family: 'JetBrains Mono'; font-weight: 700;">
-          </div>
-          <div style="margin-bottom: 12px;">
-            <label class="form-label-custom">🏢 Nome da Adega / Razão Social:</label>
-            <input type="text" id="master-nome-input" class="form-input-custom" placeholder="ex: Adega & Depósito Central" required>
-          </div>
-          <div style="margin-bottom: 12px;">
-            <label class="form-label-custom">📋 CNPJ / Documento:</label>
-            <input type="text" id="master-cnpj-input" class="form-input-custom" placeholder="ex: 45.123.789/0001-20">
-          </div>
-          <div style="margin-bottom: 14px;">
-            <label class="form-label-custom">🖼️ Foto de Capa / Logo da Adega (Upload ou URL):</label>
-            <div style="display: flex; gap: 8px; margin-bottom: 6px;">
-              <input type="text" id="master-logo-input" class="form-input-custom" placeholder="Cole a URL ou escolha a foto no botão ao lado ->" style="flex: 1;" oninput="AdminMasterModule.atualizarPreviewLogo()">
-              <label class="btn-primary-action" style="padding: 0 12px; height: 42px; font-size: 12px; cursor: pointer; white-space: nowrap; background: var(--accent-blue);">
-                📁 Escolher Foto
-                <input type="file" id="master-logo-file" accept="image/*" style="display: none;" onchange="AdminMasterModule.selecionarFotoArquivo(event)">
-              </label>
-            </div>
-            <div id="master-logo-preview-box" style="display: none; padding: 10px; background: #f8fafc; border: 1px solid var(--border-card); border-radius: 6px; text-align: center;">
-              <span style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Pré-visualização da Logo:</span>
-              <img id="master-preview-img" src="" style="max-height: 80px; max-width: 100%; object-fit: contain;">
-            </div>
-          </div>
-          <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px;">
-            <div>
-              <label class="form-label-custom">📱 WhatsApp:</label>
-              <input type="text" id="master-whats-input" class="form-input-custom" placeholder="(19) 98963-2127">
-            </div>
-            <div>
-              <label class="form-label-custom">🏷️ Plano:</label>
-              <select id="master-plano-input" class="form-select-custom">
-                <option value="Mensal Pro (R$ 89,90/mês)">Mensal Pro (R$ 89,90/mês)</option>
-                <option value="Mensal Básico (R$ 69,90/mês)">Mensal Básico (R$ 69,90/mês)</option>
-                <option value="Anual VIP (R$ 799,00/ano)">Anual VIP (R$ 799,00/ano)</option>
-              </select>
-            </div>
-          </div>
-          <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px;">
-            <div>
-              <label class="form-label-custom">📅 Data de Vencimento:</label>
-              <input type="date" id="master-venc-input" class="form-input-custom" required>
-            </div>
-            <div>
-              <label class="form-label-custom">🟢 Status da Licença:</label>
-              <select id="master-status-input" class="form-select-custom">
-                <option value="ativa">🟢 Ativa</option>
-                <option value="bloqueada">🛑 Bloqueada</option>
-              </select>
-            </div>
-          </div>
-          <div style="display: flex; gap: 10px;">
-            <button type="submit" class="btn-primary-action" style="flex: 1; justify-content: center; height: 44px;">
-              💾 Salvar e Sincronizar na Nuvem
-            </button>
-            <button type="button" class="btn-primary-action" style="background: #f1f5f9; color: var(--text-main); height: 44px; padding: 0 20px;" onclick="AdminMasterModule.fecharModal()">
-              Cancelar
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  </div>
-
-    <!-- ========================================== -->
-    <!-- MODAL: IMPORTAR PRODUTOS EM MASSA (EXCEL)  -->
+  <!-- MODAL: IMPORTAR PRODUTOS EM MASSA (EXCEL)  -->
     <!-- ========================================== -->
     <div class="modal-overlay" id="modal-importar-produtos" style="z-index: 10600;">
       <div class="modal-content-box" style="max-width: 840px; width: 95%;">
@@ -2731,6 +2483,10 @@
           <div id="busca-produtos-lista" style="max-height: 380px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;">
             <!-- Preenchido dinamicamente via PdvModule.renderResultadosBusca -->
           </div>
+          <div class="f2-keyboard-helper-bar" style="font-size: 11.5px; color: #1e3a8a; background: #e0f2fe; padding: 6px 14px; border-radius: 4px; border: 1px solid #bfdbfe; margin-top: 8px; display: flex; align-items: center; justify-content: space-between; font-weight: 600;">
+            <span>⌨️ <strong>[↑ / ↓]</strong> Selecionar Produto &nbsp;|&nbsp; <strong>[← / →]</strong> Alternar Unidade / Fardo &nbsp;|&nbsp; <strong>[ENTER]</strong> Inserir</span>
+            <span><strong>[ESC]</strong> Voltar</span>
+          </div>
         </div>
       </div>
     </div>
@@ -2752,23 +2508,25 @@
         </div>
 
         <div class="modal-body-content" style="padding: 18px 24px;">
-          <!-- Card de Total e Resumo Geral -->
-          <div class="payment-total-hero" style="margin-bottom: 14px;">
-            <div class="payment-total-hero-left">
-              <span class="payment-total-hero-label">TOTAL DA VENDA</span>
-              <div class="payment-total-hero-val" id="pag-total-modal">R$ 0,00</div>
-            </div>
-            <div style="text-align: right;">
-              <span class="payment-total-hero-badge" id="pag-items-badge-modal">🛒 0 itens</span>
-              <div id="pag-total-lancado-mini" style="font-size: 12px; color: var(--text-muted); margin-top: 6px; font-weight: 700;">
-                Já lançado: <strong id="pag-total-pago-display" style="color: #059669; font-family: 'JetBrains Mono';">R$ 0,00</strong>
+          <!-- TOPO RESUMO: TOTAL DA VENDA & FALTA PAGAR LADO A LADO -->
+          <div class="payment-top-summary-grid">
+            <div class="payment-total-hero">
+              <div class="payment-total-hero-left">
+                <span class="payment-total-hero-label">TOTAL DA VENDA</span>
+                <div class="payment-total-hero-val" id="pag-total-modal">R$ 0,00</div>
+              </div>
+              <div style="text-align: right;">
+                <span class="payment-total-hero-badge" id="pag-items-badge-modal">🛒 0 itens</span>
+                <div id="pag-total-lancado-mini" style="font-size: 12px; color: var(--text-muted); margin-top: 6px; font-weight: 700;">
+                  Já lançado: <strong id="pag-total-pago-display" style="color: #059669; font-family: 'JetBrains Mono';">R$ 0,00</strong>
+                </div>
               </div>
             </div>
-          </div>
 
-          <!-- BANNER DINÂMICO DE STATUS / SALDO RESTANTE -->
-          <div id="pag-status-banner-box">
-            <!-- Gerado dinamicamente: Vermelho se faltar, Verde se troco ou quitado -->
+            <!-- BANNER DINÂMICO DE STATUS / SALDO RESTANTE -->
+            <div id="pag-status-banner-box">
+              <!-- Gerado dinamicamente: Vermelho se faltar, Verde se troco ou quitado -->
+            </div>
           </div>
 
           <!-- LISTA DE PAGAMENTOS PARCIAIS LANÇADOS -->
@@ -2895,6 +2653,67 @@
             </div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- MODAL: PERGUNTA CPF NA NOTA (NFC-e)       -->
+    <!-- ========================================== -->
+    <div class="modal-overlay" id="modal-pergunta-cpf-nota" style="z-index: 10600;">
+      <div class="modal-content-box" style="max-width: 480px; text-align: center; padding: 26px 24px;">
+        
+        <!-- FASE 1: PERGUNTA "CPF NA NOTA?" -->
+        <div id="cpf-nota-fase-pergunta">
+          <div style="font-size: 48px; margin-bottom: 8px;">🏛️</div>
+          <h3 style="font-size: 22px; font-weight: 900; color: var(--text-main); margin-bottom: 6px;">
+            CPF na Nota?
+          </h3>
+          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 24px; line-height: 1.4;">
+            O cliente deseja informar o <strong>CPF ou CNPJ</strong> no Cupom Fiscal?
+          </p>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <button type="button" class="btn-primary-action" id="btn-cpf-nota-nao" style="height: 48px; font-size: 14px; font-weight: 800; background: #64748b; color: #ffffff; justify-content: center;" onclick="PdvModule.responderPerguntaCpfNota(false)">
+              ✕ Não [ESC]
+            </button>
+            <button type="button" class="btn-primary-action" id="btn-cpf-nota-sim" style="height: 48px; font-size: 14px; font-weight: 800; background: #0284c7; color: #ffffff; justify-content: center; box-shadow: 0 4px 14px rgba(2, 132, 199, 0.4);" onclick="PdvModule.responderPerguntaCpfNota(true)">
+              ✓ Sim [ENTER]
+            </button>
+          </div>
+        </div>
+
+        <!-- FASE 2: DIGITAÇÃO DO CPF -->
+        <div id="cpf-nota-fase-digitacao" style="display: none;">
+          <div style="font-size: 40px; margin-bottom: 6px;">🪪</div>
+          <h3 style="font-size: 20px; font-weight: 900; color: var(--text-main); margin-bottom: 4px;">
+            Informe o CPF / CNPJ
+          </h3>
+          <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 16px;">
+            Digite os números ou solicite a digitação no PINPad da maquininha:
+          </p>
+
+          <div style="margin-bottom: 16px;">
+            <input type="text" id="cpf-nota-modal-input" class="form-input-custom" placeholder="000.000.000-00" 
+                   style="height: 52px; font-size: 22px; font-weight: 900; font-family: 'JetBrains Mono'; text-align: center; border-radius: 10px; border: 2px solid #0284c7;" 
+                   maxlength="18"
+                   oninput="this.value = PdvModule.formatarCpfCnpj(this.value)">
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 10px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+              <button type="button" class="btn-primary-action" style="height: 44px; font-size: 13px; font-weight: 700; background: #f1f5f9; color: var(--text-main); border: 1px solid var(--border-card); justify-content: center;" onclick="PdvModule.cancelarDigitacaoCpfNota()">
+                Sem CPF [ESC]
+              </button>
+              <button type="button" class="btn-primary-action" id="btn-confirmar-cpf-nota-digitado" style="height: 44px; font-size: 13px; font-weight: 800; background: var(--accent-green); justify-content: center;" onclick="PdvModule.confirmarCpfNotaDigitado()">
+                Confirmar [ENTER]
+              </button>
+            </div>
+            <button type="button" class="btn-primary-action" id="btn-pedir-cpf-pinpad-modal" style="height: 40px; font-size: 12px; font-weight: 800; background: #0f172a; color: #38bdf8; border: 1px solid #334155; justify-content: center; gap: 6px;" onclick="PdvModule.pedirCpfNoPinpadModal()">
+              📟 Pedir no PINPad da Maquininha
+            </button>
+          </div>
+        </div>
+
       </div>
     </div>
 
@@ -3113,7 +2932,7 @@
     <div class="modal-overlay" id="modal-login-operador">
       <div class="modal-content-box" style="max-width: 500px; padding: 28px 24px;">
         <div style="text-align: center; margin-bottom: 20px;">
-          <img src="src/assets/logoflow.png" alt="FlowPDV" style="height: 52px; max-height: 52px; width: auto; object-fit: contain; margin: 0 auto 10px auto; display: block;">
+          <img src="src/assets/flow-logo-premium-cart-transparent.png" alt="FlowPDV" style="height: 52px; max-height: 52px; width: auto; object-fit: contain; margin: 0 auto 10px auto; display: block;">
           <h3 style="font-size: 16px; color: var(--text-main); font-weight: 800; margin: 0;">Identificação do Operador</h3>
           <p style="font-size: 12px; color: var(--text-muted); margin: 4px 0 0 0;">Selecione seu perfil e digite seu PIN para liberar o terminal.</p>
         </div>
@@ -4076,7 +3895,7 @@
         </div>
 
         <!-- Teclado Numérico da Maquininha -->
-        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px;">
+        <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px;">
           <button type="button" class="pinpad-btn" onclick="TefModule.digitarDigitoCpfPinpad('1')">1</button>
           <button type="button" class="pinpad-btn" onclick="TefModule.digitarDigitoCpfPinpad('2')">2</button>
           <button type="button" class="pinpad-btn" onclick="TefModule.digitarDigitoCpfPinpad('3')">3</button>
@@ -4311,6 +4130,10 @@
             Fechar [ESC]
           </button>
         </div>
+        <div class="f12-keyboard-helper-bar" style="font-size: 11.5px; color: #1e3a8a; background: #e0f2fe; padding: 6px 14px; border-radius: 4px; border: 1px solid #bfdbfe; margin-top: 10px; display: flex; align-items: center; justify-content: space-between; font-weight: 600;">
+          <span>⌨️ <strong>[↑ / ↓]</strong> Selecionar Venda &nbsp;|&nbsp; <strong>[ENTER]</strong> Reimprimir Cupom</span>
+          <span><strong>[ESC]</strong> Fechar</span>
+        </div>
       </div>
     </div>
   </div>
@@ -4380,8 +4203,8 @@
             <button type="submit" class="clube-cpf-submit">
               Aplicar preço Clube <span>ENTER</span>
             </button>
-            <button type="button" id="btn-remover-clube" class="clube-cpf-remove" onclick="PdvModule.removerClubeFidelidade()">
-              Remover
+            <button type="button" id="btn-remover-clube" class="clube-cpf-remove" onclick="PdvModule.removerClubeFidelidade()" title="Desvincular cliente desta venda">
+              🗑️ Remover
             </button>
           </div>
         </form>

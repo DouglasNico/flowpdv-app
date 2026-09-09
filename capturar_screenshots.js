@@ -50,8 +50,8 @@ app.whenReady().then(async () => {
         diasTolerancia: 5,
         valorMensal: 89.90,
         pinGerente: '1234',
-        chavePixSuporte: '19999997777',
-        whatsappSuporte: '(19) 99999-7777'
+        chavePixSuporte: '19989632127',
+        whatsappSuporte: '(19) 98963-2127'
       };
       localStorage.setItem('adega_licenca', JSON.stringify(lic));
       localStorage.setItem('flowpdv_licenca_local', JSON.stringify(lic));
