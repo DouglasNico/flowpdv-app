@@ -5652,6 +5652,9 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   .app-nav .nav-btn kbd {
     display: none !important;
   }
+  #header-license-badge {
+    display: none !important;
+  }
   .license-badge {
     height: 36px !important;
     padding: 0 11px !important;
@@ -5701,6 +5704,9 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   }
   .header-actions {
     margin-left: 14px !important;
+  }
+  #header-license-badge {
+    display: none !important;
   }
   .license-badge {
     height: 34px !important;
