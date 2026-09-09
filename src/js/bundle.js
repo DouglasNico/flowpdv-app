@@ -24210,6 +24210,10 @@
           window.CloudSyncModule.enviarAlteracaoNuvem("turno");
         }
       }
+      if (window.LicencaModule && typeof window.LicencaModule.forcarHeartbeatTerminal === "function") {
+        window.LicencaModule.forcarHeartbeatTerminal().catch(() => {
+        });
+      }
     },
     getHistoricoTurnos() {
       const saved = localStorage.getItem("adega_turnos_historico");
@@ -24245,6 +24249,10 @@
         if (typeof window.CloudSyncModule.enviarAlteracaoNuvem === "function") {
           window.CloudSyncModule.enviarAlteracaoNuvem("turno");
         }
+      }
+      if (window.LicencaModule && typeof window.LicencaModule.forcarHeartbeatTerminal === "function") {
+        window.LicencaModule.forcarHeartbeatTerminal().catch(() => {
+        });
       }
     },
     // Clientes & Fiado
@@ -55451,7 +55459,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
             if (idxTerm >= 0) {
               const agora = Date.now();
               const ultimoHb = parseInt(localStorage.getItem("flowpdv_terminal_heartbeat_ms") || "0", 10) || 0;
-              const precisaHb = agora - ultimoHb > 2 * 60 * 1e3;
+              const precisaHb = agora - ultimoHb > 20 * 1e3;
               this.getDadosTerminalAtual().then((infoTerminal) => {
                 const termAtual = terminais[idxTerm];
                 const hostnameMudou = !termAtual.hostname || termAtual.hostname !== infoTerminal.hostname;
@@ -55513,6 +55521,32 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
         sistema: platform === "win32" ? "Windows" : platform,
         ultimoAcesso: (/* @__PURE__ */ new Date()).toISOString()
       };
+    },
+    /** Sobe hostname + ultimoAcesso na hora (abrir/fechar caixa). Sem espera de 2 min. */
+    async forcarHeartbeatTerminal() {
+      try {
+        const lic = StorageService.getLicenca() || {};
+        const chave = String(lic.chaveLicenca || lic.clienteId || "").trim().toUpperCase();
+        if (!chave) return;
+        await this.garantirSessaoNuvem(chave);
+        const myDevId = StorageService.getDeviceId();
+        const info = await this.getDadosTerminalAtual();
+        const snap = await getDoc(doc(db, "licencas", chave));
+        const atuais = snap.exists() ? snap.data().terminaisAtivos || [] : [];
+        let terminais = this.limparTerminaisDuplicados(atuais);
+        const idx = terminais.findIndex((t) => t && t.id === myDevId);
+        const registro = { ...idx >= 0 ? terminais[idx] : {}, ...info, id: myDevId, ultimoAcesso: (/* @__PURE__ */ new Date()).toISOString() };
+        if (idx >= 0) terminais[idx] = registro;
+        else terminais.push(registro);
+        terminais = this.limparTerminaisDuplicados(terminais);
+        await setDoc(doc(db, "licencas", chave), { terminaisAtivos: terminais }, { merge: true });
+        try {
+          localStorage.setItem("flowpdv_terminal_heartbeat_ms", String(Date.now()));
+        } catch (e) {
+        }
+      } catch (e) {
+        console.warn("[CloudLic] Heartbeat imediato falhou:", e);
+      }
     },
     async atualizarOperadorTerminalNuvem(nomeOperador) {
       try {
@@ -56597,6 +56631,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       try {
         await updateDoc(doc(db, COLECAO_BACKUPS, chaveNorm), {
           [`turnosAtivos.${id}`]: payload,
+          turnoAtual: payload,
           atualizadoEm: (/* @__PURE__ */ new Date()).toISOString()
         });
       } catch (e) {
@@ -57082,7 +57117,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       if (this.debounceTimer) {
         clearTimeout(this.debounceTimer);
       }
-      const delay = motivo === "turno_excluido" || motivo === "produtos" || motivo === "comandas" || motivo === "categorias_exclusao" || motivo === "categoria_criada" ? 50 : 500;
+      const delay = motivo === "turno" || motivo === "turno_excluido" || motivo === "turno_ativo_startup" || motivo === "turno_fechado_startup" || motivo === "produtos" || motivo === "comandas" || motivo === "categorias_exclusao" || motivo === "categoria_criada" ? 50 : 500;
       this.debounceTimer = setTimeout(async () => {
         try {
           const chave = this.getChaveLicenca();
