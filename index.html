@@ -661,25 +661,23 @@
 
         </div>
 
-        <!-- Filtros -->
-        <div style="display: flex; align-items: center; margin-bottom: 8px; flex-shrink: 0;">
-          <div id="comandas-filtros-bar" style="display: flex; background: #f1f5f9; padding: 3px; border-radius: 8px; border: 1px solid #cbd5e1; gap: 2px;">
+        <!-- Filtros + busca + cadastro (uma linha) -->
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; flex-shrink: 0; flex-wrap: nowrap;">
+          <div id="comandas-filtros-bar" style="display: flex; background: #f1f5f9; padding: 3px; border-radius: 8px; border: 1px solid #cbd5e1; gap: 2px; flex-shrink: 0;">
             <button type="button" class="comanda-filtro-btn active" data-filtro="todas" onclick="ComandasModule.filtrarAba('todas')">Todas</button>
             <button type="button" class="comanda-filtro-btn" id="btn-filtro-tab-mesas" data-filtro="mesas" onclick="ComandasModule.filtrarAba('mesas')">🪑 Mesas</button>
             <button type="button" class="comanda-filtro-btn" id="btn-filtro-tab-comandas" data-filtro="comandas" onclick="ComandasModule.filtrarAba('comandas')">🏷️ Comandas</button>
             <button type="button" class="comanda-filtro-btn" data-filtro="ocupadas" onclick="ComandasModule.filtrarAba('ocupadas')">🔥 Ocupadas</button>
           </div>
-        </div>
-
-        <!-- Busca e cadastro (abaixo dos filtros) -->
-        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-shrink: 0;">
-          <div style="position: relative; flex: 1 1 auto; min-width: 200px; max-width: 420px;">
-            <input type="text" id="comandas-busca-mesa-input" class="form-input-custom" placeholder="Buscar mesa, comanda ou cliente..." style="height: 36px; font-size: 12px; padding-left: 32px; width: 100%; border-radius: 8px; background: #ffffff;" oninput="ComandasModule.filtrarBuscaMesa(this.value)">
-            <span style="position: absolute; left: 10px; top: 9px; font-size: 13px; pointer-events: none; opacity: 0.6;">🔍</span>
+          <div style="display: flex; align-items: center; gap: 8px; flex: 1 1 auto; justify-content: flex-end; min-width: 0;">
+            <div style="position: relative; width: 260px; max-width: 100%; flex: 0 1 260px;">
+              <input type="text" id="comandas-busca-mesa-input" class="form-input-custom" placeholder="Buscar mesa, comanda ou cliente..." style="height: 36px; font-size: 12px; padding-left: 32px; width: 100%; border-radius: 8px; background: #ffffff;" oninput="ComandasModule.filtrarBuscaMesa(this.value)">
+              <span style="position: absolute; left: 10px; top: 9px; font-size: 13px; pointer-events: none; opacity: 0.6;">🔍</span>
+            </div>
+            <button type="button" id="btn-comandas-cadastrar" class="btn-comandas-cadastrar-action" onclick="ComandasModule.abrirModalNovaComanda()" title="Cadastrar nova mesa ou comanda" style="flex-shrink: 0;">
+              ➕ Cadastrar Mesa / Cmd
+            </button>
           </div>
-          <button type="button" id="btn-comandas-cadastrar" class="btn-comandas-cadastrar-action" onclick="ComandasModule.abrirModalNovaComanda()" title="Cadastrar nova mesa ou comanda">
-            ➕ Cadastrar Mesa / Cmd
-          </button>
         </div>
 
         <!-- Grid de Conteúdo Principal (2 Colunas: Cards à esquerda, Painel de Detalhes à direita) -->
