@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   printThermalReceipt: (htmlContent, silent) => ipcRenderer.invoke('print-thermal-receipt', htmlContent, silent),
   fecharAppConfirmado: () => ipcRenderer.invoke('fechar-app-confirmado'),
   definirTelaCheiaOperador: (ativa) => ipcRenderer.invoke('definir-tela-cheia-operador', Boolean(ativa)),
+  manterTelaAcordada: (ativa) => ipcRenderer.invoke('manter-tela-acordada', Boolean(ativa)),
   getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
   openExternal: (url) => shell.openExternal(url),
   salvarLicencaArquivo: (lic) => ipcRenderer.invoke('salvar-licenca-arquivo', lic),

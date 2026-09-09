@@ -2,7 +2,7 @@
  * main.js - Processo Principal do Adega Gestão & PDV Ágil
  */
 
-const { app, BrowserWindow, ipcMain, dialog, Menu, MenuItem } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, MenuItem, powerSaveBlocker } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -37,6 +37,32 @@ try {
 
 let mainWindow;
 let isQuiting = false;
+let displaySleepBlockerId = null;
+let pdvQuerTelaAcordada = true;
+
+function atualizarBloqueioTela() {
+  const janelaVisivel = !!(
+    mainWindow &&
+    !mainWindow.isDestroyed() &&
+    mainWindow.isVisible() &&
+    !mainWindow.isMinimized()
+  );
+  const deveManterAcordada = pdvQuerTelaAcordada && janelaVisivel && !isQuiting;
+
+  if (deveManterAcordada) {
+    if (displaySleepBlockerId == null || !powerSaveBlocker.isStarted(displaySleepBlockerId)) {
+      displaySleepBlockerId = powerSaveBlocker.start('prevent-display-sleep');
+    }
+    return;
+  }
+
+  if (displaySleepBlockerId != null) {
+    if (powerSaveBlocker.isStarted(displaySleepBlockerId)) {
+      powerSaveBlocker.stop(displaySleepBlockerId);
+    }
+    displaySleepBlockerId = null;
+  }
+}
 // Forçar identificação e pasta de dados permanente e imutável entre versões
 app.name = 'flowpdv';
 if (process.platform === 'win32') {
@@ -186,7 +212,13 @@ if (!gotTheLock) {
 
     mainWindow.on('closed', () => {
       mainWindow = null;
+      atualizarBloqueioTela();
     });
+    mainWindow.on('show', atualizarBloqueioTela);
+    mainWindow.on('hide', atualizarBloqueioTela);
+    mainWindow.on('minimize', atualizarBloqueioTela);
+    mainWindow.on('restore', atualizarBloqueioTela);
+    atualizarBloqueioTela();
 
     // Iniciar verificação de atualizações após carregar a janela
     setupAutoUpdater();
@@ -444,6 +476,12 @@ if (!gotTheLock) {
     isQuiting = true;
     if (mainWindow) mainWindow.destroy();
     app.quit();
+  });
+
+  ipcMain.handle('manter-tela-acordada', (_event, ativa) => {
+    pdvQuerTelaAcordada = Boolean(ativa);
+    atualizarBloqueioTela();
+    return pdvQuerTelaAcordada;
   });
 
   ipcMain.handle('definir-tela-cheia-operador', (event, ativa) => {

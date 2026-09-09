@@ -68,6 +68,7 @@ export const App = {
     this.verificarBoasVindasPosAtualizacao();
     this.atualizarPermissoesUsuario();
     this.verificarValidadesAoIniciar();
+    this.sincronizarTelaSemBloqueio();
 
     if (window.electronAPI && typeof window.electronAPI.onSolicitarFechamento === 'function') {
       window.electronAPI.onSolicitarFechamento(() => {
@@ -146,6 +147,7 @@ export const App = {
     }
 
     this.abaAtiva = nomeAba;
+    this.sincronizarTelaSemBloqueio();
 
     // Atualizar botões do menu
     document.querySelectorAll('.nav-btn').forEach(btn => {
@@ -185,6 +187,13 @@ export const App = {
       this.verificarAcessoGerencia();
     } else if (nomeAba === 'config') {
       this.verificarAcessoConfiguracoes();
+    }
+  },
+
+  sincronizarTelaSemBloqueio() {
+    const pdvNaTela = this.abaAtiva === 'pdv';
+    if (window.electronAPI && typeof window.electronAPI.manterTelaAcordada === 'function') {
+      window.electronAPI.manterTelaAcordada(pdvNaTela).catch(() => {});
     }
   },
 
