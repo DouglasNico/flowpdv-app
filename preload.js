@@ -15,6 +15,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   definirTelaCheiaOperador: (ativa) => ipcRenderer.invoke('definir-tela-cheia-operador', Boolean(ativa)),
   getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
   openExternal: (url) => shell.openExternal(url),
+  salvarLicencaArquivo: (lic) => ipcRenderer.invoke('salvar-licenca-arquivo', lic),
+  carregarLicencaArquivo: () => ipcRenderer.invoke('carregar-licenca-arquivo'),
+  carregarLicencaArquivoSync: () => ipcRenderer.sendSync('carregar-licenca-arquivo-sync'),
   onSolicitarFechamento: (callback) => {
     ipcRenderer.on('solicitar-fechamento-app', () => callback());
   },

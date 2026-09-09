@@ -24384,6 +24384,23 @@
         return null;
       };
       let parsed = ler("adega_licenca") || ler("adega_licenca_backup");
+      if (!parsed && typeof window !== "undefined" && window.electronAPI && typeof window.electronAPI.carregarLicencaArquivoSync === "function") {
+        try {
+          const fromFile = window.electronAPI.carregarLicencaArquivoSync();
+          if (fromFile && String(fromFile.chaveLicenca || "").trim()) {
+            parsed = fromFile;
+            try {
+              localStorage.setItem("adega_licenca", JSON.stringify(parsed));
+            } catch (e) {
+            }
+            try {
+              localStorage.setItem("adega_licenca_backup", JSON.stringify(parsed));
+            } catch (e) {
+            }
+          }
+        } catch (e) {
+        }
+      }
       if (parsed) {
         let updated = false;
         if (parsed.chavePixSuporte === "19999997777" || !parsed.chavePixSuporte) {
@@ -24446,11 +24463,19 @@
           localStorage.setItem("adega_licenca_backup", json);
         } catch (e) {
         }
+        if (novaChave && typeof window !== "undefined" && window.electronAPI && typeof window.electronAPI.salvarLicencaArquivo === "function") {
+          window.electronAPI.salvarLicencaArquivo(lic).catch(() => {
+          });
+        }
       } catch (e) {
         console.error("[Storage] Falha ao salvar licen\xE7a (quota/disco?):", e);
         try {
           if (lic && lic.chaveLicenca) {
             localStorage.setItem("adega_licenca_backup", JSON.stringify(lic));
+            if (typeof window !== "undefined" && window.electronAPI && typeof window.electronAPI.salvarLicencaArquivo === "function") {
+              window.electronAPI.salvarLicencaArquivo(lic).catch(() => {
+              });
+            }
           }
         } catch (e2) {
         }

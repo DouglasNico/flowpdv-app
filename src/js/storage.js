@@ -607,6 +607,19 @@ export const StorageService = {
     };
 
     let parsed = ler('adega_licenca') || ler('adega_licenca_backup');
+
+    // Fallback disco (Electron): sobrevive a LevelDB corrompido / wipe de Local Storage
+    if (!parsed && typeof window !== 'undefined' && window.electronAPI && typeof window.electronAPI.carregarLicencaArquivoSync === 'function') {
+      try {
+        const fromFile = window.electronAPI.carregarLicencaArquivoSync();
+        if (fromFile && String(fromFile.chaveLicenca || '').trim()) {
+          parsed = fromFile;
+          try { localStorage.setItem('adega_licenca', JSON.stringify(parsed)); } catch (e) {}
+          try { localStorage.setItem('adega_licenca_backup', JSON.stringify(parsed)); } catch (e) {}
+        }
+      } catch (e) {}
+    }
+
     if (parsed) {
       let updated = false;
       if (parsed.chavePixSuporte === '19999997777' || !parsed.chavePixSuporte) {
@@ -620,7 +633,6 @@ export const StorageService = {
       if (updated) {
         try { this.saveLicenca(parsed); } catch (e) {}
       }
-      // Se a chave principal sumiu mas o backup existe, restaura.
       if (!ler('adega_licenca') && ler('adega_licenca_backup')) {
         try { localStorage.setItem('adega_licenca', JSON.stringify(parsed)); } catch (e) {}
       }
@@ -648,7 +660,6 @@ export const StorageService = {
     try {
       const novaChave = String(lic.chaveLicenca || '').trim();
       if (!novaChave) {
-        // Nunca sobrescreve licença válida com objeto sem chave (causa "pedir licença" todo boot).
         const atualRaw = localStorage.getItem('adega_licenca') || localStorage.getItem('adega_licenca_backup');
         if (atualRaw) {
           try {
@@ -664,11 +675,18 @@ export const StorageService = {
       const json = JSON.stringify(lic);
       localStorage.setItem('adega_licenca', json);
       try { localStorage.setItem('adega_licenca_backup', json); } catch (e) {}
+
+      if (novaChave && typeof window !== 'undefined' && window.electronAPI && typeof window.electronAPI.salvarLicencaArquivo === 'function') {
+        window.electronAPI.salvarLicencaArquivo(lic).catch(() => {});
+      }
     } catch (e) {
       console.error('[Storage] Falha ao salvar licença (quota/disco?):', e);
       try {
         if (lic && lic.chaveLicenca) {
           localStorage.setItem('adega_licenca_backup', JSON.stringify(lic));
+          if (typeof window !== 'undefined' && window.electronAPI && typeof window.electronAPI.salvarLicencaArquivo === 'function') {
+            window.electronAPI.salvarLicencaArquivo(lic).catch(() => {});
+          }
         }
       } catch (e2) {}
     }

@@ -389,9 +389,54 @@ if (!gotTheLock) {
     }
   });
 
-  // IPC Handler: Obter versão dinâmica do app
   ipcMain.handle('get-app-version', () => {
     return app.getVersion();
+  });
+
+  function caminhoArquivoLicenca() {
+    return path.join(app.getPath('userData'), 'licenca-loja.json');
+  }
+
+  ipcMain.handle('salvar-licenca-arquivo', (_event, lic) => {
+    try {
+      if (!lic || typeof lic !== 'object') return { ok: false };
+      const chave = String(lic.chaveLicenca || '').trim();
+      if (!chave) return { ok: false, error: 'sem_chave' };
+      const destino = caminhoArquivoLicenca();
+      fs.mkdirSync(path.dirname(destino), { recursive: true });
+      fs.writeFileSync(destino, JSON.stringify(lic), 'utf8');
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e && e.message ? e.message : String(e) };
+    }
+  });
+
+  ipcMain.handle('carregar-licenca-arquivo', () => {
+    try {
+      const destino = caminhoArquivoLicenca();
+      if (!fs.existsSync(destino)) return null;
+      const raw = fs.readFileSync(destino, 'utf8');
+      const parsed = JSON.parse(raw);
+      if (parsed && String(parsed.chaveLicenca || '').trim()) return parsed;
+      return null;
+    } catch (e) {
+      return null;
+    }
+  });
+
+  ipcMain.on('carregar-licenca-arquivo-sync', (event) => {
+    try {
+      const destino = caminhoArquivoLicenca();
+      if (!fs.existsSync(destino)) {
+        event.returnValue = null;
+        return;
+      }
+      const raw = fs.readFileSync(destino, 'utf8');
+      const parsed = JSON.parse(raw);
+      event.returnValue = (parsed && String(parsed.chaveLicenca || '').trim()) ? parsed : null;
+    } catch (e) {
+      event.returnValue = null;
+    }
   });
 
   // IPC Handler: Fechar Aplicativo com Confirmação Estilizada
