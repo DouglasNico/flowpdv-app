@@ -111,7 +111,8 @@ body {
   align-items: center;
   gap: 12px;
   min-width: 0;
-  flex: 1;
+  flex: 1 1 0;
+  overflow: hidden;
 }
 
 .header-brand {
@@ -121,8 +122,8 @@ body {
 }
 
 .header-brand-logo-img {
-  height: 44px;
-  max-height: 48px;
+  height: 36px;
+  max-height: 36px;
   width: auto;
   object-fit: contain;
   display: block;
@@ -140,6 +141,7 @@ body {
   border-radius: var(--radius-md);
   border: 1px solid var(--border-card);
   min-width: 0;
+  flex: 1 1 0;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -197,10 +199,14 @@ body {
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-shrink: 0;
-  margin-left: 16px;
-  padding-left: 4px;
+  margin-left: 8px;
+  padding-left: 8px;
+  position: relative;
+  z-index: 2;
+  background: #ffffff;
+  height: 100%;
 }
 
 .license-badge {
@@ -5621,7 +5627,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     flex: 1 1 auto !important;
   }
   .header-brand-logo-img {
-    height: 40px !important;
+    height: 32px !important;
   }
   .app-nav {
     gap: 3px !important;
@@ -5644,7 +5650,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   .header-actions {
     gap: 8px !important;
     flex-shrink: 0 !important;
-    margin-left: 16px !important;
+    margin-left: 8px !important;
   }
   .license-status-label {
     display: none !important;
@@ -5652,13 +5658,10 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   .app-nav .nav-btn kbd {
     display: none !important;
   }
-  #header-license-badge {
-    display: none !important;
-  }
   .license-badge {
-    height: 36px !important;
-    padding: 0 11px !important;
-    font-size: 12px !important;
+    height: 32px !important;
+    padding: 0 10px !important;
+    font-size: 11.5px !important;
     gap: 4px !important;
     flex-shrink: 0 !important;
   }
@@ -5692,7 +5695,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     min-width: 0 !important;
   }
   .header-brand-logo-img {
-    height: 36px !important;
+    height: 30px !important;
   }
   .app-nav .nav-btn {
     padding: 5px 8px !important;
@@ -5703,15 +5706,12 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     display: none !important;
   }
   .header-actions {
-    margin-left: 14px !important;
-  }
-  #header-license-badge {
-    display: none !important;
+    margin-left: 8px !important;
   }
   .license-badge {
-    height: 34px !important;
-    padding: 0 9px !important;
-    font-size: 11.5px !important;
+    height: 30px !important;
+    padding: 0 8px !important;
+    font-size: 11px !important;
   }
   .user-badge {
     height: 34px !important;
