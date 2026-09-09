@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>FlowPDV — Sistema de Frente de Caixa e Gestão Comercial</title>
-  <link rel="icon" type="image/png" href="src/assets/flow-icon-premium-cart-transparent.png">
-  <link rel="shortcut icon" href="src/assets/flow-icon-premium-cart-transparent.png">
+  <link rel="icon" type="image/png" href="src/assets/icon.png">
+  <link rel="shortcut icon" href="src/assets/icon.png">
   <link rel="stylesheet" href="src/css/style.css">
 </head>
 <body>
@@ -24,7 +24,7 @@
     <!-- Esquerda: Logotipo Oficial e Navegação em Abas -->
     <div class="header-left-group">
       <div class="header-brand">
-        <img src="src/assets/flow-logo-premium-cart-transparent.png" alt="FlowPDV" class="header-brand-logo-img">
+        <img src="src/assets/FlowPDV-Logo.png" alt="FlowPDV" class="header-brand-logo-img">
       </div>
 
       <nav class="app-nav">
@@ -57,10 +57,9 @@
 
     <!-- Direita: Status da Licença e Usuário Conectado -->
     <div class="header-actions">
-      <div class="license-badge" id="header-license-badge" title="Status da licença do sistema">
+      <div class="license-badge" id="header-license-badge" title="Licença ativa">
         <span class="license-status-icon">🟢</span>
-        <span class="license-status-label">Licença Ativa</span>
-        <span class="license-status-days">(23 Dias)</span>
+        <span class="license-status-days">23 dias</span>
       </div>
 
       <div class="user-badge" onclick="AuthModule.trocarOperador()" title="Clique para trocar de operador ou perfil">
@@ -257,7 +256,7 @@
       <div id="classic-pdv-shell" aria-label="PDV Clássico">
         <header class="classic-header">
             <div class="classic-logo-title">
-              <img src="src/assets/flow-logo-premium-cart-transparent.png" alt="FlowPDV" class="classic-header-logo">
+              <img src="src/assets/FlowPDV-Logo.png" alt="FlowPDV" class="classic-header-logo">
             </div>
             <div class="classic-header-info">
               <span id="classic-clock">00:00:00</span>
@@ -280,7 +279,7 @@
         <div class="classic-main-content">
           <div class="classic-left-pane">
               <div class="classic-cart-img">
-                <img id="classic-client-logo" src="src/assets/flow-logo-premium-cart-transparent.png" alt="Logo Cliente" style="max-height: 92%; max-width: 92%; width: auto; height: auto; object-fit: contain;" onerror="this.src='src/assets/flow-logo-premium-cart-transparent.png'">
+                <img id="classic-client-logo" src="src/assets/FlowPDV-Logo.png" alt="Logo Cliente" style="max-height: 92%; max-width: 92%; width: auto; height: auto; object-fit: contain;" onerror="this.src='src/assets/FlowPDV-Logo.png'">
               </div>
             <div class="classic-field-box">
               <label>CÓDIGO DE BARRAS</label>
@@ -843,9 +842,8 @@
 
         <!-- PAINEL 4: AUDITORIA EM TEMPO REAL & AJUSTES DE ESTOQUE -->
         <div class="gerencia-subpanel" id="gerencia-subpanel-auditoria">
-          <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; flex-shrink: 0; padding-bottom: 6px;">
-            <!-- Filtros de Auditoria Segmentados -->
-            <div id="gerencia-auditoria-filtros-bar" style="display: flex; align-items: center; gap: 4px; flex-wrap: wrap;">
+          <div class="auditoria-toolbar">
+            <div id="gerencia-auditoria-filtros-bar" class="auditoria-filtros">
               <button type="button" class="filter-pill-btn gerencia-audit-filtro-btn active" data-tipo="todos" onclick="GerenciaModule.filtrarAuditoria('todos')">Todos</button>
               <button type="button" class="filter-pill-btn gerencia-audit-filtro-btn" data-tipo="comandas" onclick="GerenciaModule.filtrarAuditoria('comandas')">🍽️ Mesas & Comandas</button>
               <button type="button" class="filter-pill-btn gerencia-audit-filtro-btn" data-tipo="cortesia" onclick="GerenciaModule.filtrarAuditoria('cortesia')">🎁 Cortesia</button>
@@ -856,17 +854,16 @@
               <button type="button" class="filter-pill-btn gerencia-audit-filtro-btn" data-tipo="vendas" onclick="GerenciaModule.filtrarAuditoria('vendas')">🧾 Vendas / Operação</button>
               <button type="button" class="filter-pill-btn gerencia-audit-filtro-btn" data-tipo="fiscal" onclick="GerenciaModule.filtrarAuditoria('fiscal')">🏛️ Fiscal</button>
               <button type="button" class="filter-pill-btn gerencia-audit-filtro-btn" data-tipo="ajuste_estoque" onclick="GerenciaModule.filtrarAuditoria('ajuste_estoque')">📦 Estoque</button>
-              <select id="gerencia-auditoria-operador-select" class="form-input-custom" onchange="GerenciaModule.filtrarAuditoriaOperador(this.value)" style="height: 30px; font-size: 11.5px; font-weight: 700; width: 170px; border-radius: 16px; padding: 0 10px; margin-left: 6px; background: #ffffff; border: 1px solid var(--border-card); cursor: pointer;" title="Filtrar auditoria por funcionário">
-                <option value="todos">👤 Todos os Operadores</option>
-              </select>
             </div>
-
-            <div style="display: flex; align-items: center; gap: 8px;">
+            <div class="auditoria-acoes">
+              <select id="gerencia-auditoria-operador-select" class="auditoria-operador-select" onchange="GerenciaModule.filtrarAuditoriaOperador(this.value)" title="Filtrar auditoria por funcionário">
+                <option value="todos">Todos os operadores</option>
+              </select>
               <button type="button" id="btn-atualizar-logs-auditoria" class="btn-action-sm" onclick="GerenciaModule.renderAuditoriaAjustes()" title="Recarregar logs" style="height: 32px; padding: 0 12px; font-weight: 700;">
-                🔄 Atualizar Logs
+                🔄 Atualizar
               </button>
-              <button type="button" class="btn-primary-action" style="background: linear-gradient(135deg, #d97706, #b45309); height: 32px; padding: 0 14px; margin: 0; font-size: 12px;" onclick="GerenciaModule.abrirModalAjusteEstoque()">
-                📦 Ajustar Estoque (Quebras/Perdas)
+              <button type="button" class="btn-primary-action auditoria-btn-ajuste" onclick="GerenciaModule.abrirModalAjusteEstoque()">
+                📦 Ajustar Estoque
               </button>
             </div>
           </div>
@@ -1179,7 +1176,7 @@
                   <div style="display: flex; align-items: center; gap: 8px;">
                     <span style="font-size: 14px;">🚀</span>
                     <strong style="font-size: 13px; color: var(--text-main); font-weight: 800;">Atualizações do Sistema</strong>
-                    <span id="cfg-current-version-badge" style="background: #e2e8f0; color: var(--text-main); font-size: 10px; font-weight: 800; font-family: 'JetBrains Mono'; padding: 1px 6px; border-radius: 4px;">v3.1.0</span>
+                    <span id="cfg-current-version-badge" style="background: #e2e8f0; color: var(--text-main); font-size: 10px; font-weight: 800; font-family: 'JetBrains Mono'; padding: 1px 6px; border-radius: 4px;">v3.2.0</span>
                   </div>
                   <span id="cfg-update-status" style="font-size: 12px; color: var(--text-muted); display: block; margin-top: 2px;">
                     Verifique melhorias e novas versões do FlowPDV com 1 clique.
@@ -1440,7 +1437,7 @@
   <div class="modal-overlay" id="modal-nova-atualizacao" style="z-index: 10001; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); background: rgba(15, 23, 42, 0.75);">
     <div class="modal-content-box" style="max-width: 480px; text-align: center; border: 1px solid var(--border-subtle); box-shadow: var(--shadow-lg); padding: 32px 28px;">
       <div style="margin-bottom: 16px; display: flex; justify-content: center;">
-        <img src="src/assets/flow-icon-premium-cart-transparent.png" alt="FlowPDV" style="width: 68px; height: 68px; object-fit: contain; filter: drop-shadow(0 8px 18px rgba(249, 115, 22, 0.35));">
+        <img src="src/assets/icon.png" alt="FlowPDV" style="width: 68px; height: 68px; object-fit: contain; filter: drop-shadow(0 8px 18px rgba(249, 115, 22, 0.35));">
       </div>
       <h3 style="font-size: 20px; font-weight: 800; color: var(--text-main); margin-bottom: 6px;">Nova Atualização Disponível!</h3>
       <div style="display: inline-block; background: #e0f2fe; color: #0369a1; font-weight: 800; font-size: 13px; font-family: 'JetBrains Mono'; padding: 4px 12px; border-radius: 20px; margin-bottom: 16px;" id="modal-update-tag-version">
@@ -1875,7 +1872,7 @@
       <button type="button" class="btn-close-modal" style="position: absolute; top: 16px; right: 18px; font-size: 22px; color: #64748b; background: transparent; border: none; cursor: pointer; padding: 4px 8px; font-weight: 800;" onclick="LicencaModule.fecharModalAtivacao()">✕</button>
       
       <div style="margin-bottom: 16px; display: flex; justify-content: center;">
-        <img src="src/assets/flow-icon-premium-cart-transparent.png" alt="FlowPDV" style="width: 72px; height: 72px; object-fit: contain; filter: drop-shadow(0 8px 18px rgba(249, 115, 22, 0.35));">
+        <img src="src/assets/icon.png" alt="FlowPDV" style="width: 72px; height: 72px; object-fit: contain; filter: drop-shadow(0 8px 18px rgba(249, 115, 22, 0.35));">
       </div>
       
       <h3 id="ativacao-modal-titulo" style="font-size: 22px; font-weight: 900; color: var(--text-main); margin-bottom: 6px; letter-spacing: -0.5px;">Ativação de Licença FlowPDV</h3>
@@ -2932,7 +2929,7 @@
     <div class="modal-overlay" id="modal-login-operador">
       <div class="modal-content-box" style="max-width: 500px; padding: 28px 24px;">
         <div style="text-align: center; margin-bottom: 20px;">
-          <img src="src/assets/flow-logo-premium-cart-transparent.png" alt="FlowPDV" style="height: 52px; max-height: 52px; width: auto; object-fit: contain; margin: 0 auto 10px auto; display: block;">
+          <img src="src/assets/FlowPDV-Logo.png" alt="FlowPDV" style="height: 52px; max-height: 52px; width: auto; object-fit: contain; margin: 0 auto 10px auto; display: block;">
           <h3 style="font-size: 16px; color: var(--text-main); font-weight: 800; margin: 0;">Identificação do Operador</h3>
           <p style="font-size: 12px; color: var(--text-muted); margin: 4px 0 0 0;">Selecione seu perfil e digite seu PIN para liberar o terminal.</p>
         </div>

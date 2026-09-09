@@ -1181,6 +1181,12 @@ export const PdvModule = {
       return;
     }
 
+    const modal = document.getElementById('modal-cancelar-item-carrinho');
+    if (modal && modal.classList.contains('active')) {
+      this.executarAberturaModalCancelarItem();
+      return;
+    }
+
     if (window.AuthModule && typeof window.AuthModule.executarComPermissaoOuPin === 'function') {
       window.AuthModule.executarComPermissaoOuPin('cancelarItem', () => {
         this.executarAberturaModalCancelarItem();
@@ -1319,6 +1325,13 @@ export const PdvModule = {
         });
       }
     };
+
+    const modalAberto = document.getElementById('modal-cancelar-item-carrinho');
+    const jaAutorizadoNestaTela = modalAberto && modalAberto.classList.contains('active');
+    if (jaAutorizadoNestaTela) {
+      acaoRemover();
+      return;
+    }
 
     if (window.AuthModule && typeof window.AuthModule.executarComPermissaoOuPin === 'function') {
       window.AuthModule.executarComPermissaoOuPin('cancelarItem', acaoRemover, `Autorização: Cancelar ${qtdRemover} un de "${item.nome}"`);

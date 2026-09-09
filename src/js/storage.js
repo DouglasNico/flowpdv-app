@@ -800,7 +800,7 @@ export const StorageService = {
     'flowpdv_ultimo_mov_sync'
   ],
 
-  PREFIXOS_DA_LOJA: ['flowpdv_logs_auditoria_', 'flowpdv_cache_', 'flowpdv_master_'],
+  PREFIXOS_DA_LOJA: ['flowpdv_logs_auditoria_', 'flowpdv_logs_nuvem_pendentes_', 'flowpdv_logs_migrados_', 'flowpdv_cache_', 'flowpdv_master_'],
 
   // Limpeza de Isolamento Multi-Tenant ao Trocar de Empresa/Licença
   limparDadosLocaisParaNovaEmpresa(novaLic) {

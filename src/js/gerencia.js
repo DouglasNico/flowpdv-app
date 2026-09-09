@@ -1004,7 +1004,10 @@ export const GerenciaModule = {
     }
 
     if (logs.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 32px; color: var(--text-dim);">Nenhum registro encontrado para este filtro.</td></tr>`;
+      const avisoNuvem = (!todosLogs.length && AuditModule.ultimoErroNuvem)
+        ? `<div style="margin-top: 8px; font-size: 12px; color: #b45309;">${AuditModule.ultimoErroNuvem}</div>`
+        : '';
+      tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 32px; color: var(--text-dim);">Nenhum registro encontrado para este filtro.${avisoNuvem}</td></tr>`;
       return;
     }
 

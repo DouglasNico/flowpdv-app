@@ -1,4 +1,13 @@
 {
-  "indexes": [],
+  "indexes": [
+    {
+      "collectionGroup": "auditoria_lojas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "chaveLicenca", "order": "ASCENDING" },
+        { "fieldPath": "criadoEm", "order": "DESCENDING" }
+      ]
+    }
+  ],
   "fieldOverrides": []
 }

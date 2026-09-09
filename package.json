@@ -1,6 +1,6 @@
 {
   "name": "flowpdv",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "description": "FlowPDV - Sistema de Gestão Comercial e Ponto de Venda Ágil",
   "main": "main.js",
   "scripts": {

@@ -24562,7 +24562,7 @@
       "flowpdv_movimentos_enviados",
       "flowpdv_ultimo_mov_sync"
     ],
-    PREFIXOS_DA_LOJA: ["flowpdv_logs_auditoria_", "flowpdv_cache_", "flowpdv_master_"],
+    PREFIXOS_DA_LOJA: ["flowpdv_logs_auditoria_", "flowpdv_logs_nuvem_pendentes_", "flowpdv_logs_migrados_", "flowpdv_cache_", "flowpdv_master_"],
     // Limpeza de Isolamento Multi-Tenant ao Trocar de Empresa/Licença
     limparDadosLocaisParaNovaEmpresa(novaLic) {
       this.CHAVES_DA_LOJA.forEach((chave) => localStorage.removeItem(chave));
@@ -47130,9 +47130,19 @@ This typically indicates that your device does not have a healthy Internet conne
 
   // src/js/audit.js
   var AuditModule = {
+    ultimoErroNuvem: "",
     getChaveLicencaAtual() {
       const lic = StorageService.getLicenca() || {};
       return (lic.chaveLicenca || lic.clienteId || "LOCAL").trim().toUpperCase();
+    },
+    getChavesConsulta() {
+      const lic = StorageService.getLicenca() || {};
+      const chaves = [
+        this.getChaveLicencaAtual(),
+        String(lic.chaveLicenca || "").trim(),
+        String(lic.clienteId || "").trim()
+      ].filter(Boolean);
+      return [...new Set(chaves)];
     },
     getStorageKey() {
       const chave = this.getChaveLicencaAtual();
@@ -47205,22 +47215,117 @@ This typically indicates that your device does not have a healthy Internet conne
         dataHoraFormatada: (/* @__PURE__ */ new Date()).toLocaleString("pt-BR")
       };
       this.salvarLogLocal(payload);
-      setTimeout(async () => {
-        try {
-          if (!chaveLicenca || chaveLicenca === "LOCAL") return;
-          if (window.electronAPI && typeof window.electronAPI.getSystemInfo === "function") {
-            try {
-              const info = await window.electronAPI.getSystemInfo();
-              if (info && info.hostname) payload.hostname = info.hostname;
-            } catch (e) {
-            }
-          }
-          await garantirSessaoLoja(chaveLicenca, { deviceId: myDevId });
-          await addDoc(collection(db, "auditoria_lojas"), payload);
-        } catch (err) {
-          console.warn("[AuditModule] Erro ao sincronizar log na nuvem (salvo localmente):", err);
-        }
+      this.enviarLogNuvem(payload, chaveLicenca, myDevId);
+    },
+    limparParaFirestore(valor) {
+      if (valor === void 0 || typeof valor === "function") return void 0;
+      if (valor === null) return null;
+      if (typeof valor === "number" && !Number.isFinite(valor)) return null;
+      if (Array.isArray(valor)) {
+        return valor.map((item) => this.limparParaFirestore(item)).filter((item) => item !== void 0);
+      }
+      if (valor && typeof valor === "object") {
+        const out = {};
+        Object.keys(valor).forEach((chave) => {
+          const limpo = this.limparParaFirestore(valor[chave]);
+          if (limpo !== void 0) out[chave] = limpo;
+        });
+        return out;
+      }
+      return valor;
+    },
+    getPendentesKey() {
+      return `flowpdv_logs_nuvem_pendentes_${this.getChaveLicencaAtual()}`;
+    },
+    getPendentes() {
+      try {
+        const lista = JSON.parse(localStorage.getItem(this.getPendentesKey()) || "[]");
+        return Array.isArray(lista) ? lista : [];
+      } catch (e) {
+        return [];
+      }
+    },
+    salvarPendentes(lista) {
+      try {
+        localStorage.setItem(this.getPendentesKey(), JSON.stringify((lista || []).slice(0, 200)));
+      } catch (e) {
+      }
+    },
+    enfileirarPendente(payload) {
+      const lista = this.getPendentes();
+      if (lista.some((item) => item && item.id === payload.id)) return;
+      lista.unshift(payload);
+      this.salvarPendentes(lista);
+    },
+    enviarLogNuvem(payload, chaveLicenca, deviceId) {
+      const copia = this.limparParaFirestore({ ...payload || {}, chaveLicenca });
+      if (!copia || !copia.id) return;
+      this.enfileirarPendente(copia);
+      setTimeout(() => {
+        this.descarregarPendentes(chaveLicenca, deviceId);
       }, 0);
+    },
+    descarregando: false,
+    async descarregarPendentes(chaveLicenca, deviceId) {
+      const chave = String(chaveLicenca || this.getChaveLicencaAtual() || "").trim().toUpperCase();
+      if (!chave || chave === "LOCAL" || this.descarregando) return false;
+      if (typeof navigator !== "undefined" && !navigator.onLine) return false;
+      if (!localStorage.getItem(`flowpdv_logs_migrados_${chave}`)) {
+        this.getLocalLogs().forEach((log) => {
+          const limpo = this.limparParaFirestore(log);
+          if (limpo && limpo.id) this.enfileirarPendente(limpo);
+        });
+        try {
+          localStorage.setItem(`flowpdv_logs_migrados_${chave}`, "1");
+        } catch (e) {
+        }
+      }
+      const pendentes = this.getPendentes();
+      if (!pendentes.length) return true;
+      this.descarregando = true;
+      try {
+        const autenticou = await garantirSessaoLoja(chave, { deviceId: deviceId || StorageService.getDeviceId() });
+        if (!autenticou) {
+          this.ultimoErroNuvem = "Este terminal n\xE3o autenticou na nuvem; o log ficou s\xF3 neste computador.";
+          return false;
+        }
+        if (window.electronAPI && typeof window.electronAPI.getSystemInfo === "function") {
+          try {
+            const info = await window.electronAPI.getSystemInfo();
+            if (info && info.hostname) {
+              pendentes.forEach((item) => {
+                item.hostname = info.hostname;
+              });
+            }
+          } catch (e) {
+          }
+        }
+        const restantes = [];
+        for (const item of pendentes) {
+          const limpo = this.limparParaFirestore(item);
+          if (!limpo || !limpo.id) continue;
+          try {
+            await setDoc(doc(db, "backups_lojas", chave, "auditoria", String(limpo.id)), limpo);
+            try {
+              await addDoc(collection(db, "auditoria_lojas"), limpo);
+            } catch (eAdmin) {
+            }
+          } catch (err) {
+            console.warn("[AuditModule] Falha ao subir log, fica na fila:", err);
+            this.ultimoErroNuvem = "N\xE3o foi poss\xEDvel enviar o log para a nuvem.";
+            restantes.push(limpo);
+          }
+        }
+        this.salvarPendentes(restantes);
+        if (!restantes.length) this.ultimoErroNuvem = "";
+        return restantes.length === 0;
+      } catch (err) {
+        console.warn("[AuditModule] Erro ao descarregar logs pendentes:", err);
+        this.ultimoErroNuvem = "N\xE3o foi poss\xEDvel enviar o log para a nuvem.";
+        return false;
+      } finally {
+        this.descarregando = false;
+      }
     },
     registrarOuAtualizarLogMesa(comanda, evento = "atualizacao", extra = {}) {
       if (!comanda) return;
@@ -47266,6 +47371,10 @@ This typically indicates that your device does not have a healthy Internet conne
         logs[logExistenteIdx].dataHoraFormatada = (/* @__PURE__ */ new Date()).toLocaleString("pt-BR");
         logs[logExistenteIdx].criadoEm = (/* @__PURE__ */ new Date()).toISOString();
         localStorage.setItem(this.getStorageKey(), JSON.stringify(logs));
+        const eventosNuvem = ["fechamento_caixa", "transferencia", "liberacao"];
+        if (eventosNuvem.includes(evento)) {
+          this.enviarLogNuvem({ ...logs[logExistenteIdx] }, chaveLicenca, myDevId);
+        }
       } else {
         const payload = {
           id: "LOG-CMD-" + Date.now().toString().slice(-6) + Math.random().toString(36).substring(2, 4),
@@ -47282,31 +47391,85 @@ This typically indicates that your device does not have a healthy Internet conne
           dataHoraFormatada: (/* @__PURE__ */ new Date()).toLocaleString("pt-BR")
         };
         this.salvarLogLocal(payload);
+        this.enviarLogNuvem(payload, chaveLicenca, myDevId);
+      }
+    },
+    async consultarSubcolecaoLoja(chave) {
+      const col = collection(db, "backups_lojas", chave, "auditoria");
+      try {
+        return await getDocs(query(col, orderBy("criadoEm", "desc"), limit(150)));
+      } catch (err) {
+        console.warn("[AuditModule] Consulta da subcole\xE7\xE3o sem orderBy:", err && (err.message || err));
+        return getDocs(query(col, limit(150)));
+      }
+    },
+    async consultarNuvemPorChave(chave) {
+      const col = collection(db, "auditoria_lojas");
+      try {
+        return await getDocs(query(
+          col,
+          where("chaveLicenca", "==", chave),
+          orderBy("criadoEm", "desc"),
+          limit(150)
+        ));
+      } catch (err) {
+        console.warn("[AuditModule] Consulta ordenada indispon\xEDvel, tentando sem orderBy:", err && (err.message || err));
+        return getDocs(query(
+          col,
+          where("chaveLicenca", "==", chave),
+          limit(150)
+        ));
+      }
+    },
+    persistirLogsMesclados(logs) {
+      try {
+        localStorage.setItem(this.getStorageKey(), JSON.stringify((logs || []).slice(0, 200)));
+      } catch (e) {
       }
     },
     async buscarLogsAuditoria(maxLogs = 150) {
       const chaveLicenca = this.getChaveLicencaAtual();
       const logsLocais = this.getLocalLogs();
+      this.ultimoErroNuvem = "";
       try {
         if (!chaveLicenca || chaveLicenca === "LOCAL" || typeof navigator !== "undefined" && !navigator.onLine) {
+          if (typeof navigator !== "undefined" && !navigator.onLine) {
+            this.ultimoErroNuvem = "Este computador est\xE1 offline; mostrando s\xF3 os logs locais.";
+          }
           return logsLocais.slice(0, maxLogs);
         }
-        const q2 = query(
-          collection(db, "auditoria_lojas"),
-          where("chaveLicenca", "==", chaveLicenca),
-          limit(150)
-        );
-        const fetchPromise = getDocs(q2);
-        const timeoutPromise = new Promise(
-          (_, reject) => setTimeout(() => reject(new Error("Timeout de busca auditoria (3.5s)")), 3500)
-        );
-        const snapshot = await Promise.race([fetchPromise, timeoutPromise]);
-        const logsNuvem = [];
-        snapshot.forEach((d) => {
-          const data = d.data();
-          if (String(data.chaveLicenca || "").trim().toUpperCase() === chaveLicenca) {
-            logsNuvem.push({ id: d.id, ...data });
+        const autenticou = await garantirSessaoLoja(chaveLicenca, { deviceId: StorageService.getDeviceId() });
+        if (!autenticou) {
+          this.ultimoErroNuvem = "Este terminal n\xE3o autenticou na nuvem, ent\xE3o s\xF3 v\xEA os logs que ele mesmo gerou.";
+          return logsLocais.slice(0, maxLogs);
+        }
+        await this.descarregarPendentes(chaveLicenca);
+        const fetchPromise = (async () => {
+          const snapshots2 = [];
+          try {
+            snapshots2.push(await this.consultarSubcolecaoLoja(chaveLicenca));
+          } catch (err) {
+            console.warn("[AuditModule] Subcole\xE7\xE3o de auditoria indispon\xEDvel:", err && (err.message || err));
           }
+          for (const chave of this.getChavesConsulta()) {
+            try {
+              snapshots2.push(await this.consultarNuvemPorChave(chave));
+            } catch (err) {
+              console.warn("[AuditModule] Consulta ignorada para chave", chave, err && (err.message || err));
+            }
+          }
+          return snapshots2;
+        })();
+        const timeoutPromise = new Promise(
+          (_, reject) => setTimeout(() => reject(new Error("Timeout de busca auditoria (8s)")), 8e3)
+        );
+        const snapshots = await Promise.race([fetchPromise, timeoutPromise]);
+        const logsNuvem = [];
+        (snapshots || []).forEach((snapshot) => {
+          snapshot.forEach((d) => {
+            const data = d.data();
+            logsNuvem.push({ id: d.id, ...data });
+          });
         });
         const mapaIds = /* @__PURE__ */ new Set();
         const todos = [];
@@ -47314,16 +47477,19 @@ This typically indicates that your device does not have a healthy Internet conne
           if (!l) return;
           const licLog = String(l.chaveLicenca || "").trim().toUpperCase();
           if (licLog && licLog !== chaveLicenca) return;
-          const key = l.id || `${l.tipo}_${l.criadoEm}_${l.descricao}`;
+          const key = l.id || l.sessaoKey || `${l.tipo}_${l.criadoEm}_${l.descricao}`;
           if (!mapaIds.has(key)) {
             mapaIds.add(key);
             todos.push(l);
           }
         });
         todos.sort((a, b) => new Date(b.criadoEm || 0) - new Date(a.criadoEm || 0));
-        return todos.slice(0, maxLogs);
+        const resultado = todos.slice(0, maxLogs);
+        this.persistirLogsMesclados(resultado);
+        return resultado;
       } catch (err) {
         console.warn("[AuditModule] Erro ao buscar logs na nuvem, retornando locais:", err);
+        this.ultimoErroNuvem = "N\xE3o foi poss\xEDvel ler os logs da nuvem neste computador.";
         return logsLocais.slice(0, maxLogs);
       }
     }
@@ -48345,6 +48511,11 @@ Venda bloqueada no PDV!`);
         window.App.showToast("O carrinho est\xE1 vazio! N\xE3o h\xE1 itens para cancelar.", "warning");
         return;
       }
+      const modal = document.getElementById("modal-cancelar-item-carrinho");
+      if (modal && modal.classList.contains("active")) {
+        this.executarAberturaModalCancelarItem();
+        return;
+      }
       if (window.AuthModule && typeof window.AuthModule.executarComPermissaoOuPin === "function") {
         window.AuthModule.executarComPermissaoOuPin("cancelarItem", () => {
           this.executarAberturaModalCancelarItem();
@@ -48469,6 +48640,12 @@ Venda bloqueada no PDV!`);
           });
         }
       };
+      const modalAberto = document.getElementById("modal-cancelar-item-carrinho");
+      const jaAutorizadoNestaTela = modalAberto && modalAberto.classList.contains("active");
+      if (jaAutorizadoNestaTela) {
+        acaoRemover();
+        return;
+      }
       if (window.AuthModule && typeof window.AuthModule.executarComPermissaoOuPin === "function") {
         window.AuthModule.executarComPermissaoOuPin("cancelarItem", acaoRemover, `Autoriza\xE7\xE3o: Cancelar ${qtdRemover} un de "${item.nome}"`);
       } else {
@@ -55402,7 +55579,8 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
           badgeEl.innerHTML = `\u23F3 Vence Hoje: <strong>${tempoRestanteFormatado}</strong>`;
         } else if (diffDias > 3) {
           badgeEl.className = "license-badge";
-          badgeEl.innerHTML = `<span class="license-status-icon">\u{1F7E2}</span> <span class="license-status-label">Licen\xE7a Ativa</span> <span class="license-status-days">(${diffDias} Dias)</span>`;
+          badgeEl.title = `Licen\xE7a ativa \u2014 vence em ${diffDias} dias`;
+          badgeEl.innerHTML = `<span class="license-status-icon">\u{1F7E2}</span> <span class="license-status-days">${diffDias} dias</span>`;
         } else if (diffDias === 1) {
           badgeEl.className = "license-badge warning";
           badgeEl.innerHTML = `\u26A0\uFE0F Vence em 1 dia`;
@@ -55921,6 +56099,11 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       this.sincronizacaoInicialAuto();
       this.iniciarOuvinteTempoReal();
       this.configurarMonitorConexao();
+      setTimeout(() => {
+        if (window.AuditModule && typeof window.AuditModule.descarregarPendentes === "function") {
+          window.AuditModule.descarregarPendentes();
+        }
+      }, 1200);
       const turnoAtual = StorageService.getTurnoAtual();
       if (turnoAtual && (turnoAtual.status === "aberto" || turnoAtual.dataAbertura)) {
         setTimeout(() => {
@@ -55940,6 +56123,9 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
           this.sincronizacaoInicialAuto();
           this.iniciarOuvinteTempoReal();
           this.enviarAlteracaoNuvem("retorno_conexao");
+          if (window.AuditModule && typeof window.AuditModule.descarregarPendentes === "function") {
+            window.AuditModule.descarregarPendentes();
+          }
           setTimeout(() => this.atualizarStatusConexaoUI(true), 1500);
         }, 800);
       });
@@ -56818,7 +57004,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
           totalProdutos: produtos.length,
           totalClientes: clientes.length,
           totalUsuarios: usuarios.length,
-          versaoApp: "3.1.0",
+          versaoApp: "3.2.0",
           atualizadoEm: (/* @__PURE__ */ new Date()).toISOString()
         };
         await CloudSyncModule.gravarPacote(chave, backupData, StorageService.getMovimentosEstoque());
@@ -57821,7 +58007,8 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
         contadorEl.innerHTML = `\u26A1 Exibindo: <strong>${logs.length} de ${todosLogs.length} registros</strong>`;
       }
       if (logs.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 32px; color: var(--text-dim);">Nenhum registro encontrado para este filtro.</td></tr>`;
+        const avisoNuvem = !todosLogs.length && AuditModule.ultimoErroNuvem ? `<div style="margin-top: 8px; font-size: 12px; color: #b45309;">${AuditModule.ultimoErroNuvem}</div>` : "";
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 32px; color: var(--text-dim);">Nenhum registro encontrado para este filtro.${avisoNuvem}</td></tr>`;
         return;
       }
       tbody.innerHTML = logs.map((l) => {
@@ -62149,7 +62336,7 @@ NSU: ${nsuGerado}`
           brandIcon.innerHTML = `<span style="font-size: 56px; pointer-events: none; user-select: none; display: block; margin: 0 auto;">${lic && lic.icone ? lic.icone : cfg && cfg.icone ? cfg.icone : "\u{1F3EA}"}</span>`;
           const classicLogo = document.getElementById("classic-client-logo");
           if (classicLogo) {
-            classicLogo.src = "src/assets/flow-logo-premium-cart-transparent.png";
+            classicLogo.src = "src/assets/FlowPDV-Logo.png";
           }
         }
       }

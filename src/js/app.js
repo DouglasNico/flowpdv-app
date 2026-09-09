@@ -867,7 +867,7 @@ export const App = {
         brandIcon.innerHTML = `<span style="font-size: 56px; pointer-events: none; user-select: none; display: block; margin: 0 auto;">${(lic && lic.icone) ? lic.icone : ((cfg && cfg.icone ? cfg.icone : "🏪"))}</span>`;
         const classicLogo = document.getElementById('classic-client-logo');
         if (classicLogo) {
-          classicLogo.src = 'src/assets/flow-logo-premium-cart-transparent.png';
+          classicLogo.src = 'src/assets/FlowPDV-Logo.png';
         }
       }
     }

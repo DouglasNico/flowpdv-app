@@ -45,6 +45,11 @@ export const CloudSyncModule = {
     this.sincronizacaoInicialAuto();
     this.iniciarOuvinteTempoReal();
     this.configurarMonitorConexao();
+    setTimeout(() => {
+      if (window.AuditModule && typeof window.AuditModule.descarregarPendentes === 'function') {
+        window.AuditModule.descarregarPendentes();
+      }
+    }, 1200);
 
     // Se o terminal estiver com caixa aberto, envia imediatamente o turno atual para a nuvem
     const turnoAtual = StorageService.getTurnoAtual();
@@ -69,6 +74,9 @@ export const CloudSyncModule = {
         this.sincronizacaoInicialAuto();
         this.iniciarOuvinteTempoReal();
         this.enviarAlteracaoNuvem('retorno_conexao');
+        if (window.AuditModule && typeof window.AuditModule.descarregarPendentes === 'function') {
+          window.AuditModule.descarregarPendentes();
+        }
         setTimeout(() => this.atualizarStatusConexaoUI(true), 1500);
       }, 800);
     });
