@@ -509,15 +509,15 @@ export const CaixaModule = {
     }, 60);
 
     const isGerenteOuAdmin = window.AuthModule && (window.AuthModule.isGerente() || window.AuthModule.isSuperAdmin());
-    let msgAlerta = `🎉 Turno #${turno.id} encerrado com sucesso!`;
+    let msgAlerta = `🎉 Turno #${StorageService.formatarNumeroTurno(turno.id)} encerrado com sucesso!`;
     let toastTipo = 'success';
 
     // Apenas Gerentes e Administradores visualizam notificação de Sobra ou Falta/Quebra de Caixa
     if (isGerenteOuAdmin) {
       if (diferenca > 0) {
-        msgAlerta = `🟢 Turno #${turno.id} encerrado com Sobra de Caixa de R$ ${diferenca.toFixed(2).replace('.', ',')}!`;
+        msgAlerta = `🟢 Turno #${StorageService.formatarNumeroTurno(turno.id)} encerrado com Sobra de Caixa de R$ ${diferenca.toFixed(2).replace('.', ',')}!`;
       } else if (diferenca < 0) {
-        msgAlerta = `🔴 Turno #${turno.id} encerrado com Quebra/Falta de Caixa de R$ ${Math.abs(diferenca).toFixed(2).replace('.', ',')}!`;
+        msgAlerta = `🔴 Turno #${StorageService.formatarNumeroTurno(turno.id)} encerrado com Quebra/Falta de Caixa de R$ ${Math.abs(diferenca).toFixed(2).replace('.', ',')}!`;
         toastTipo = 'warning';
       }
     }
@@ -560,7 +560,7 @@ export const CaixaModule = {
       return `
         <tr>
           <td>
-            <strong style="color: var(--text-main); font-family: 'JetBrains Mono'; font-size: 13px;">#${t.id ? t.id.slice(-6) : 'TURNO'}</strong>
+            <strong style="color: var(--text-main); font-family: 'JetBrains Mono'; font-size: 13px;">#${StorageService.formatarNumeroTurno(t.id)}</strong>
           </td>
           <td>
             <div style="font-size: 12px; font-weight: 700; color: var(--text-main);">${dataAberturaStr}</div>
@@ -635,7 +635,7 @@ export const CaixaModule = {
     const modal = document.getElementById('modal-confirmacao-excluir-turno');
     const turnos = StorageService.getHistoricoTurnos();
     const turno = turnos.find(t => t.id === turnoId);
-    const turnoNome = turno ? `#${(turno.id || '').slice(-6)}` : 'este turno';
+    const turnoNome = turno ? `#${StorageService.formatarNumeroTurno(turno.id)}` : 'este turno';
 
     const tituloEl = document.getElementById('modal-confirm-turno-titulo');
     const msgEl = document.getElementById('modal-confirm-turno-msg');
@@ -711,7 +711,7 @@ export const CaixaModule = {
     if (window.ThermalPrintModule && typeof window.ThermalPrintModule.imprimirFechamentoCaixa === 'function') {
       window.ThermalPrintModule.imprimirFechamentoCaixa(turno);
       if (window.App && typeof window.App.showToast === 'function') {
-        window.App.showToast(`🖨️ Imprimindo cupom de fechamento do turno #${(turno.id || '').slice(-6)}...`, 'success');
+        window.App.showToast(`🖨️ Imprimindo cupom de fechamento do turno #${StorageService.formatarNumeroTurno(turno.id)}...`, 'success');
       }
     }
   },
@@ -819,7 +819,7 @@ export const CaixaModule = {
 
     // Dados dos Cards
     const cardData = [
-      ['ID do Turno:', `#${turno.id ? turno.id.slice(-6) : 'TURNO'}`, 'Total Faturado:', totalVendas, true],
+      ['ID do Turno:', `#${StorageService.formatarNumeroTurno(turno.id)}`, 'Total Faturado:', totalVendas, true],
       ['Operador Responsável:', turno.operador || 'Operador', 'Quantidade de Vendas:', `${r.vendasCount} ${r.vendasCount === 1 ? 'venda' : 'vendas'}`, false],
       ['Data de Abertura:', dataAb, 'Saldo Final em Dinheiro:', r.saldoEmGaveta, true],
       ['Data de Fechamento:', dataFc, 'Total de Sangrias / Retiradas:', -(r.totalSangrias || 0), true],
@@ -978,7 +978,7 @@ export const CaixaModule = {
 
     wsVendas.mergeCells('A2:J2');
     const v2 = wsVendas.getCell('A2');
-    v2.value = `Turno #${turno.id ? turno.id.slice(-6) : 'TURNO'} | Período: ${dataAb} até ${dataFc} | Total de Vendas: ${vendasTurno.length}`;
+    v2.value = `Turno #${StorageService.formatarNumeroTurno(turno.id)} | Período: ${dataAb} até ${dataFc} | Total de Vendas: ${vendasTurno.length}`;
     v2.font = fontSubtitle;
     v2.alignment = { vertical: 'middle', horizontal: 'center' };
     v2.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF059669' } };
@@ -1077,7 +1077,7 @@ export const CaixaModule = {
 
     wsItens.mergeCells('A2:I2');
     const i2 = wsItens.getCell('A2');
-    i2.value = `Turno #${turno.id ? turno.id.slice(-6) : 'TURNO'} | Total de Itens Vendidos: ${itensRows.length} produtos`;
+    i2.value = `Turno #${StorageService.formatarNumeroTurno(turno.id)} | Total de Itens Vendidos: ${itensRows.length} produtos`;
     i2.font = fontSubtitle;
     i2.alignment = { vertical: 'middle', horizontal: 'center' };
     i2.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF059669' } };
@@ -1145,7 +1145,7 @@ export const CaixaModule = {
 
       wsSangrias.mergeCells('A2:D2');
       const s2 = wsSangrias.getCell('A2');
-      s2.value = `Turno #${turno.id ? turno.id.slice(-6) : 'TURNO'} | Total de Retiradas: R$ ${(r.totalSangrias || 0).toFixed(2)}`;
+      s2.value = `Turno #${StorageService.formatarNumeroTurno(turno.id)} | Total de Retiradas: R$ ${(r.totalSangrias || 0).toFixed(2)}`;
       s2.font = fontSubtitle;
       s2.alignment = { vertical: 'middle', horizontal: 'center' };
       s2.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDC2626' } };
@@ -1193,7 +1193,7 @@ export const CaixaModule = {
       });
     }
 
-    const cleanId = turno.id ? String(turno.id).replace('TRN-', '') : 'Fechamento';
+    const cleanId = StorageService.formatarNumeroTurno(turno.id);
     const filename = `Relatorio_Caixa_Turno_${cleanId}_${new Date().toISOString().slice(0, 10)}.xlsx`;
     await this.salvarArquivoExcel(workbook, filename);
 
@@ -1290,7 +1290,7 @@ export const CaixaModule = {
       const bg = idx % 2 === 0 ? 'FFFFFFFF' : 'FFF8FAFC';
 
       const rowVals = [
-        `#${t.id ? t.id.slice(-6) : 'TURNO'}`,
+        `#${StorageService.formatarNumeroTurno(t.id)}`,
         t.operador || 'Operador',
         new Date(t.dataAbertura).toLocaleString('pt-BR'),
         t.dataFechamento ? new Date(t.dataFechamento).toLocaleString('pt-BR') : 'Em Aberto',
@@ -1433,7 +1433,7 @@ export const CaixaModule = {
       corpo.innerHTML = `
         <div style="background: #f8fafc; border: 1px solid var(--border-card); border-radius: var(--radius-md); padding: 16px; margin-bottom: 16px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-            <span style="font-size: 16px; font-weight: 800; color: var(--text-main);">Turno #${turno.id ? turno.id.slice(-6) : 'TURNO'}</span>
+            <span style="font-size: 16px; font-weight: 800; color: var(--text-main);">Turno #${StorageService.formatarNumeroTurno(turno.id)}</span>
             <span class="user-role-tag ${turno.status === 'fechado' ? 'operador' : 'gerente'}">${(turno.status || 'aberto').toUpperCase()}</span>
           </div>
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 13px;">

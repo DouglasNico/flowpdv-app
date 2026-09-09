@@ -95,7 +95,7 @@ export const BackupModule = {
         totalProdutos: produtos.length,
         totalClientes: clientes.length,
         totalUsuarios: usuarios.length,
-        versaoApp: '3.2.0',
+        versaoApp: '3.2.1',
         atualizadoEm: new Date().toISOString()
       };
 

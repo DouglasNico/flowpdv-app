@@ -1,6 +1,6 @@
 {
   "name": "flowpdv",
-  "version": "3.2.0",
+  "version": "3.2.1",
   "description": "FlowPDV - Sistema de Gestão Comercial e Ponto de Venda Ágil",
   "main": "main.js",
   "scripts": {
@@ -41,7 +41,7 @@
     "xlsx": "^0.18.5"
   },
   "build": {
-    "appId": "com.flowpdv.app",
+    "appId": "com.flowpdv.app.v2",
     "productName": "FlowPDV",
     "publish": [
       {
@@ -80,6 +80,7 @@
       "icon": "src/assets/icon.ico"
     },
     "nsis": {
+      "guid": "e33d3e0c-072b-5f0e-83ec-ccabd5f213e1",
       "oneClick": true,
       "perMachine": false,
       "allowElevation": true,

@@ -308,7 +308,7 @@ export const PdvModule = {
             <span style="width: 8px; height: 8px; border-radius: 50%; background: var(--accent-green); display: inline-block;"></span>
             Turno Ativo (${horaAbertura})
           </div>
-          <span style="font-size: 11px; color: var(--text-dim); font-weight: 700;">#${turno.id} • ${nomeOperador}</span>
+          <span style="font-size: 11px; color: var(--text-dim); font-weight: 700;">#${StorageService.formatarNumeroTurno(turno.id)} • ${nomeOperador}</span>
         </div>
 
         <div class="mini-dash-grid">
@@ -345,7 +345,7 @@ export const PdvModule = {
             <span style="width: 8px; height: 8px; border-radius: 50%; background: var(--accent-green); display: inline-block;"></span>
             Turno de Caixa Aberto (${horaAbertura})
           </div>
-          <span style="font-size: 11px; color: var(--text-dim); font-weight: 700;">#${turno.id} • ${nomeOperador}</span>
+          <span style="font-size: 11px; color: var(--text-dim); font-weight: 700;">#${StorageService.formatarNumeroTurno(turno.id)} • ${nomeOperador}</span>
         </div>
 
         <div class="mini-dash-grid">

@@ -40,9 +40,9 @@ let isQuiting = false;
 // Forçar identificação e pasta de dados permanente e imutável entre versões
 app.name = 'flowpdv';
 if (process.platform === 'win32') {
-  // Instalado: mesmo ID do atalho. Em teste (npm start / .bat) um ID próprio,
-  // senão a barra de tarefas reusa o ícone antigo do FlowPDV instalado.
-  app.setAppUserModelId(app.isPackaged ? 'com.flowpdv.app' : 'com.flowpdv.app.dev');
+  // Instalado: ID novo (v2) para o Windows soltar o ícone antigo cacheado
+  // em com.flowpdv.app. Em teste, ID próprio para não herdar o atalho instalado.
+  app.setAppUserModelId(app.isPackaged ? 'com.flowpdv.app.v2' : 'com.flowpdv.app.dev');
 }
 try {
   const userDataPath = path.join(app.getPath('appData'), 'flowpdv');

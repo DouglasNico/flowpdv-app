@@ -1502,7 +1502,7 @@ export const GerenciaModule = {
 
       return `
         <tr>
-          <td style="font-family: 'JetBrains Mono'; font-weight: 800; color: var(--text-muted);">#${t.id ? t.id.slice(-6) : 'TRN'}</td>
+          <td style="font-family: 'JetBrains Mono'; font-weight: 800; color: var(--text-muted);">#${StorageService.formatarNumeroTurno(t.id)}</td>
           <td style="font-size: 12px; line-height: 1.4;">
             <div>🟢 ${dataAberturaFmt}</div>
             <div style="color: var(--text-dim);">🔴 ${dataFechamentoFmt}</div>

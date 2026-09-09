@@ -38,6 +38,16 @@ export const StorageService = {
     return num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   },
 
+  formatarNumeroTurno(id) {
+    if (!id) return '000000';
+    const texto = String(id);
+    const trn = texto.match(/TRN-(\d+)/i);
+    const digits = trn ? trn[1] : texto.replace(/\D/g, '');
+    if (digits.length >= 6) return digits.slice(-6);
+    if (digits.length > 0) return digits.padStart(6, '0');
+    return texto.slice(-6);
+  },
+
   getDeviceId() {
     let devId = localStorage.getItem('flowpdv_device_id');
     if (!devId) {

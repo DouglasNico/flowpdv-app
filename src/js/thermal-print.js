@@ -198,7 +198,7 @@ export const ThermalPrintModule = {
 
     const dataAb = turno.dataAbertura ? new Date(turno.dataAbertura).toLocaleString('pt-BR') : '-';
     const dataFc = turno.dataFechamento ? new Date(turno.dataFechamento).toLocaleString('pt-BR') : 'Em Aberto';
-    const turnoId = turno.id ? (turno.id.length > 8 ? turno.id.slice(-6) : turno.id) : '-';
+    const turnoId = StorageService.formatarNumeroTurno(turno.id);
 
     const diferenca = turno.diferenca !== undefined ? turno.diferenca : ((turno.saldoInformado || 0) - (turno.dinheiroGaveta || 0));
 

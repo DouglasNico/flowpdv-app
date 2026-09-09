@@ -23858,6 +23858,15 @@
       const num = parseFloat(valor) || 0;
       return num.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     },
+    formatarNumeroTurno(id) {
+      if (!id) return "000000";
+      const texto = String(id);
+      const trn = texto.match(/TRN-(\d+)/i);
+      const digits = trn ? trn[1] : texto.replace(/\D/g, "");
+      if (digits.length >= 6) return digits.slice(-6);
+      if (digits.length > 0) return digits.padStart(6, "0");
+      return texto.slice(-6);
+    },
     getDeviceId() {
       let devId = localStorage.getItem("flowpdv_device_id");
       if (!devId) {
@@ -25429,7 +25438,7 @@
       const largura = config.impressoraTipo === "80mm" ? "72mm" : "48mm";
       const dataAb = turno.dataAbertura ? new Date(turno.dataAbertura).toLocaleString("pt-BR") : "-";
       const dataFc = turno.dataFechamento ? new Date(turno.dataFechamento).toLocaleString("pt-BR") : "Em Aberto";
-      const turnoId = turno.id ? turno.id.length > 8 ? turno.id.slice(-6) : turno.id : "-";
+      const turnoId = StorageService.formatarNumeroTurno(turno.id);
       const diferenca = turno.diferenca !== void 0 ? turno.diferenca : (turno.saldoInformado || 0) - (turno.dinheiroGaveta || 0);
       const html = `
       <!DOCTYPE html>
@@ -47752,7 +47761,7 @@ This typically indicates that your device does not have a healthy Internet conne
             <span style="width: 8px; height: 8px; border-radius: 50%; background: var(--accent-green); display: inline-block;"></span>
             Turno Ativo (${horaAbertura})
           </div>
-          <span style="font-size: 11px; color: var(--text-dim); font-weight: 700;">#${turno.id} \u2022 ${nomeOperador}</span>
+          <span style="font-size: 11px; color: var(--text-dim); font-weight: 700;">#${StorageService.formatarNumeroTurno(turno.id)} \u2022 ${nomeOperador}</span>
         </div>
 
         <div class="mini-dash-grid">
@@ -47788,7 +47797,7 @@ This typically indicates that your device does not have a healthy Internet conne
             <span style="width: 8px; height: 8px; border-radius: 50%; background: var(--accent-green); display: inline-block;"></span>
             Turno de Caixa Aberto (${horaAbertura})
           </div>
-          <span style="font-size: 11px; color: var(--text-dim); font-weight: 700;">#${turno.id} \u2022 ${nomeOperador}</span>
+          <span style="font-size: 11px; color: var(--text-dim); font-weight: 700;">#${StorageService.formatarNumeroTurno(turno.id)} \u2022 ${nomeOperador}</span>
         </div>
 
         <div class="mini-dash-grid">
@@ -53377,13 +53386,13 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
         if (window.PdvModule) window.PdvModule.focarInputLeitor();
       }, 60);
       const isGerenteOuAdmin = window.AuthModule && (window.AuthModule.isGerente() || window.AuthModule.isSuperAdmin());
-      let msgAlerta = `\u{1F389} Turno #${turno.id} encerrado com sucesso!`;
+      let msgAlerta = `\u{1F389} Turno #${StorageService.formatarNumeroTurno(turno.id)} encerrado com sucesso!`;
       let toastTipo = "success";
       if (isGerenteOuAdmin) {
         if (diferenca > 0) {
-          msgAlerta = `\u{1F7E2} Turno #${turno.id} encerrado com Sobra de Caixa de R$ ${diferenca.toFixed(2).replace(".", ",")}!`;
+          msgAlerta = `\u{1F7E2} Turno #${StorageService.formatarNumeroTurno(turno.id)} encerrado com Sobra de Caixa de R$ ${diferenca.toFixed(2).replace(".", ",")}!`;
         } else if (diferenca < 0) {
-          msgAlerta = `\u{1F534} Turno #${turno.id} encerrado com Quebra/Falta de Caixa de R$ ${Math.abs(diferenca).toFixed(2).replace(".", ",")}!`;
+          msgAlerta = `\u{1F534} Turno #${StorageService.formatarNumeroTurno(turno.id)} encerrado com Quebra/Falta de Caixa de R$ ${Math.abs(diferenca).toFixed(2).replace(".", ",")}!`;
           toastTipo = "warning";
         }
       }
@@ -53418,7 +53427,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
         return `
         <tr>
           <td>
-            <strong style="color: var(--text-main); font-family: 'JetBrains Mono'; font-size: 13px;">#${t.id ? t.id.slice(-6) : "TURNO"}</strong>
+            <strong style="color: var(--text-main); font-family: 'JetBrains Mono'; font-size: 13px;">#${StorageService.formatarNumeroTurno(t.id)}</strong>
           </td>
           <td>
             <div style="font-size: 12px; font-weight: 700; color: var(--text-main);">${dataAberturaStr}</div>
@@ -53483,7 +53492,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       const modal = document.getElementById("modal-confirmacao-excluir-turno");
       const turnos = StorageService.getHistoricoTurnos();
       const turno = turnos.find((t) => t.id === turnoId);
-      const turnoNome = turno ? `#${(turno.id || "").slice(-6)}` : "este turno";
+      const turnoNome = turno ? `#${StorageService.formatarNumeroTurno(turno.id)}` : "este turno";
       const tituloEl = document.getElementById("modal-confirm-turno-titulo");
       const msgEl = document.getElementById("modal-confirm-turno-msg");
       const btnConfirmar = document.getElementById("btn-confirmar-exclusao-turno");
@@ -53547,7 +53556,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       if (window.ThermalPrintModule && typeof window.ThermalPrintModule.imprimirFechamentoCaixa === "function") {
         window.ThermalPrintModule.imprimirFechamentoCaixa(turno);
         if (window.App && typeof window.App.showToast === "function") {
-          window.App.showToast(`\u{1F5A8}\uFE0F Imprimindo cupom de fechamento do turno #${(turno.id || "").slice(-6)}...`, "success");
+          window.App.showToast(`\u{1F5A8}\uFE0F Imprimindo cupom de fechamento do turno #${StorageService.formatarNumeroTurno(turno.id)}...`, "success");
         }
       }
     },
@@ -53632,7 +53641,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       card2.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF047857" } };
       wsResumo.getRow(4).height = 26;
       const cardData = [
-        ["ID do Turno:", `#${turno.id ? turno.id.slice(-6) : "TURNO"}`, "Total Faturado:", totalVendas, true],
+        ["ID do Turno:", `#${StorageService.formatarNumeroTurno(turno.id)}`, "Total Faturado:", totalVendas, true],
         ["Operador Respons\xE1vel:", turno.operador || "Operador", "Quantidade de Vendas:", `${r.vendasCount} ${r.vendasCount === 1 ? "venda" : "vendas"}`, false],
         ["Data de Abertura:", dataAb, "Saldo Final em Dinheiro:", r.saldoEmGaveta, true],
         ["Data de Fechamento:", dataFc, "Total de Sangrias / Retiradas:", -(r.totalSangrias || 0), true],
@@ -53765,7 +53774,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       wsVendas.getRow(1).height = 34;
       wsVendas.mergeCells("A2:J2");
       const v2 = wsVendas.getCell("A2");
-      v2.value = `Turno #${turno.id ? turno.id.slice(-6) : "TURNO"} | Per\xEDodo: ${dataAb} at\xE9 ${dataFc} | Total de Vendas: ${vendasTurno.length}`;
+      v2.value = `Turno #${StorageService.formatarNumeroTurno(turno.id)} | Per\xEDodo: ${dataAb} at\xE9 ${dataFc} | Total de Vendas: ${vendasTurno.length}`;
       v2.font = fontSubtitle;
       v2.alignment = { vertical: "middle", horizontal: "center" };
       v2.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF059669" } };
@@ -53853,7 +53862,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       wsItens.getRow(1).height = 34;
       wsItens.mergeCells("A2:I2");
       const i2 = wsItens.getCell("A2");
-      i2.value = `Turno #${turno.id ? turno.id.slice(-6) : "TURNO"} | Total de Itens Vendidos: ${itensRows.length} produtos`;
+      i2.value = `Turno #${StorageService.formatarNumeroTurno(turno.id)} | Total de Itens Vendidos: ${itensRows.length} produtos`;
       i2.font = fontSubtitle;
       i2.alignment = { vertical: "middle", horizontal: "center" };
       i2.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF059669" } };
@@ -53912,7 +53921,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
         wsSangrias.getRow(1).height = 34;
         wsSangrias.mergeCells("A2:D2");
         const s2 = wsSangrias.getCell("A2");
-        s2.value = `Turno #${turno.id ? turno.id.slice(-6) : "TURNO"} | Total de Retiradas: R$ ${(r.totalSangrias || 0).toFixed(2)}`;
+        s2.value = `Turno #${StorageService.formatarNumeroTurno(turno.id)} | Total de Retiradas: R$ ${(r.totalSangrias || 0).toFixed(2)}`;
         s2.font = fontSubtitle;
         s2.alignment = { vertical: "middle", horizontal: "center" };
         s2.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFDC2626" } };
@@ -53955,7 +53964,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
           });
         });
       }
-      const cleanId = turno.id ? String(turno.id).replace("TRN-", "") : "Fechamento";
+      const cleanId = StorageService.formatarNumeroTurno(turno.id);
       const filename = `Relatorio_Caixa_Turno_${cleanId}_${(/* @__PURE__ */ new Date()).toISOString().slice(0, 10)}.xlsx`;
       await this.salvarArquivoExcel(workbook, filename);
       window.App.showToast(`\u{1F4CA} Planilha Excel colorida e formatada gerada com sucesso!`, "success");
@@ -54050,7 +54059,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
         row.height = 22;
         const bg = idx % 2 === 0 ? "FFFFFFFF" : "FFF8FAFC";
         const rowVals = [
-          `#${t.id ? t.id.slice(-6) : "TURNO"}`,
+          `#${StorageService.formatarNumeroTurno(t.id)}`,
           t.operador || "Operador",
           new Date(t.dataAbertura).toLocaleString("pt-BR"),
           t.dataFechamento ? new Date(t.dataFechamento).toLocaleString("pt-BR") : "Em Aberto",
@@ -54172,7 +54181,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
         corpo.innerHTML = `
         <div style="background: #f8fafc; border: 1px solid var(--border-card); border-radius: var(--radius-md); padding: 16px; margin-bottom: 16px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-            <span style="font-size: 16px; font-weight: 800; color: var(--text-main);">Turno #${turno.id ? turno.id.slice(-6) : "TURNO"}</span>
+            <span style="font-size: 16px; font-weight: 800; color: var(--text-main);">Turno #${StorageService.formatarNumeroTurno(turno.id)}</span>
             <span class="user-role-tag ${turno.status === "fechado" ? "operador" : "gerente"}">${(turno.status || "aberto").toUpperCase()}</span>
           </div>
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 13px;">
@@ -57004,7 +57013,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
           totalProdutos: produtos.length,
           totalClientes: clientes.length,
           totalUsuarios: usuarios.length,
-          versaoApp: "3.2.0",
+          versaoApp: "3.2.1",
           atualizadoEm: (/* @__PURE__ */ new Date()).toISOString()
         };
         await CloudSyncModule.gravarPacote(chave, backupData, StorageService.getMovimentosEstoque());
@@ -58435,7 +58444,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
         }
         return `
         <tr>
-          <td style="font-family: 'JetBrains Mono'; font-weight: 800; color: var(--text-muted);">#${t.id ? t.id.slice(-6) : "TRN"}</td>
+          <td style="font-family: 'JetBrains Mono'; font-weight: 800; color: var(--text-muted);">#${StorageService.formatarNumeroTurno(t.id)}</td>
           <td style="font-size: 12px; line-height: 1.4;">
             <div>\u{1F7E2} ${dataAberturaFmt}</div>
             <div style="color: var(--text-dim);">\u{1F534} ${dataFechamentoFmt}</div>
