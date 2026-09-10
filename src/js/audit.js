@@ -200,6 +200,7 @@ export const AuditModule = {
       }
 
       const exclusao = await this.lerExclusaoNuvem(chave);
+      this.purgarPendentesExcluidos(exclusao);
       const restantes = [];
       for (const item of pendentes) {
         const limpo = this.limparParaFirestore(item);
@@ -401,12 +402,22 @@ export const AuditModule = {
     if (this.ehDocMeta(log.id)) return true;
     const ids = exclusao.ids || [];
     if (log.id && ids.includes(log.id)) return true;
-    const ms = this.dataDoLogMs(log);
-    if (!Number.isFinite(ms) || ms <= 0) return false;
     const emMs = Date.parse(exclusao.em || '') || 0;
-    if (exclusao.apagarTudo) return Boolean(emMs) && ms <= emMs;
+    const ms = this.dataDoLogMs(log);
+    if (exclusao.apagarTudo) {
+      if (!emMs) return true;
+      if (!Number.isFinite(ms) || ms <= 0) return true;
+      return ms <= emMs;
+    }
     const corte = Number(exclusao.corteMs) || 0;
+    if (!Number.isFinite(ms) || ms <= 0) return false;
     return corte > 0 && emMs > 0 && ms >= corte && ms <= emMs;
+  },
+
+  purgarPendentesExcluidos(exclusao) {
+    if (!exclusao) return;
+    const restantes = this.getPendentes().filter((item) => !this.logFoiExcluidoNaNuvem(item, exclusao));
+    this.salvarPendentes(restantes);
   },
 
   reconciliarLocaisComNuvem(logsNuvem, logsLocais, exclusao) {
@@ -524,6 +535,7 @@ export const AuditModule = {
 
       this.consultaNuvemOk = true;
       const exclusao = cursor ? null : await this.lerExclusaoNuvem(chaveLicenca);
+      if (exclusao) this.purgarPendentesExcluidos(exclusao);
       const subOk = Boolean(snapSub);
       const logsNuvem = (subOk ? logsSub : [...logsSub, ...logsLegado])
         .filter((l) => !this.logFoiExcluidoNaNuvem(l, exclusao));

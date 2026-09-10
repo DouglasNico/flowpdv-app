@@ -506,7 +506,16 @@ export const StorageService = {
   },
 
   saveContasPagar(contas) {
-    localStorage.setItem('flowpdv_contas_pagar', JSON.stringify(contas));
+    let anteriores = [];
+    try {
+      const saved = localStorage.getItem('flowpdv_contas_pagar');
+      anteriores = saved ? JSON.parse(saved) : [];
+      if (!Array.isArray(anteriores)) anteriores = [];
+    } catch (e) {
+      anteriores = [];
+    }
+    const carimbados = carimbarAlterados(Array.isArray(contas) ? contas : [], anteriores);
+    localStorage.setItem('flowpdv_contas_pagar', JSON.stringify(carimbados));
   },
 
   getContas() {

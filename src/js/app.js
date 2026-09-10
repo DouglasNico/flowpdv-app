@@ -156,6 +156,7 @@ export const App = {
       this.gerenciaDesbloqueadaTemp = false;
     }
 
+    const abaAnterior = this.abaAtiva;
     this.abaAtiva = nomeAba;
     this.sincronizarTelaSemBloqueio();
 
@@ -169,8 +170,7 @@ export const App = {
       panel.classList.toggle('active', panel.id === `tab-${nomeAba}`);
     });
 
-    // Resetar filtros e busca ao sair ou entrar na aba Estoque (Item 12)
-    if (window.EstoqueModule && typeof window.EstoqueModule.resetarFiltrosEstoque === 'function') {
+    if (abaAnterior === 'estoque' && nomeAba !== 'estoque' && window.EstoqueModule && typeof window.EstoqueModule.resetarFiltrosEstoque === 'function') {
       window.EstoqueModule.resetarFiltrosEstoque();
     }
 

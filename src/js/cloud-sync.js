@@ -7,6 +7,8 @@ import { StorageService } from './storage.js';
 import { db, doc, getDoc, getDocs, collection, setDoc, updateDoc, deleteDoc, deleteField, onSnapshot, query, where, orderBy, limit, garantirSessaoLoja, encerrarSessaoLoja } from './firebase-config.js';
 import {
   mesclarItensPorId,
+  mesclarContasPagar,
+  contasPagarPrecisamReenviar,
   mesclarComandas,
   consolidarProdutosComMovimentos,
   normalizarMovimentos,
@@ -504,7 +506,7 @@ export const CloudSyncModule = {
         // 🛡️ MESCLAGEM INTELIGENTE (Smart Merge Anti-Perda Multi-Terminal)
         // Combina o que está na nuvem com o que foi feito localmente (ex: XML, cadastros novos)
         const produtosConsolidados = this.mesclarProdutosComEstoque(cloudProds, produtosLocais, cloudData.movimentosEstoque);
-        const contasConsolidadas = this.mesclarItensPorId(cloudContas, contasLocais);
+        const contasConsolidadas = mesclarContasPagar(cloudContas, contasLocais);
         const clientesConsolidados = this.mesclarItensPorId(cloudClientes, clientesLocais);
         const vendasConsolidadas = this.mesclarItensPorId(cloudVendas, vendasLocais);
 
@@ -531,7 +533,7 @@ export const CloudSyncModule = {
         }
 
         // Se tínhamos itens locais novos (como notas XML ou produtos recém-criados), enviamos a base unificada de volta para a nuvem
-        if (produtosConsolidados.length > cloudProds.length || contasConsolidadas.length > cloudContas.length || clientesConsolidados.length > cloudClientes.length || vendasConsolidadas.length > cloudVendas.length || categoriasConsolidadas.length > (cloudData.categorias || []).length) {
+        if (produtosConsolidados.length > cloudProds.length || contasConsolidadas.length > cloudContas.length || contasPagarPrecisamReenviar(contasConsolidadas, cloudContas) || clientesConsolidados.length > cloudClientes.length || vendasConsolidadas.length > cloudVendas.length || categoriasConsolidadas.length > (cloudData.categorias || []).length) {
           console.log('[CloudSync] Consolidando novos itens locais para a nuvem...');
           this.enviarAlteracaoNuvem('consolidacao_unificada');
         }
@@ -887,9 +889,10 @@ export const CloudSyncModule = {
 
       // 6. Sincronizar Contas a Pagar
       if (Array.isArray(cloudData.contasPagar)) {
-        const contasConsolidadas = this.mesclarItensPorId(cloudData.contasPagar, StorageService.getContasPagar());
+        const contasConsolidadas = mesclarContasPagar(cloudData.contasPagar, StorageService.getContasPagar());
         StorageService.saveContasPagar(contasConsolidadas);
-        precisaReenviarBaseConsolidada = precisaReenviarBaseConsolidada || contasConsolidadas.length > cloudData.contasPagar.length;
+        precisaReenviarBaseConsolidada = precisaReenviarBaseConsolidada
+          || contasPagarPrecisamReenviar(contasConsolidadas, cloudData.contasPagar);
         houveAlteracao = true;
         if (window.GerenciaModule && window.GerenciaModule.subAbaAtiva === 'financeiro') {
           window.GerenciaModule.renderContasPagar();

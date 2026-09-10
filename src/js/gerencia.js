@@ -995,13 +995,43 @@ export const GerenciaModule = {
 
   filtrarAuditoriaData(valor) {
     this.filtroDataAuditoria = String(valor || '').trim();
+    this.atualizarLabelFiltroData('gerencia-auditoria-filtro-data', 'gerencia-auditoria-filtro-data-label', 'Filtrar Log');
     this.auditoriaExibidos = 100;
     this.renderAuditoriaFiltrada();
   },
 
   filtrarHistoricoData(valor) {
     this.filtroDataHistorico = String(valor || '').trim();
+    this.atualizarLabelFiltroData('gerencia-historico-filtro-data', 'gerencia-historico-filtro-data-label', 'Filtrar Caixa');
     this.renderHistoricoCaixas();
+  },
+
+  atualizarLabelFiltroData(inputId, labelId, placeholder) {
+    const input = document.getElementById(inputId);
+    const label = document.getElementById(labelId);
+    const wrap = input && input.closest('.filtro-data-wrap');
+    const ymd = String((input && input.value) || '').trim();
+    if (label) {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
+        const [ano, mes, dia] = ymd.split('-');
+        label.textContent = `${dia}/${mes}/${ano}`;
+      } else {
+        label.textContent = placeholder;
+      }
+    }
+    if (wrap) wrap.classList.toggle('has-value', Boolean(ymd));
+  },
+
+  abrirCalendarioFiltro(inputId) {
+    const input = document.getElementById(inputId);
+    if (!input || input.dataset.picking) return;
+    if (typeof input.showPicker === 'function') {
+      try {
+        input.dataset.picking = '1';
+        input.showPicker();
+      } catch (e) {}
+      setTimeout(() => { delete input.dataset.picking; }, 400);
+    }
   },
 
   async renderAuditoriaAjustes() {
@@ -1103,7 +1133,8 @@ export const GerenciaModule = {
 
     const pills = Array.from(bar.querySelectorAll('.gerencia-audit-filtro-btn'));
     pills.forEach((p) => { p.style.display = ''; });
-    wrap.style.display = 'none';
+    wrap.classList.remove('is-visible');
+    wrap.style.setProperty('display', 'none', 'important');
     menu.style.display = 'none';
     btnMais.classList.remove('active');
     btnMais.textContent = '📂 Mais ▾';
@@ -1117,9 +1148,10 @@ export const GerenciaModule = {
 
     const widths = pills.map((p) => p.offsetWidth);
     const total = widths.reduce((acc, w) => acc + w, 0) + gap * Math.max(0, pills.length - 1);
-    if (total <= available) return;
+    if (total <= available + 1) return;
 
-    wrap.style.display = 'inline-block';
+    wrap.classList.add('is-visible');
+    wrap.style.setProperty('display', 'inline-block', 'important');
     const maisW = wrap.offsetWidth + gap;
     let budget = Math.max(0, available - maisW);
     let used = 0;
@@ -1138,7 +1170,8 @@ export const GerenciaModule = {
     });
 
     if (!extras.length) {
-      wrap.style.display = 'none';
+      wrap.classList.remove('is-visible');
+      wrap.style.setProperty('display', 'none', 'important');
       return;
     }
 
@@ -1169,6 +1202,7 @@ export const GerenciaModule = {
     if (inputData && inputData.value !== (this.filtroDataAuditoria || '')) {
       inputData.value = this.filtroDataAuditoria || '';
     }
+    this.atualizarLabelFiltroData('gerencia-auditoria-filtro-data', 'gerencia-auditoria-filtro-data-label', 'Filtrar Log');
     const todosLogs = this.logsAuditoriaCache || [];
     const tipo = (this.filtroAuditoria || 'todos').toLowerCase();
     const opFiltro = (this.filtroOperadorAuditoria || 'todos').toLowerCase();
@@ -1835,6 +1869,7 @@ export const GerenciaModule = {
     if (inputData && inputData.value !== (this.filtroDataHistorico || '')) {
       inputData.value = this.filtroDataHistorico || '';
     }
+    this.atualizarLabelFiltroData('gerencia-historico-filtro-data', 'gerencia-historico-filtro-data-label', 'Filtrar Caixa');
     const todosTurnos = StorageService.getHistoricoTurnos() || [];
     const ymd = this.filtroDataHistorico || '';
     const turnos = ymd

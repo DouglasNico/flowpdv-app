@@ -23738,6 +23738,51 @@
     });
     return Array.from(mapa.values());
   }
+  function ehContaPaga(conta) {
+    return String(conta && conta.status || "").toLowerCase() === "pago";
+  }
+  function tempoContaPagar(conta) {
+    const carimbo = tempoDe(conta);
+    if (carimbo) return carimbo;
+    const pagamento = conta && conta.dataPagamento ? new Date(conta.dataPagamento).getTime() : 0;
+    if (Number.isFinite(pagamento) && pagamento > 0) return pagamento;
+    const criacao = conta && conta.criadoEm ? new Date(conta.criadoEm).getTime() : 0;
+    return Number.isFinite(criacao) ? criacao : 0;
+  }
+  function mesclarContasPagar(nuvem = [], local = []) {
+    const mapa = /* @__PURE__ */ new Map();
+    const contaVence = (atual, candidato) => {
+      const tAtual = tempoContaPagar(atual);
+      const tNovo = tempoContaPagar(candidato);
+      if (tNovo !== tAtual) return tNovo > tAtual;
+      if (ehContaPaga(candidato) !== ehContaPaga(atual)) return ehContaPaga(candidato);
+      return true;
+    };
+    [...nuvem || [], ...local || []].forEach((item) => {
+      const key = chaveDoItem(item);
+      if (!key) return;
+      const existente = mapa.get(key);
+      if (!existente) {
+        mapa.set(key, item);
+        return;
+      }
+      if (contaVence(existente, item)) {
+        mapa.set(key, { ...existente, ...item });
+      } else {
+        mapa.set(key, { ...item, ...existente });
+      }
+    });
+    return Array.from(mapa.values());
+  }
+  function contasPagarPrecisamReenviar(consolidadas = [], nuvem = []) {
+    const mapaNuvem = new Map((nuvem || []).map((c) => [String(c && c.id), c]));
+    if ((consolidadas || []).length !== (nuvem || []).length) return true;
+    return (consolidadas || []).some((c) => {
+      const outro = mapaNuvem.get(String(c && c.id));
+      if (!outro) return true;
+      return String(c.status || "") !== String(outro.status || "") || String(c.dataPagamento || "") !== String(outro.dataPagamento || "");
+    });
+  }
   function mesclarComandas(nuvem = [], local = []) {
     const mapa = /* @__PURE__ */ new Map();
     [...nuvem || [], ...local || []].forEach((item) => {
@@ -24293,7 +24338,16 @@
       return [];
     },
     saveContasPagar(contas) {
-      localStorage.setItem("flowpdv_contas_pagar", JSON.stringify(contas));
+      let anteriores = [];
+      try {
+        const saved = localStorage.getItem("flowpdv_contas_pagar");
+        anteriores = saved ? JSON.parse(saved) : [];
+        if (!Array.isArray(anteriores)) anteriores = [];
+      } catch (e) {
+        anteriores = [];
+      }
+      const carimbados = carimbarAlterados(Array.isArray(contas) ? contas : [], anteriores);
+      localStorage.setItem("flowpdv_contas_pagar", JSON.stringify(carimbados));
     },
     getContas() {
       return this.getContasPagar();
@@ -47758,6 +47812,7 @@ This typically indicates that your device does not have a healthy Internet conne
           }
         }
         const exclusao = await this.lerExclusaoNuvem(chave);
+        this.purgarPendentesExcluidos(exclusao);
         const restantes = [];
         for (const item of pendentes) {
           const limpo = this.limparParaFirestore(item);
@@ -47943,12 +47998,21 @@ This typically indicates that your device does not have a healthy Internet conne
       if (this.ehDocMeta(log.id)) return true;
       const ids = exclusao.ids || [];
       if (log.id && ids.includes(log.id)) return true;
-      const ms = this.dataDoLogMs(log);
-      if (!Number.isFinite(ms) || ms <= 0) return false;
       const emMs = Date.parse(exclusao.em || "") || 0;
-      if (exclusao.apagarTudo) return Boolean(emMs) && ms <= emMs;
+      const ms = this.dataDoLogMs(log);
+      if (exclusao.apagarTudo) {
+        if (!emMs) return true;
+        if (!Number.isFinite(ms) || ms <= 0) return true;
+        return ms <= emMs;
+      }
       const corte = Number(exclusao.corteMs) || 0;
+      if (!Number.isFinite(ms) || ms <= 0) return false;
       return corte > 0 && emMs > 0 && ms >= corte && ms <= emMs;
+    },
+    purgarPendentesExcluidos(exclusao) {
+      if (!exclusao) return;
+      const restantes = this.getPendentes().filter((item) => !this.logFoiExcluidoNaNuvem(item, exclusao));
+      this.salvarPendentes(restantes);
     },
     reconciliarLocaisComNuvem(logsNuvem, logsLocais, exclusao) {
       const idsNuvem = new Set((logsNuvem || []).map((l) => l && l.id).filter(Boolean));
@@ -48055,6 +48119,7 @@ This typically indicates that your device does not have a healthy Internet conne
         }
         this.consultaNuvemOk = true;
         const exclusao = cursor ? null : await this.lerExclusaoNuvem(chaveLicenca);
+        if (exclusao) this.purgarPendentesExcluidos(exclusao);
         const subOk = Boolean(snapSub);
         const logsNuvem = (subOk ? logsSub : [...logsSub, ...logsLegado]).filter((l) => !this.logFoiExcluidoNaNuvem(l, exclusao));
         if (!cursor) {
@@ -51153,14 +51218,27 @@ Venda bloqueada no PDV!`);
       this.filtroValidade = "todos";
       this.filtroEstoqueBaixo = false;
       this.filtroListaCompras = false;
-      document.querySelectorAll(".cat-tab-btn").forEach((b) => {
-        b.classList.toggle("active", b.dataset.cat === "todas");
-      });
       document.querySelectorAll(".estoque-filtro-validade-btn").forEach((b) => {
-        b.classList.toggle("active", b.dataset.filtroVal === "todos");
+        b.classList.toggle("active", (b.getAttribute("data-filtro-val") || "") === "todos");
       });
       const btnEstoqueBaixo = document.getElementById("btn-filtro-estoque-baixo");
-      if (btnEstoqueBaixo) btnEstoqueBaixo.classList.remove("active");
+      if (btnEstoqueBaixo) {
+        btnEstoqueBaixo.classList.remove("active");
+        btnEstoqueBaixo.style.background = "";
+        btnEstoqueBaixo.style.color = "";
+        btnEstoqueBaixo.style.borderColor = "";
+      }
+      const btnLista = document.getElementById("btn-lista-compras-excel");
+      if (btnLista) {
+        btnLista.classList.remove("active");
+        btnLista.style.background = "";
+        btnLista.style.color = "";
+        btnLista.style.borderColor = "";
+        btnLista.style.boxShadow = "";
+      }
+      this.fecharMenuAcoesEstoque();
+      this.atualizarBannerListaCompras();
+      this.renderBarraCategorias();
       this.renderTabelaProdutos();
     },
     init() {
@@ -51238,11 +51316,11 @@ Venda bloqueada no PDV!`);
       }
       if (boxBalanca) boxBalanca.style.display = isBalancaAtivo ? "flex" : "none";
       if (boxValidade) boxValidade.style.display = isValidadeAtivo ? "block" : "none";
-      if (btnBiparValidade) btnBiparValidade.style.display = isValidadeAtivo ? "inline-flex" : "none";
-      if (btnQueimaEstoque) btnQueimaEstoque.style.display = isValidadeAtivo ? "inline-flex" : "none";
-      if (btnPrecosClube) btnPrecosClube.style.display = isClubeAtivo ? "inline-flex" : "none";
+      if (btnBiparValidade) btnBiparValidade.style.display = isValidadeAtivo ? "flex" : "none";
+      if (btnQueimaEstoque) btnQueimaEstoque.style.display = isValidadeAtivo ? "flex" : "none";
+      if (btnPrecosClube) btnPrecosClube.style.display = isClubeAtivo ? "flex" : "none";
       if (barFiltrosValidade) barFiltrosValidade.style.display = isValidadeAtivo ? "flex" : "none";
-      if (btnXml) btnXml.style.display = isXmlAtivo && isGerente ? "inline-flex" : "none";
+      if (btnXml) btnXml.style.display = isXmlAtivo && isGerente ? "flex" : "none";
       if (boxPrecoClube) boxPrecoClube.style.display = isClubeAtivo ? "block" : "none";
     },
     toggleFiltroEstoqueBaixo() {
@@ -51786,6 +51864,7 @@ Venda bloqueada no PDV!`);
       document.addEventListener("click", (e) => {
         if (!e.target.closest(".category-dropdown-wrapper")) {
           this.fecharDropdownCategorias();
+          this.fecharMenuAcoesEstoque();
         }
       });
     },
@@ -51877,6 +51956,18 @@ Venda bloqueada no PDV!`);
       const dropdown = document.getElementById("dropdown-mais-categorias");
       if (dropdown) dropdown.style.display = "none";
     },
+    toggleMenuAcoesEstoque(e) {
+      if (e) e.stopPropagation();
+      const dropdown = document.getElementById("dropdown-estoque-acoes");
+      if (!dropdown) return;
+      const abrir = dropdown.style.display !== "block";
+      this.fecharDropdownCategorias();
+      dropdown.style.display = abrir ? "block" : "none";
+    },
+    fecharMenuAcoesEstoque() {
+      const dropdown = document.getElementById("dropdown-estoque-acoes");
+      if (dropdown) dropdown.style.display = "none";
+    },
     bindBusca() {
       const input = document.getElementById("estoque-busca-input");
       if (input) {
@@ -51956,7 +52047,8 @@ Venda bloqueada no PDV!`);
         hoje.setHours(0, 0, 0, 0);
         produtos = produtos.filter((p) => {
           if (this.filtroValidade === "promocao") {
-            return p.emPromocao === true || p.precoPromocional && p.precoPromocional < p.precoVenda || p.precoOriginal && p.precoVenda < p.precoOriginal;
+            const precoClube2 = parseFloat(p.precoClube) || 0;
+            return p.emPromocao === true || p.precoPromocional && p.precoPromocional < p.precoVenda || p.precoOriginal && p.precoVenda < p.precoOriginal || precoClube2 > 0;
           }
           if (!p.dataValidade) return false;
           const dataVal = /* @__PURE__ */ new Date(p.dataValidade + "T00:00:00");
@@ -51994,8 +52086,13 @@ Venda bloqueada no PDV!`);
             valB = parseFloat(b.precoVenda) || 0;
             return direcao === "asc" ? valA - valB : valB - valA;
           } else if (coluna === "precoPromocional") {
-            valA = a.emPromocao ? parseFloat(a.precoPromocional || a.precoVenda) || 0 : 999999;
-            valB = b.emPromocao ? parseFloat(b.precoPromocional || b.precoVenda) || 0 : 999999;
+            const precoEspecial = (p) => {
+              if (p.emPromocao) return parseFloat(p.precoPromocional || p.precoVenda) || 0;
+              const clube = parseFloat(p.precoClube) || 0;
+              return clube > 0 ? clube : 999999;
+            };
+            valA = precoEspecial(a);
+            valB = precoEspecial(b);
             return direcao === "asc" ? valA - valB : valB - valA;
           } else if (coluna === "estoque") {
             valA = a.controlarEstoque === false ? 999999 : parseFloat(a.estoque) || 0;
@@ -52850,12 +52947,12 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       idsBotoes.forEach((id) => {
         const el = document.getElementById(id);
         if (el) {
-          el.style.display = isGerente ? "inline-flex" : "none";
+          el.style.display = isGerente ? "flex" : "none";
         }
       });
       const btnXml = document.getElementById("btn-importar-xml-nfe");
       if (btnXml) {
-        btnXml.style.display = isXmlAtivo && isGerente ? "inline-flex" : "none";
+        btnXml.style.display = isXmlAtivo && isGerente ? "flex" : "none";
       }
     },
     bindDragDropPlanilha() {
@@ -54005,14 +54102,14 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
             <td style="text-align: right; color: var(--text-dim); font-family: 'JetBrains Mono';">
               R$ ${this.formatarMoedaClube(it2.precoDe)}
             </td>
-            <td style="text-align: right; font-family: 'JetBrains Mono'; color: ${it2.precoClubeAtual > 0 ? "#6d28d9" : "var(--text-dim)"};">
+            <td style="text-align: right; font-family: 'JetBrains Mono'; color: ${it2.precoClubeAtual > 0 ? "#c2410c" : "var(--text-dim)"};">
               ${it2.precoClubeAtual > 0 ? `R$ ${this.formatarMoedaClube(it2.precoClubeAtual)}` : "\u2014"}
             </td>
             <td style="text-align: right;">
-              <input type="text" value="${this.formatarMoedaClube(it2.precoPor)}" onchange="EstoqueModule.atualizarPrecoManualClube(${idx}, this.value)" style="width: 92px; height: 32px; text-align: right; font-weight: 800; font-family: 'JetBrains Mono'; border-radius: 6px; border: 1px solid #ddd6fe; color: #6d28d9; padding: 0 8px;">
+              <input type="text" value="${this.formatarMoedaClube(it2.precoPor)}" onchange="EstoqueModule.atualizarPrecoManualClube(${idx}, this.value)" style="width: 92px; height: 32px; text-align: right; font-weight: 800; font-family: 'JetBrains Mono'; border-radius: 6px; border: 1px solid #fed7aa; color: #ea580c; padding: 0 8px;">
             </td>
           </tr>
-        `).join("") + (visiveis.length > LIMITE ? `<tr><td colspan="6" style="text-align: center; padding: 12px; color: #6d28d9; font-size: 12px; font-weight: 700;">Mostrando os primeiros ${LIMITE} de ${visiveis.length}. Refine a busca para achar o item.</td></tr>` : "");
+        `).join("") + (visiveis.length > LIMITE ? `<tr><td colspan="6" style="text-align: center; padding: 12px; color: #c2410c; font-size: 12px; font-weight: 700;">Mostrando os primeiros ${LIMITE} de ${visiveis.length}. Refine a busca para achar o item.</td></tr>` : "");
         }
       }
       this.gerarMensagemWhatsAppClube(false);
@@ -54141,14 +54238,14 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       if (window.App && typeof window.App.confirmarAcao === "function") {
         window.App.confirmarAcao({
           titulo: "\u{1F3C5} Aplicar pre\xE7os do Clube?",
-          mensagem: `Deseja gravar o <strong>pre\xE7o de clube</strong> nos <strong>${selecionados.length} produto(s) selecionado(s)</strong>?<br><br><span style="font-size: 12.5px; color: #5b21b6; background: #f5f3ff; border: 1px solid #ddd6fe; padding: 6px 12px; border-radius: 8px; display: inline-block;">O pre\xE7o de venda do caixa continua o mesmo. S\xF3 o membro do clube (CPF no PDV) paga o valor especial.</span>`,
+          mensagem: `Deseja gravar o <strong>pre\xE7o de clube</strong> nos <strong>${selecionados.length} produto(s) selecionado(s)</strong>?<br><br><span style="font-size: 12.5px; color: #9a3412; background: #fff7ed; border: 1px solid #fed7aa; padding: 6px 12px; border-radius: 8px; display: inline-block;">O pre\xE7o de venda do caixa continua o mesmo. S\xF3 o membro do clube (CPF no PDV) paga o valor especial.</span>`,
           icone: "\u{1F3C5}",
-          corIcone: "#7c3aed",
-          bgIcone: "#f5f3ff",
+          corIcone: "#ea580c",
+          bgIcone: "#fff7ed",
           textoConfirmar: "\u{1F3C5} Sim, aplicar no clube [ENTER]",
           textoCancelar: "Cancelar [ESC]",
           perigo: false,
-          corConfirmar: "linear-gradient(135deg, #7c3aed, #6d28d9)",
+          corConfirmar: "linear-gradient(135deg, #f97316, #ea580c)",
           onConfirm: executarAplicacao
         });
       } else {
@@ -57895,7 +57992,7 @@ ${base}`;
             cloudData.categoriasExcluidas.forEach((c) => StorageService.adicionarCategoriaExcluida(c));
           }
           const produtosConsolidados = this.mesclarProdutosComEstoque(cloudProds, produtosLocais, cloudData.movimentosEstoque);
-          const contasConsolidadas = this.mesclarItensPorId(cloudContas, contasLocais);
+          const contasConsolidadas = mesclarContasPagar(cloudContas, contasLocais);
           const clientesConsolidados = this.mesclarItensPorId(cloudClientes, clientesLocais);
           const vendasConsolidadas = this.mesclarItensPorId(cloudVendas, vendasLocais);
           StorageService.saveProdutos(produtosConsolidados);
@@ -57917,7 +58014,7 @@ ${base}`;
           if (Array.isArray(cloudData.turnosHistorico) && cloudData.turnosHistorico.length > 0) {
             StorageService.salvarHistoricoTurnos(cloudData.turnosHistorico);
           }
-          if (produtosConsolidados.length > cloudProds.length || contasConsolidadas.length > cloudContas.length || clientesConsolidados.length > cloudClientes.length || vendasConsolidadas.length > cloudVendas.length || categoriasConsolidadas.length > (cloudData.categorias || []).length) {
+          if (produtosConsolidados.length > cloudProds.length || contasConsolidadas.length > cloudContas.length || contasPagarPrecisamReenviar(contasConsolidadas, cloudContas) || clientesConsolidados.length > cloudClientes.length || vendasConsolidadas.length > cloudVendas.length || categoriasConsolidadas.length > (cloudData.categorias || []).length) {
             console.log("[CloudSync] Consolidando novos itens locais para a nuvem...");
             this.enviarAlteracaoNuvem("consolidacao_unificada");
           }
@@ -58200,9 +58297,9 @@ ${base}`;
           }
         }
         if (Array.isArray(cloudData.contasPagar)) {
-          const contasConsolidadas = this.mesclarItensPorId(cloudData.contasPagar, StorageService.getContasPagar());
+          const contasConsolidadas = mesclarContasPagar(cloudData.contasPagar, StorageService.getContasPagar());
           StorageService.saveContasPagar(contasConsolidadas);
-          precisaReenviarBaseConsolidada = precisaReenviarBaseConsolidada || contasConsolidadas.length > cloudData.contasPagar.length;
+          precisaReenviarBaseConsolidada = precisaReenviarBaseConsolidada || contasPagarPrecisamReenviar(contasConsolidadas, cloudData.contasPagar);
           houveAlteracao = true;
           if (window.GerenciaModule && window.GerenciaModule.subAbaAtiva === "financeiro") {
             window.GerenciaModule.renderContasPagar();
@@ -59481,12 +59578,43 @@ ${base}`;
     },
     filtrarAuditoriaData(valor) {
       this.filtroDataAuditoria = String(valor || "").trim();
+      this.atualizarLabelFiltroData("gerencia-auditoria-filtro-data", "gerencia-auditoria-filtro-data-label", "Filtrar Log");
       this.auditoriaExibidos = 100;
       this.renderAuditoriaFiltrada();
     },
     filtrarHistoricoData(valor) {
       this.filtroDataHistorico = String(valor || "").trim();
+      this.atualizarLabelFiltroData("gerencia-historico-filtro-data", "gerencia-historico-filtro-data-label", "Filtrar Caixa");
       this.renderHistoricoCaixas();
+    },
+    atualizarLabelFiltroData(inputId, labelId, placeholder) {
+      const input = document.getElementById(inputId);
+      const label = document.getElementById(labelId);
+      const wrap2 = input && input.closest(".filtro-data-wrap");
+      const ymd = String(input && input.value || "").trim();
+      if (label) {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
+          const [ano, mes, dia] = ymd.split("-");
+          label.textContent = `${dia}/${mes}/${ano}`;
+        } else {
+          label.textContent = placeholder;
+        }
+      }
+      if (wrap2) wrap2.classList.toggle("has-value", Boolean(ymd));
+    },
+    abrirCalendarioFiltro(inputId) {
+      const input = document.getElementById(inputId);
+      if (!input || input.dataset.picking) return;
+      if (typeof input.showPicker === "function") {
+        try {
+          input.dataset.picking = "1";
+          input.showPicker();
+        } catch (e) {
+        }
+        setTimeout(() => {
+          delete input.dataset.picking;
+        }, 400);
+      }
     },
     async renderAuditoriaAjustes() {
       const tbody = document.getElementById("gerencia-auditoria-tbody");
@@ -59572,7 +59700,8 @@ ${base}`;
       pills.forEach((p) => {
         p.style.display = "";
       });
-      wrap2.style.display = "none";
+      wrap2.classList.remove("is-visible");
+      wrap2.style.setProperty("display", "none", "important");
       menu.style.display = "none";
       btnMais.classList.remove("active");
       btnMais.textContent = "\u{1F4C2} Mais \u25BE";
@@ -59584,8 +59713,9 @@ ${base}`;
       }
       const widths = pills.map((p) => p.offsetWidth);
       const total = widths.reduce((acc, w) => acc + w, 0) + gap * Math.max(0, pills.length - 1);
-      if (total <= available) return;
-      wrap2.style.display = "inline-block";
+      if (total <= available + 1) return;
+      wrap2.classList.add("is-visible");
+      wrap2.style.setProperty("display", "inline-block", "important");
       const maisW = wrap2.offsetWidth + gap;
       let budget = Math.max(0, available - maisW);
       let used = 0;
@@ -59602,7 +59732,8 @@ ${base}`;
         }
       });
       if (!extras.length) {
-        wrap2.style.display = "none";
+        wrap2.classList.remove("is-visible");
+        wrap2.style.setProperty("display", "none", "important");
         return;
       }
       const ativo = extras.find((p) => p.classList.contains("active"));
@@ -59630,6 +59761,7 @@ ${base}`;
       if (inputData && inputData.value !== (this.filtroDataAuditoria || "")) {
         inputData.value = this.filtroDataAuditoria || "";
       }
+      this.atualizarLabelFiltroData("gerencia-auditoria-filtro-data", "gerencia-auditoria-filtro-data-label", "Filtrar Log");
       const todosLogs = this.logsAuditoriaCache || [];
       const tipo = (this.filtroAuditoria || "todos").toLowerCase();
       const opFiltro = (this.filtroOperadorAuditoria || "todos").toLowerCase();
@@ -60208,6 +60340,7 @@ ${base}`;
       if (inputData && inputData.value !== (this.filtroDataHistorico || "")) {
         inputData.value = this.filtroDataHistorico || "";
       }
+      this.atualizarLabelFiltroData("gerencia-historico-filtro-data", "gerencia-historico-filtro-data-label", "Filtrar Caixa");
       const todosTurnos = StorageService.getHistoricoTurnos() || [];
       const ymd = this.filtroDataHistorico || "";
       const turnos = ymd ? todosTurnos.filter((t) => {
@@ -63688,6 +63821,7 @@ NSU: ${nsuGerado}`
       if (this.abaAtiva === "gerencia" && nomeAba !== "gerencia") {
         this.gerenciaDesbloqueadaTemp = false;
       }
+      const abaAnterior = this.abaAtiva;
       this.abaAtiva = nomeAba;
       this.sincronizarTelaSemBloqueio();
       document.querySelectorAll(".nav-btn").forEach((btn) => {
@@ -63696,7 +63830,7 @@ NSU: ${nsuGerado}`
       document.querySelectorAll(".tab-panel").forEach((panel) => {
         panel.classList.toggle("active", panel.id === `tab-${nomeAba}`);
       });
-      if (window.EstoqueModule && typeof window.EstoqueModule.resetarFiltrosEstoque === "function") {
+      if (abaAnterior === "estoque" && nomeAba !== "estoque" && window.EstoqueModule && typeof window.EstoqueModule.resetarFiltrosEstoque === "function") {
         window.EstoqueModule.resetarFiltrosEstoque();
       }
       if (nomeAba === "pdv") {

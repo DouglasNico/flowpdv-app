@@ -51,6 +51,63 @@ export function mesclarItensPorId(baseA = [], baseB = []) {
   return Array.from(mapa.values());
 }
 
+function ehContaPaga(conta) {
+  return String(conta && conta.status || '').toLowerCase() === 'pago';
+}
+
+function tempoContaPagar(conta) {
+  const carimbo = tempoDe(conta);
+  if (carimbo) return carimbo;
+  const pagamento = conta && conta.dataPagamento ? new Date(conta.dataPagamento).getTime() : 0;
+  if (Number.isFinite(pagamento) && pagamento > 0) return pagamento;
+  const criacao = conta && conta.criadoEm ? new Date(conta.criadoEm).getTime() : 0;
+  return Number.isFinite(criacao) ? criacao : 0;
+}
+
+/**
+ * Contas a pagar: o registro mais recente vence. Sem data, baixa (pago)
+ * não pode voltar a vencido só porque o outro PC ainda tem a cópia antiga.
+ */
+export function mesclarContasPagar(nuvem = [], local = []) {
+  const mapa = new Map();
+
+  const contaVence = (atual, candidato) => {
+    const tAtual = tempoContaPagar(atual);
+    const tNovo = tempoContaPagar(candidato);
+    if (tNovo !== tAtual) return tNovo > tAtual;
+    if (ehContaPaga(candidato) !== ehContaPaga(atual)) return ehContaPaga(candidato);
+    return true;
+  };
+
+  [...(nuvem || []), ...(local || [])].forEach(item => {
+    const key = chaveDoItem(item);
+    if (!key) return;
+    const existente = mapa.get(key);
+    if (!existente) {
+      mapa.set(key, item);
+      return;
+    }
+    if (contaVence(existente, item)) {
+      mapa.set(key, { ...existente, ...item });
+    } else {
+      mapa.set(key, { ...item, ...existente });
+    }
+  });
+
+  return Array.from(mapa.values());
+}
+
+export function contasPagarPrecisamReenviar(consolidadas = [], nuvem = []) {
+  const mapaNuvem = new Map((nuvem || []).map(c => [String(c && c.id), c]));
+  if ((consolidadas || []).length !== (nuvem || []).length) return true;
+  return (consolidadas || []).some(c => {
+    const outro = mapaNuvem.get(String(c && c.id));
+    if (!outro) return true;
+    return String(c.status || '') !== String(outro.status || '')
+      || String(c.dataPagamento || '') !== String(outro.dataPagamento || '');
+  });
+}
+
 /**
  * Mesas e comandas não podem ser mescladas campo a campo: um `itens: []` antigo
  * misturado com um novo recriaria itens já faturados. Aqui a versão mais recente

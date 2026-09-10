@@ -45,14 +45,27 @@ export const EstoqueModule = {
     this.filtroValidade = 'todos';
     this.filtroEstoqueBaixo = false;
     this.filtroListaCompras = false;
-    document.querySelectorAll('.cat-tab-btn').forEach(b => {
-      b.classList.toggle('active', b.dataset.cat === 'todas');
-    });
     document.querySelectorAll('.estoque-filtro-validade-btn').forEach(b => {
-      b.classList.toggle('active', b.dataset.filtroVal === 'todos');
+      b.classList.toggle('active', (b.getAttribute('data-filtro-val') || '') === 'todos');
     });
     const btnEstoqueBaixo = document.getElementById('btn-filtro-estoque-baixo');
-    if (btnEstoqueBaixo) btnEstoqueBaixo.classList.remove('active');
+    if (btnEstoqueBaixo) {
+      btnEstoqueBaixo.classList.remove('active');
+      btnEstoqueBaixo.style.background = '';
+      btnEstoqueBaixo.style.color = '';
+      btnEstoqueBaixo.style.borderColor = '';
+    }
+    const btnLista = document.getElementById('btn-lista-compras-excel');
+    if (btnLista) {
+      btnLista.classList.remove('active');
+      btnLista.style.background = '';
+      btnLista.style.color = '';
+      btnLista.style.borderColor = '';
+      btnLista.style.boxShadow = '';
+    }
+    this.fecharMenuAcoesEstoque();
+    this.atualizarBannerListaCompras();
+    this.renderBarraCategorias();
     this.renderTabelaProdutos();
   },
 
@@ -139,11 +152,11 @@ export const EstoqueModule = {
 
     if (boxBalanca) boxBalanca.style.display = isBalancaAtivo ? 'flex' : 'none';
     if (boxValidade) boxValidade.style.display = isValidadeAtivo ? 'block' : 'none';
-    if (btnBiparValidade) btnBiparValidade.style.display = isValidadeAtivo ? 'inline-flex' : 'none';
-    if (btnQueimaEstoque) btnQueimaEstoque.style.display = isValidadeAtivo ? 'inline-flex' : 'none';
-    if (btnPrecosClube) btnPrecosClube.style.display = isClubeAtivo ? 'inline-flex' : 'none';
+    if (btnBiparValidade) btnBiparValidade.style.display = isValidadeAtivo ? 'flex' : 'none';
+    if (btnQueimaEstoque) btnQueimaEstoque.style.display = isValidadeAtivo ? 'flex' : 'none';
+    if (btnPrecosClube) btnPrecosClube.style.display = isClubeAtivo ? 'flex' : 'none';
     if (barFiltrosValidade) barFiltrosValidade.style.display = isValidadeAtivo ? 'flex' : 'none';
-    if (btnXml) btnXml.style.display = (isXmlAtivo && isGerente) ? 'inline-flex' : 'none';
+    if (btnXml) btnXml.style.display = (isXmlAtivo && isGerente) ? 'flex' : 'none';
     if (boxPrecoClube) boxPrecoClube.style.display = isClubeAtivo ? 'block' : 'none';
   },
 
@@ -774,6 +787,7 @@ export const EstoqueModule = {
     document.addEventListener('click', (e) => {
       if (!e.target.closest('.category-dropdown-wrapper')) {
         this.fecharDropdownCategorias();
+        this.fecharMenuAcoesEstoque();
       }
     });
   },
@@ -875,6 +889,20 @@ export const EstoqueModule = {
     if (dropdown) dropdown.style.display = 'none';
   },
 
+  toggleMenuAcoesEstoque(e) {
+    if (e) e.stopPropagation();
+    const dropdown = document.getElementById('dropdown-estoque-acoes');
+    if (!dropdown) return;
+    const abrir = dropdown.style.display !== 'block';
+    this.fecharDropdownCategorias();
+    dropdown.style.display = abrir ? 'block' : 'none';
+  },
+
+  fecharMenuAcoesEstoque() {
+    const dropdown = document.getElementById('dropdown-estoque-acoes');
+    if (dropdown) dropdown.style.display = 'none';
+  },
+
   bindBusca() {
     const input = document.getElementById('estoque-busca-input');
     if (input) {
@@ -967,7 +995,11 @@ export const EstoqueModule = {
       hoje.setHours(0, 0, 0, 0);
       produtos = produtos.filter(p => {
         if (this.filtroValidade === 'promocao') {
-          return p.emPromocao === true || (p.precoPromocional && p.precoPromocional < p.precoVenda) || (p.precoOriginal && p.precoVenda < p.precoOriginal);
+          const precoClube = parseFloat(p.precoClube) || 0;
+          return p.emPromocao === true
+            || (p.precoPromocional && p.precoPromocional < p.precoVenda)
+            || (p.precoOriginal && p.precoVenda < p.precoOriginal)
+            || precoClube > 0;
         }
         if (!p.dataValidade) return false;
         const dataVal = new Date(p.dataValidade + 'T00:00:00');
@@ -1010,8 +1042,13 @@ export const EstoqueModule = {
           valB = parseFloat(b.precoVenda) || 0;
           return direcao === 'asc' ? valA - valB : valB - valA;
         } else if (coluna === 'precoPromocional') {
-          valA = a.emPromocao ? (parseFloat(a.precoPromocional || a.precoVenda) || 0) : 999999;
-          valB = b.emPromocao ? (parseFloat(b.precoPromocional || b.precoVenda) || 0) : 999999;
+          const precoEspecial = (p) => {
+            if (p.emPromocao) return parseFloat(p.precoPromocional || p.precoVenda) || 0;
+            const clube = parseFloat(p.precoClube) || 0;
+            return clube > 0 ? clube : 999999;
+          };
+          valA = precoEspecial(a);
+          valB = precoEspecial(b);
           return direcao === 'asc' ? valA - valB : valB - valA;
         } else if (coluna === 'estoque') {
           valA = a.controlarEstoque === false ? 999999 : (parseFloat(a.estoque) || 0);
@@ -1987,13 +2024,13 @@ export const EstoqueModule = {
     idsBotoes.forEach(id => {
       const el = document.getElementById(id);
       if (el) {
-        el.style.display = isGerente ? 'inline-flex' : 'none';
+        el.style.display = isGerente ? 'flex' : 'none';
       }
     });
 
     const btnXml = document.getElementById('btn-importar-xml-nfe');
     if (btnXml) {
-      btnXml.style.display = (isXmlAtivo && isGerente) ? 'inline-flex' : 'none';
+      btnXml.style.display = (isXmlAtivo && isGerente) ? 'flex' : 'none';
     }
   },
 
@@ -3329,15 +3366,15 @@ export const EstoqueModule = {
             <td style="text-align: right; color: var(--text-dim); font-family: 'JetBrains Mono';">
               R$ ${this.formatarMoedaClube(it.precoDe)}
             </td>
-            <td style="text-align: right; font-family: 'JetBrains Mono'; color: ${it.precoClubeAtual > 0 ? '#6d28d9' : 'var(--text-dim)'};">
+            <td style="text-align: right; font-family: 'JetBrains Mono'; color: ${it.precoClubeAtual > 0 ? '#c2410c' : 'var(--text-dim)'};">
               ${it.precoClubeAtual > 0 ? `R$ ${this.formatarMoedaClube(it.precoClubeAtual)}` : '—'}
             </td>
             <td style="text-align: right;">
-              <input type="text" value="${this.formatarMoedaClube(it.precoPor)}" onchange="EstoqueModule.atualizarPrecoManualClube(${idx}, this.value)" style="width: 92px; height: 32px; text-align: right; font-weight: 800; font-family: 'JetBrains Mono'; border-radius: 6px; border: 1px solid #ddd6fe; color: #6d28d9; padding: 0 8px;">
+              <input type="text" value="${this.formatarMoedaClube(it.precoPor)}" onchange="EstoqueModule.atualizarPrecoManualClube(${idx}, this.value)" style="width: 92px; height: 32px; text-align: right; font-weight: 800; font-family: 'JetBrains Mono'; border-radius: 6px; border: 1px solid #fed7aa; color: #ea580c; padding: 0 8px;">
             </td>
           </tr>
         `).join('') + (visiveis.length > LIMITE
-          ? `<tr><td colspan="6" style="text-align: center; padding: 12px; color: #6d28d9; font-size: 12px; font-weight: 700;">Mostrando os primeiros ${LIMITE} de ${visiveis.length}. Refine a busca para achar o item.</td></tr>`
+          ? `<tr><td colspan="6" style="text-align: center; padding: 12px; color: #c2410c; font-size: 12px; font-weight: 700;">Mostrando os primeiros ${LIMITE} de ${visiveis.length}. Refine a busca para achar o item.</td></tr>`
           : '');
       }
     }
@@ -3479,14 +3516,14 @@ export const EstoqueModule = {
     if (window.App && typeof window.App.confirmarAcao === 'function') {
       window.App.confirmarAcao({
         titulo: '🏅 Aplicar preços do Clube?',
-        mensagem: `Deseja gravar o <strong>preço de clube</strong> nos <strong>${selecionados.length} produto(s) selecionado(s)</strong>?<br><br><span style="font-size: 12.5px; color: #5b21b6; background: #f5f3ff; border: 1px solid #ddd6fe; padding: 6px 12px; border-radius: 8px; display: inline-block;">O preço de venda do caixa continua o mesmo. Só o membro do clube (CPF no PDV) paga o valor especial.</span>`,
+        mensagem: `Deseja gravar o <strong>preço de clube</strong> nos <strong>${selecionados.length} produto(s) selecionado(s)</strong>?<br><br><span style="font-size: 12.5px; color: #9a3412; background: #fff7ed; border: 1px solid #fed7aa; padding: 6px 12px; border-radius: 8px; display: inline-block;">O preço de venda do caixa continua o mesmo. Só o membro do clube (CPF no PDV) paga o valor especial.</span>`,
         icone: '🏅',
-        corIcone: '#7c3aed',
-        bgIcone: '#f5f3ff',
+        corIcone: '#ea580c',
+        bgIcone: '#fff7ed',
         textoConfirmar: '🏅 Sim, aplicar no clube [ENTER]',
         textoCancelar: 'Cancelar [ESC]',
         perigo: false,
-        corConfirmar: 'linear-gradient(135deg, #7c3aed, #6d28d9)',
+        corConfirmar: 'linear-gradient(135deg, #f97316, #ea580c)',
         onConfirm: executarAplicacao
       });
     } else {

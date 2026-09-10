@@ -51,6 +51,8 @@ global.window = {};
 const core = require(saida);
 const {
   mesclarItensPorId,
+  mesclarContasPagar,
+  contasPagarPrecisamReenviar,
   mesclarComandas,
   consolidarProdutosComMovimentos,
   dividirEmLotes,
@@ -83,6 +85,22 @@ teste('produto novo de um caixa não some por causa do outro', () => {
 
   const ids = mesclarItensPorId(nuvem, local).map(p => p.id).sort();
   assert.deepStrictEqual(ids, ['P1', 'P2']);
+});
+
+teste('conta paga na nuvem não volta a vencida no outro caixa', () => {
+  const nuvem = [{ id: 'C1', descricao: 'Aluguel', status: 'pago', dataPagamento: '2026-09-10' }];
+  const local = [{ id: 'C1', descricao: 'Aluguel', status: 'pendente', dataPagamento: null }];
+  const [item] = mesclarContasPagar(nuvem, local);
+  assert.strictEqual(item.status, 'pago');
+  assert.strictEqual(item.dataPagamento, '2026-09-10');
+});
+
+teste('baixa local mais nova vence a cópia vencida da nuvem', () => {
+  const nuvem = [{ id: 'C1', status: 'pendente', atualizadoEm: emMinutos(0) }];
+  const local = [{ id: 'C1', status: 'pago', dataPagamento: '2026-09-10', atualizadoEm: emMinutos(5) }];
+  const [item] = mesclarContasPagar(nuvem, local);
+  assert.strictEqual(item.status, 'pago');
+  assert.ok(contasPagarPrecisamReenviar([item], nuvem));
 });
 
 // ---------------------------------------------------------------------------
