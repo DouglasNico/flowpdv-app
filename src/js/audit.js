@@ -5,14 +5,16 @@
  */
 
 import { StorageService } from './storage.js';
-import { db, doc, collection, addDoc, setDoc, getDocs, query, where, orderBy, limit, startAfter, getCountFromServer, deleteDoc, writeBatch, garantirSessaoLoja } from './firebase-config.js';
+import { db, doc, collection, addDoc, setDoc, getDoc, getDocs, query, where, orderBy, limit, startAfter, getCountFromServer, deleteDoc, writeBatch, garantirSessaoLoja } from './firebase-config.js';
 
 export const AuditModule = {
   ultimoErroNuvem: '',
+  consultaNuvemOk: false,
   ultimoCursorSub: null,
   temMaisNuvem: false,
   totalNuvem: 0,
   TAMANHO_PAGINA: 100,
+  DOC_EXCLUSAO: '__exclusao',
 
   getChaveLicencaAtual() {
     const lic = StorageService.getLicenca() || {};
@@ -197,10 +199,12 @@ export const AuditModule = {
         } catch (e) {}
       }
 
+      const exclusao = await this.lerExclusaoNuvem(chave);
       const restantes = [];
       for (const item of pendentes) {
         const limpo = this.limparParaFirestore(item);
         if (!limpo || !limpo.id) continue;
+        if (this.logFoiExcluidoNaNuvem(limpo, exclusao)) continue;
         try {
           await setDoc(doc(db, 'backups_lojas', chave, 'auditoria', String(limpo.id)), limpo);
           try {
@@ -352,6 +356,80 @@ export const AuditModule = {
     } catch (e) {}
   },
 
+  ehDocMeta(id) {
+    return String(id || '').startsWith('__');
+  },
+
+  async lerExclusaoNuvem(chave) {
+    const c = String(chave || this.getChaveLicencaAtual() || '').trim();
+    if (!c || c === 'LOCAL') return null;
+    try {
+      const snap = await getDoc(doc(db, 'backups_lojas', c, 'auditoria', this.DOC_EXCLUSAO));
+      if (!snap || !snap.exists()) return null;
+      return { id: snap.id, ...snap.data() };
+    } catch (e) {
+      return null;
+    }
+  },
+
+  async registrarExclusaoNuvem(chave, patch = {}) {
+    const c = String(chave || '').trim();
+    if (!c || c === 'LOCAL') return;
+    const agora = new Date().toISOString();
+    const prev = await this.lerExclusaoNuvem(c) || {};
+    const soIds = Array.isArray(patch.ids) && patch.dias == null && !patch.apagarTudo;
+    const payload = {
+      id: this.DOC_EXCLUSAO,
+      tipo: '__meta',
+      chaveLicenca: c,
+      criadoEm: '1970-01-01T00:00:00.000Z',
+      em: soIds ? (prev.em || agora) : agora,
+      dias: patch.dias != null ? patch.dias : (prev.dias || 0),
+      corteMs: patch.corteMs != null ? patch.corteMs : (Number(prev.corteMs) || 0),
+      apagarTudo: patch.apagarTudo != null ? Boolean(patch.apagarTudo) : Boolean(prev.apagarTudo),
+      ids: [...new Set([...(prev.ids || []), ...(patch.ids || [])].filter(Boolean))].slice(-400)
+    };
+    try {
+      await setDoc(doc(db, 'backups_lojas', c, 'auditoria', this.DOC_EXCLUSAO), payload);
+    } catch (e) {
+      console.warn('[AuditModule] Não gravou o recado de exclusão para os outros caixas:', e);
+    }
+  },
+
+  logFoiExcluidoNaNuvem(log, exclusao) {
+    if (!log || !exclusao) return false;
+    if (this.ehDocMeta(log.id)) return true;
+    const ids = exclusao.ids || [];
+    if (log.id && ids.includes(log.id)) return true;
+    const ms = this.dataDoLogMs(log);
+    if (!Number.isFinite(ms) || ms <= 0) return false;
+    const emMs = Date.parse(exclusao.em || '') || 0;
+    if (exclusao.apagarTudo) return Boolean(emMs) && ms <= emMs;
+    const corte = Number(exclusao.corteMs) || 0;
+    return corte > 0 && emMs > 0 && ms >= corte && ms <= emMs;
+  },
+
+  reconciliarLocaisComNuvem(logsNuvem, logsLocais, exclusao) {
+    const idsNuvem = new Set((logsNuvem || []).map((l) => l && l.id).filter(Boolean));
+    const idsPendentes = new Set(this.getPendentes().map((p) => p && p.id).filter(Boolean));
+    const maisAntigoNuvem = (logsNuvem || []).reduce((min, l) => {
+      const ms = this.dataDoLogMs(l);
+      if (!ms) return min;
+      return min === null ? ms : Math.min(min, ms);
+    }, null);
+
+    return (logsLocais || []).filter((l) => {
+      if (!l) return false;
+      if (this.logFoiExcluidoNaNuvem(l, exclusao)) return false;
+      if (idsPendentes.has(l.id)) return true;
+      if (idsNuvem.has(l.id)) return true;
+      if (!(logsNuvem || []).length) return false;
+      const ms = this.dataDoLogMs(l);
+      if (maisAntigoNuvem && ms >= maisAntigoNuvem) return false;
+      return true;
+    });
+  },
+
   mesclarLogsUnicos(listas, chaveLicenca) {
     const mapaIds = new Set();
     const todos = [];
@@ -377,6 +455,7 @@ export const AuditModule = {
     if (!cursor) {
       this.ultimoCursorSub = null;
       this.temMaisNuvem = false;
+      this.consultaNuvemOk = false;
     }
 
     try {
@@ -423,12 +502,16 @@ export const AuditModule = {
       );
 
       const snapshots = await Promise.race([fetchPromise, timeoutPromise]);
-      const logsNuvem = [];
+      const logsSub = [];
+      const logsLegado = [];
       let snapSub = null;
       (snapshots || []).forEach((snapshot, idx) => {
         if (idx === 0) snapSub = snapshot;
-        snapshot.forEach((d) => {
-          logsNuvem.push({ id: d.id, ...d.data() });
+        (snapshot || { forEach() {} }).forEach((d) => {
+          if (!d || String(d.id || '').startsWith('__')) return;
+          const item = { id: d.id, ...d.data() };
+          if (idx === 0) logsSub.push(item);
+          else logsLegado.push(item);
         });
       });
 
@@ -439,22 +522,32 @@ export const AuditModule = {
         this.temMaisNuvem = false;
       }
 
+      this.consultaNuvemOk = true;
+      const exclusao = cursor ? null : await this.lerExclusaoNuvem(chaveLicenca);
+      const subOk = Boolean(snapSub);
+      const logsNuvem = (subOk ? logsSub : [...logsSub, ...logsLegado])
+        .filter((l) => !this.logFoiExcluidoNaNuvem(l, exclusao));
+
       if (!cursor) {
         this.contarLogsNuvem(chaveLicenca).then((n) => {
-          this.totalNuvem = Math.max(n || 0, logsNuvem.length, logsLocais.length);
+          this.totalNuvem = Math.max(n || 0, logsNuvem.length);
           if (window.GerenciaModule && window.GerenciaModule.subAbaAtiva === 'auditoria') {
             window.GerenciaModule.renderAuditoriaFiltrada();
           }
         }).catch(() => {});
       }
 
-      const todos = this.mesclarLogsUnicos(cursor ? [logsNuvem] : [logsNuvem, logsLocais], chaveLicenca);
+      const locaisVivos = cursor
+        ? []
+        : this.reconciliarLocaisComNuvem(logsNuvem, logsLocais, exclusao);
+      const todos = this.mesclarLogsUnicos(cursor ? [logsNuvem] : [logsNuvem, locaisVivos], chaveLicenca);
       if (!cursor) this.persistirLogsMesclados(todos);
       if (!this.totalNuvem) this.totalNuvem = Math.max(todos.length, logsNuvem.length);
       return todos;
     } catch (err) {
       console.warn('[AuditModule] Erro ao buscar logs na nuvem, retornando locais:', err);
       const timeout = String(err && err.message || '').includes('Timeout');
+      this.consultaNuvemOk = false;
       this.ultimoErroNuvem = timeout
         ? ''
         : 'Não foi possível ler os logs da nuvem neste computador.';
@@ -553,6 +646,7 @@ export const AuditModule = {
       if (!snap || snap.empty) break;
       const docs = snap.docs || [];
       docs.forEach((d) => {
+        if (this.ehDocMeta(d.id)) return;
         if (soPeriodo({ id: d.id, ...d.data() })) refs.push(d.ref);
       });
       const last = docs[docs.length - 1];
@@ -607,6 +701,9 @@ export const AuditModule = {
       (snapLeg.docs || []).forEach((d) => refs.push(d.ref));
     } catch (e) {}
     const res = await this.apagarRefsEmLote(refs);
+    if (res.falhas === 0) {
+      await this.registrarExclusaoNuvem(chave, { ids: [id] });
+    }
     return {
       ok: res.falhas === 0,
       nuvem: res.apagados,
@@ -666,6 +763,12 @@ export const AuditModule = {
     }
 
     const local = this.aplicarExclusaoLocal(soPeriodo);
+    await this.registrarExclusaoNuvem(chave, {
+      dias: dias || 0,
+      corteMs: dias ? (Date.now() - dias * 24 * 60 * 60 * 1000) : 0,
+      apagarTudo: !dias,
+      ids: idsTela.concat(refsSub.map((r) => r && r.id).filter(Boolean))
+    });
     this.ultimoCursorSub = null;
     this.temMaisNuvem = false;
     this.ultimoErroNuvem = '';

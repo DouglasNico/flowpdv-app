@@ -47582,10 +47582,12 @@ This typically indicates that your device does not have a healthy Internet conne
   // src/js/audit.js
   var AuditModule = {
     ultimoErroNuvem: "",
+    consultaNuvemOk: false,
     ultimoCursorSub: null,
     temMaisNuvem: false,
     totalNuvem: 0,
     TAMANHO_PAGINA: 100,
+    DOC_EXCLUSAO: "__exclusao",
     getChaveLicencaAtual() {
       const lic = StorageService.getLicenca() || {};
       return (lic.chaveLicenca || lic.clienteId || "LOCAL").trim().toUpperCase();
@@ -47755,10 +47757,12 @@ This typically indicates that your device does not have a healthy Internet conne
           } catch (e) {
           }
         }
+        const exclusao = await this.lerExclusaoNuvem(chave);
         const restantes = [];
         for (const item of pendentes) {
           const limpo = this.limparParaFirestore(item);
           if (!limpo || !limpo.id) continue;
+          if (this.logFoiExcluidoNaNuvem(limpo, exclusao)) continue;
           try {
             await setDoc(doc(db, "backups_lojas", chave, "auditoria", String(limpo.id)), limpo);
             try {
@@ -47897,6 +47901,74 @@ This typically indicates that your device does not have a healthy Internet conne
       } catch (e) {
       }
     },
+    ehDocMeta(id) {
+      return String(id || "").startsWith("__");
+    },
+    async lerExclusaoNuvem(chave) {
+      const c = String(chave || this.getChaveLicencaAtual() || "").trim();
+      if (!c || c === "LOCAL") return null;
+      try {
+        const snap = await getDoc(doc(db, "backups_lojas", c, "auditoria", this.DOC_EXCLUSAO));
+        if (!snap || !snap.exists()) return null;
+        return { id: snap.id, ...snap.data() };
+      } catch (e) {
+        return null;
+      }
+    },
+    async registrarExclusaoNuvem(chave, patch = {}) {
+      const c = String(chave || "").trim();
+      if (!c || c === "LOCAL") return;
+      const agora = (/* @__PURE__ */ new Date()).toISOString();
+      const prev = await this.lerExclusaoNuvem(c) || {};
+      const soIds = Array.isArray(patch.ids) && patch.dias == null && !patch.apagarTudo;
+      const payload = {
+        id: this.DOC_EXCLUSAO,
+        tipo: "__meta",
+        chaveLicenca: c,
+        criadoEm: "1970-01-01T00:00:00.000Z",
+        em: soIds ? prev.em || agora : agora,
+        dias: patch.dias != null ? patch.dias : prev.dias || 0,
+        corteMs: patch.corteMs != null ? patch.corteMs : Number(prev.corteMs) || 0,
+        apagarTudo: patch.apagarTudo != null ? Boolean(patch.apagarTudo) : Boolean(prev.apagarTudo),
+        ids: [...new Set([...prev.ids || [], ...patch.ids || []].filter(Boolean))].slice(-400)
+      };
+      try {
+        await setDoc(doc(db, "backups_lojas", c, "auditoria", this.DOC_EXCLUSAO), payload);
+      } catch (e) {
+        console.warn("[AuditModule] N\xE3o gravou o recado de exclus\xE3o para os outros caixas:", e);
+      }
+    },
+    logFoiExcluidoNaNuvem(log, exclusao) {
+      if (!log || !exclusao) return false;
+      if (this.ehDocMeta(log.id)) return true;
+      const ids = exclusao.ids || [];
+      if (log.id && ids.includes(log.id)) return true;
+      const ms = this.dataDoLogMs(log);
+      if (!Number.isFinite(ms) || ms <= 0) return false;
+      const emMs = Date.parse(exclusao.em || "") || 0;
+      if (exclusao.apagarTudo) return Boolean(emMs) && ms <= emMs;
+      const corte = Number(exclusao.corteMs) || 0;
+      return corte > 0 && emMs > 0 && ms >= corte && ms <= emMs;
+    },
+    reconciliarLocaisComNuvem(logsNuvem, logsLocais, exclusao) {
+      const idsNuvem = new Set((logsNuvem || []).map((l) => l && l.id).filter(Boolean));
+      const idsPendentes = new Set(this.getPendentes().map((p) => p && p.id).filter(Boolean));
+      const maisAntigoNuvem = (logsNuvem || []).reduce((min, l) => {
+        const ms = this.dataDoLogMs(l);
+        if (!ms) return min;
+        return min === null ? ms : Math.min(min, ms);
+      }, null);
+      return (logsLocais || []).filter((l) => {
+        if (!l) return false;
+        if (this.logFoiExcluidoNaNuvem(l, exclusao)) return false;
+        if (idsPendentes.has(l.id)) return true;
+        if (idsNuvem.has(l.id)) return true;
+        if (!(logsNuvem || []).length) return false;
+        const ms = this.dataDoLogMs(l);
+        if (maisAntigoNuvem && ms >= maisAntigoNuvem) return false;
+        return true;
+      });
+    },
     mesclarLogsUnicos(listas, chaveLicenca) {
       const mapaIds = /* @__PURE__ */ new Set();
       const todos = [];
@@ -47921,6 +47993,7 @@ This typically indicates that your device does not have a healthy Internet conne
       if (!cursor) {
         this.ultimoCursorSub = null;
         this.temMaisNuvem = false;
+        this.consultaNuvemOk = false;
       }
       try {
         if (!chaveLicenca || chaveLicenca === "LOCAL" || typeof navigator !== "undefined" && !navigator.onLine) {
@@ -47961,12 +48034,17 @@ This typically indicates that your device does not have a healthy Internet conne
           (_, reject) => setTimeout(() => reject(new Error("Timeout de busca auditoria (12s)")), 12e3)
         );
         const snapshots = await Promise.race([fetchPromise, timeoutPromise]);
-        const logsNuvem = [];
+        const logsSub = [];
+        const logsLegado = [];
         let snapSub = null;
         (snapshots || []).forEach((snapshot, idx) => {
           if (idx === 0) snapSub = snapshot;
-          snapshot.forEach((d) => {
-            logsNuvem.push({ id: d.id, ...d.data() });
+          (snapshot || { forEach() {
+          } }).forEach((d) => {
+            if (!d || String(d.id || "").startsWith("__")) return;
+            const item = { id: d.id, ...d.data() };
+            if (idx === 0) logsSub.push(item);
+            else logsLegado.push(item);
           });
         });
         if (snapSub && snapSub.docs && snapSub.docs.length) {
@@ -47975,22 +48053,28 @@ This typically indicates that your device does not have a healthy Internet conne
         } else {
           this.temMaisNuvem = false;
         }
+        this.consultaNuvemOk = true;
+        const exclusao = cursor ? null : await this.lerExclusaoNuvem(chaveLicenca);
+        const subOk = Boolean(snapSub);
+        const logsNuvem = (subOk ? logsSub : [...logsSub, ...logsLegado]).filter((l) => !this.logFoiExcluidoNaNuvem(l, exclusao));
         if (!cursor) {
           this.contarLogsNuvem(chaveLicenca).then((n) => {
-            this.totalNuvem = Math.max(n || 0, logsNuvem.length, logsLocais.length);
+            this.totalNuvem = Math.max(n || 0, logsNuvem.length);
             if (window.GerenciaModule && window.GerenciaModule.subAbaAtiva === "auditoria") {
               window.GerenciaModule.renderAuditoriaFiltrada();
             }
           }).catch(() => {
           });
         }
-        const todos = this.mesclarLogsUnicos(cursor ? [logsNuvem] : [logsNuvem, logsLocais], chaveLicenca);
+        const locaisVivos = cursor ? [] : this.reconciliarLocaisComNuvem(logsNuvem, logsLocais, exclusao);
+        const todos = this.mesclarLogsUnicos(cursor ? [logsNuvem] : [logsNuvem, locaisVivos], chaveLicenca);
         if (!cursor) this.persistirLogsMesclados(todos);
         if (!this.totalNuvem) this.totalNuvem = Math.max(todos.length, logsNuvem.length);
         return todos;
       } catch (err) {
         console.warn("[AuditModule] Erro ao buscar logs na nuvem, retornando locais:", err);
         const timeout = String(err && err.message || "").includes("Timeout");
+        this.consultaNuvemOk = false;
         this.ultimoErroNuvem = timeout ? "" : "N\xE3o foi poss\xEDvel ler os logs da nuvem neste computador.";
         this.temMaisNuvem = false;
         if (!this.totalNuvem) this.totalNuvem = logsLocais.length;
@@ -48081,6 +48165,7 @@ This typically indicates that your device does not have a healthy Internet conne
         if (!snap || snap.empty) break;
         const docs = snap.docs || [];
         docs.forEach((d) => {
+          if (this.ehDocMeta(d.id)) return;
           if (soPeriodo({ id: d.id, ...d.data() })) refs.push(d.ref);
         });
         const last = docs[docs.length - 1];
@@ -48135,6 +48220,9 @@ This typically indicates that your device does not have a healthy Internet conne
       } catch (e) {
       }
       const res = await this.apagarRefsEmLote(refs);
+      if (res.falhas === 0) {
+        await this.registrarExclusaoNuvem(chave, { ids: [id] });
+      }
       return {
         ok: res.falhas === 0,
         nuvem: res.apagados,
@@ -48186,6 +48274,12 @@ This typically indicates that your device does not have a healthy Internet conne
         };
       }
       const local = this.aplicarExclusaoLocal(soPeriodo);
+      await this.registrarExclusaoNuvem(chave, {
+        dias: dias || 0,
+        corteMs: dias ? Date.now() - dias * 24 * 60 * 60 * 1e3 : 0,
+        apagarTudo: !dias,
+        ids: idsTela.concat(refsSub.map((r) => r && r.id).filter(Boolean))
+      });
       this.ultimoCursorSub = null;
       this.temMaisNuvem = false;
       this.ultimoErroNuvem = "";
@@ -51102,6 +51196,7 @@ Venda bloqueada no PDV!`);
       const btnXml = document.getElementById("btn-importar-xml-nfe");
       const btnBiparValidade = document.getElementById("btn-bipar-validade-express");
       const btnQueimaEstoque = document.getElementById("btn-queima-estoque-promo");
+      const btnPrecosClube = document.getElementById("btn-precos-clube-lote");
       const barFiltrosValidade = document.getElementById("estoque-filtros-validade-bar");
       const boxPrecoClube = document.getElementById("box-preco-clube");
       if (boxFardos) {
@@ -51145,6 +51240,7 @@ Venda bloqueada no PDV!`);
       if (boxValidade) boxValidade.style.display = isValidadeAtivo ? "block" : "none";
       if (btnBiparValidade) btnBiparValidade.style.display = isValidadeAtivo ? "inline-flex" : "none";
       if (btnQueimaEstoque) btnQueimaEstoque.style.display = isValidadeAtivo ? "inline-flex" : "none";
+      if (btnPrecosClube) btnPrecosClube.style.display = isClubeAtivo ? "inline-flex" : "none";
       if (barFiltrosValidade) barFiltrosValidade.style.display = isValidadeAtivo ? "flex" : "none";
       if (btnXml) btnXml.style.display = isXmlAtivo && isGerente ? "inline-flex" : "none";
       if (boxPrecoClube) boxPrecoClube.style.display = isClubeAtivo ? "block" : "none";
@@ -53724,6 +53820,451 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       } else {
         window.App.showToast("\u{1F4CB} Mensagem pronta no campo de pr\xE9via!", "success");
       }
+    },
+    // =========================================================================
+    // MÓDULO 3: PREÇOS DO CLUBE EM LOTE & OFERTA WHATSAPP
+    // =========================================================================
+    itensPrecoClubeCalculados: [],
+    clubeMsgEditadaManualmente: false,
+    clubeTelefonesEnviados: {},
+    clubeClientesEnvio: [],
+    escHtmlClube(valor) {
+      return String(valor ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    },
+    formatarMoedaClube(valor) {
+      const num = parseFloat(valor) || 0;
+      return num.toFixed(2).replace(".", ",");
+    },
+    normalizarTelefoneWhatsAppClube(tel) {
+      let d = String(tel || "").replace(/\D/g, "");
+      if (d.startsWith("55") && d.length >= 12) d = d.slice(2);
+      return d;
+    },
+    abrirUrlExternaClube(url) {
+      if (window.electronAPI && typeof window.electronAPI.openExternal === "function") {
+        window.electronAPI.openExternal(url);
+      } else {
+        window.open(url, "_blank");
+      }
+    },
+    abrirModalPrecosClube() {
+      if (!StorageService.isModuloAtivo("clubeFidelidade")) {
+        window.App.showToast("O m\xF3dulo Clube Fidelidade n\xE3o est\xE1 ativo nesta loja.", "warning");
+        return;
+      }
+      this.clubeMsgEditadaManualmente = false;
+      this.clubeTelefonesEnviados = {};
+      const modal = document.getElementById("modal-precos-clube");
+      if (modal) modal.classList.add("active");
+      document.body.classList.add("modal-open");
+      this.preencherFiltroCategoriasClube();
+      const busca = document.getElementById("clube-busca-produto");
+      if (busca) busca.value = "";
+      const buscaCli = document.getElementById("clube-busca-cliente");
+      if (buscaCli) buscaCli.value = "";
+      const checkAll = document.getElementById("clube-check-all");
+      if (checkAll) checkAll.checked = false;
+      this.recalcularTabelaPrecosClube();
+      this.renderClientesClubeWhatsApp();
+    },
+    fecharModalPrecosClube() {
+      const modal = document.getElementById("modal-precos-clube");
+      if (modal) modal.classList.remove("active");
+      if (!document.querySelector(".modal-overlay.active")) {
+        document.body.classList.remove("modal-open");
+      }
+    },
+    preencherFiltroCategoriasClube() {
+      const sel = document.getElementById("clube-filtro-categoria");
+      if (!sel) return;
+      const atual = sel.value || "todas";
+      const cats = StorageService.getCategorias() || [];
+      sel.innerHTML = `<option value="todas">Todas as categorias</option>` + cats.map((c) => `<option value="${this.escHtmlClube(c)}">${this.escHtmlClube(c)}</option>`).join("");
+      if ([...sel.options].some((o) => o.value === atual)) sel.value = atual;
+    },
+    marcarChipAtivoClube(btnElement) {
+      const box = document.getElementById("clube-chips-desconto");
+      if (!box) return;
+      box.querySelectorAll(".chip-btn").forEach((b) => b.classList.remove("active"));
+      if (btnElement) btnElement.classList.add("active");
+    },
+    setDescontoClube(percentual, btnElement) {
+      const modo = document.getElementById("clube-modo-preco");
+      if (modo) modo.value = "desconto";
+      const inputCustom = document.getElementById("clube-custom-desconto");
+      if (inputCustom) inputCustom.value = percentual;
+      this.marcarChipAtivoClube(btnElement);
+      this.recalcularTabelaPrecosClube();
+    },
+    setModoPrecoClube(modoValor, btnElement) {
+      const modo = document.getElementById("clube-modo-preco");
+      if (modo) modo.value = modoValor || "atual";
+      this.marcarChipAtivoClube(btnElement);
+      this.recalcularTabelaPrecosClube();
+    },
+    onInputDescontoClube() {
+      const modo = document.getElementById("clube-modo-preco");
+      if (modo) modo.value = "desconto";
+      this.marcarChipAtivoClube(null);
+      this.recalcularTabelaPrecosClube();
+    },
+    calcularPrecoClubeDesconto(precoDe, descontoPercent) {
+      const fator = (100 - (parseFloat(descontoPercent) || 0)) / 100;
+      return Math.max(0.01, Math.round(precoDe * fator * 100) / 100);
+    },
+    recalcularTabelaPrecosClube() {
+      const modo = document.getElementById("clube-modo-preco")?.value || "desconto";
+      const descontoPercent = parseFloat(document.getElementById("clube-custom-desconto")?.value) || 15;
+      const produtos = StorageService.getProdutos() || [];
+      const prevById = {};
+      (this.itensPrecoClubeCalculados || []).forEach((it2) => {
+        prevById[it2.id] = {
+          selecionado: !!it2.selecionado,
+          precoManual: !!it2.precoManual,
+          precoPor: parseFloat(it2.precoPor) || 0
+        };
+      });
+      const itens = [];
+      produtos.forEach((p) => {
+        if (!p || !p.id) return;
+        const precoDe = parseFloat(p.precoVenda) || 0;
+        if (precoDe <= 0) return;
+        const precoClubeAtual = parseFloat(p.precoClube) || 0;
+        if (modo === "atual" && precoClubeAtual <= 0) return;
+        const prev = prevById[p.id];
+        let precoPor;
+        let precoManual = !!(prev && prev.precoManual);
+        if (precoManual && prev.precoPor > 0) {
+          precoPor = prev.precoPor;
+        } else if (modo === "atual") {
+          precoPor = precoClubeAtual;
+          precoManual = false;
+        } else {
+          precoPor = this.calcularPrecoClubeDesconto(precoDe, descontoPercent);
+          precoManual = false;
+        }
+        const offCalc = precoDe > 0 ? Math.round((1 - precoPor / precoDe) * 100) : 0;
+        itens.push({
+          id: p.id,
+          nome: p.nome || "",
+          codigo: p.codigoBarras || "-",
+          categoria: p.categoria || "Geral",
+          estoque: parseFloat(p.estoque) || 0,
+          unidade: p.unidade || "un",
+          controlarEstoque: p.controlarEstoque !== false,
+          precoDe,
+          precoClubeAtual,
+          precoPor,
+          descontoPercent: offCalc > 0 ? offCalc : descontoPercent,
+          precoManual,
+          selecionado: !!(prev && prev.selecionado)
+        });
+      });
+      itens.sort((a, b) => String(a.nome).localeCompare(String(b.nome), "pt-BR"));
+      this.itensPrecoClubeCalculados = itens;
+      this.renderTabelaPrecosClube();
+    },
+    obterItensClubeVisiveis() {
+      const termo = (document.getElementById("clube-busca-produto")?.value || "").trim().toLowerCase();
+      const categoria = document.getElementById("clube-filtro-categoria")?.value || "todas";
+      const status = document.getElementById("clube-filtro-status")?.value || "todos";
+      return this.itensPrecoClubeCalculados.map((it2, idx) => ({ it: it2, idx })).filter(({ it: it2 }) => {
+        if (categoria !== "todas" && String(it2.categoria || "").toLowerCase() !== String(categoria).toLowerCase()) return false;
+        if (status === "sem-clube" && it2.precoClubeAtual > 0) return false;
+        if (status === "com-clube" && it2.precoClubeAtual <= 0) return false;
+        if (status === "com-estoque" && (!it2.controlarEstoque || it2.estoque <= 0)) return false;
+        if (termo) {
+          const blob = `${it2.nome} ${it2.codigo} ${it2.categoria}`.toLowerCase();
+          if (!blob.includes(termo)) return false;
+        }
+        return true;
+      });
+    },
+    renderTabelaPrecosClube() {
+      const tbody = document.getElementById("clube-produtos-tbody");
+      const visiveis = this.obterItensClubeVisiveis();
+      this.atualizarBadgePrecosClube(visiveis);
+      const LIMITE = 200;
+      const lista = visiveis.slice(0, LIMITE);
+      if (tbody) {
+        if (visiveis.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 24px; color: var(--text-dim);">Nenhum produto encontrado. Ajuste a busca ou o filtro.</td></tr>`;
+        } else {
+          tbody.innerHTML = lista.map(({ it: it2, idx }) => `
+          <tr data-idx="${idx}" style="${it2.selecionado ? "" : "opacity: 0.55;"}">
+            <td style="text-align: center;">
+              <input type="checkbox" ${it2.selecionado ? "checked" : ""} onchange="EstoqueModule.toggleItemPrecoClube(${idx}, this.checked)" style="width: 15px; height: 15px; cursor: pointer;">
+            </td>
+            <td>
+              <strong style="color: var(--text-main); font-size: 13px;">${this.escHtmlClube(it2.nome)}</strong>
+              <span style="display: block; font-size: 11px; color: var(--text-muted); font-family: 'JetBrains Mono';">${this.escHtmlClube(it2.codigo)}</span>
+            </td>
+            <td style="text-align: center; font-family: 'JetBrains Mono'; font-weight: 700;">
+              ${it2.controlarEstoque === false ? "\u2014" : `${it2.estoque} ${this.escHtmlClube(it2.unidade)}`}
+            </td>
+            <td style="text-align: right; color: var(--text-dim); font-family: 'JetBrains Mono';">
+              R$ ${this.formatarMoedaClube(it2.precoDe)}
+            </td>
+            <td style="text-align: right; font-family: 'JetBrains Mono'; color: ${it2.precoClubeAtual > 0 ? "#6d28d9" : "var(--text-dim)"};">
+              ${it2.precoClubeAtual > 0 ? `R$ ${this.formatarMoedaClube(it2.precoClubeAtual)}` : "\u2014"}
+            </td>
+            <td style="text-align: right;">
+              <input type="text" value="${this.formatarMoedaClube(it2.precoPor)}" onchange="EstoqueModule.atualizarPrecoManualClube(${idx}, this.value)" style="width: 92px; height: 32px; text-align: right; font-weight: 800; font-family: 'JetBrains Mono'; border-radius: 6px; border: 1px solid #ddd6fe; color: #6d28d9; padding: 0 8px;">
+            </td>
+          </tr>
+        `).join("") + (visiveis.length > LIMITE ? `<tr><td colspan="6" style="text-align: center; padding: 12px; color: #6d28d9; font-size: 12px; font-weight: 700;">Mostrando os primeiros ${LIMITE} de ${visiveis.length}. Refine a busca para achar o item.</td></tr>` : "");
+        }
+      }
+      this.gerarMensagemWhatsAppClube(false);
+    },
+    atualizarBadgePrecosClube(visiveis = null) {
+      const totalBadge = document.getElementById("clube-total-itens-badge");
+      const lista = visiveis || this.obterItensClubeVisiveis();
+      const visiveisTela = lista.slice(0, 200);
+      const selecionados = this.itensPrecoClubeCalculados.filter((it2) => it2.selecionado).length;
+      if (totalBadge) {
+        totalBadge.textContent = `${lista.length} ${lista.length === 1 ? "produto" : "produtos"}` + (selecionados ? ` \xB7 ${selecionados} marcado${selecionados === 1 ? "" : "s"}` : "");
+      }
+      const checkAll = document.getElementById("clube-check-all");
+      if (checkAll) {
+        checkAll.checked = visiveisTela.length > 0 && visiveisTela.every(({ it: it2 }) => it2.selecionado);
+      }
+    },
+    toggleItemPrecoClube(index, checked) {
+      if (this.itensPrecoClubeCalculados[index]) {
+        this.itensPrecoClubeCalculados[index].selecionado = checked;
+        const row = document.querySelector(`#clube-produtos-tbody tr[data-idx="${index}"]`);
+        if (row) row.style.opacity = checked ? "" : "0.55";
+        this.atualizarBadgePrecosClube();
+        this.gerarMensagemWhatsAppClube(false);
+      }
+    },
+    toggleCheckAllClube(checked) {
+      this.obterItensClubeVisiveis().slice(0, 200).forEach(({ idx }) => {
+        if (this.itensPrecoClubeCalculados[idx]) {
+          this.itensPrecoClubeCalculados[idx].selecionado = checked;
+        }
+      });
+      const tbody = document.getElementById("clube-produtos-tbody");
+      if (tbody) {
+        tbody.querySelectorAll("tr[data-idx]").forEach((tr) => {
+          const cb = tr.querySelector('input[type="checkbox"]');
+          if (cb) cb.checked = checked;
+          tr.style.opacity = checked ? "" : "0.55";
+        });
+      }
+      this.atualizarBadgePrecosClube();
+      this.gerarMensagemWhatsAppClube(false);
+    },
+    atualizarPrecoManualClube(index, valorDigitado) {
+      const item = this.itensPrecoClubeCalculados[index];
+      if (!item) return;
+      const precoPor = this.parseMoedaBR(valorDigitado);
+      if (precoPor <= 0) {
+        window.App.showToast("Informe um pre\xE7o de clube v\xE1lido.", "warning");
+        this.renderTabelaPrecosClube();
+        return;
+      }
+      item.precoPor = Math.round(precoPor * 100) / 100;
+      item.precoManual = true;
+      item.selecionado = true;
+      item.descontoPercent = item.precoDe > 0 ? Math.round((1 - item.precoPor / item.precoDe) * 100) : 0;
+      this.clubeMsgEditadaManualmente = false;
+      this.renderTabelaPrecosClube();
+    },
+    marcarMensagemClubeEditada() {
+      this.clubeMsgEditadaManualmente = true;
+    },
+    gerarMensagemWhatsAppClube(forcar = false) {
+      const textarea = document.getElementById("clube-whatsapp-texto");
+      if (!textarea) return;
+      if (this.clubeMsgEditadaManualmente && !forcar) return;
+      if (forcar) this.clubeMsgEditadaManualmente = false;
+      const selecionados = this.itensPrecoClubeCalculados.filter((it2) => it2.selecionado);
+      if (selecionados.length === 0) {
+        textarea.value = "Selecione ao menos um produto acima para gerar a mensagem da oferta do clube.";
+        return;
+      }
+      const config = StorageService.getConfig() || {};
+      const nomeLoja = (config.nomeEmpresa || config.nomeLoja || "Nossa Loja").trim();
+      let msg = `\u{1F3C5} *OFERTAS EXCLUSIVAS DO CLUBE \u2014 ${nomeLoja.toUpperCase()}* \u{1F3C5}
+`;
+      msg += `S\xF3 para membros do Clube Fidelidade:
+
+`;
+      selecionados.forEach((it2) => {
+        msg += `\u{1F3F7}\uFE0F *${it2.nome}*
+`;
+        if (it2.precoPor < it2.precoDe && it2.descontoPercent > 0) {
+          msg += `   De ~R$ ${this.formatarMoedaClube(it2.precoDe)}~ por *R$ ${this.formatarMoedaClube(it2.precoPor)}* (${it2.descontoPercent}% OFF)
+
+`;
+        } else {
+          msg += `   Pre\xE7o clube: *R$ ${this.formatarMoedaClube(it2.precoPor)}*
+
+`;
+        }
+      });
+      msg += `\u{1F4CD} Mostre seu CPF no caixa para garantir o desconto.
+`;
+      msg += `Oferta v\xE1lida para membros do clube, enquanto durarem os estoques.`;
+      textarea.value = msg;
+    },
+    aplicarPrecosClubeNoPDV() {
+      const selecionados = this.itensPrecoClubeCalculados.filter((it2) => it2.selecionado);
+      if (selecionados.length === 0) {
+        window.App.showToast("Nenhum produto selecionado para atualizar o pre\xE7o de clube!", "warning");
+        return;
+      }
+      const executarAplicacao = () => {
+        const produtos = StorageService.getProdutos() || [];
+        let atualizados = 0;
+        selecionados.forEach((it2) => {
+          const idx = produtos.findIndex((p) => p.id === it2.id);
+          if (idx >= 0 && it2.precoPor > 0) {
+            produtos[idx].precoClube = it2.precoPor;
+            atualizados++;
+          }
+        });
+        StorageService.saveProdutos(produtos);
+        AuditModule.registrarLog(
+          "PRECO_CLUBE_LOTE",
+          `Atualizado pre\xE7o de clube em ${atualizados} produto(s).`
+        );
+        if (window.CloudSyncModule && typeof window.CloudSyncModule.enviarAlteracaoNuvem === "function") {
+          window.CloudSyncModule.enviarAlteracaoNuvem("precos_clube");
+        }
+        this.renderTabelaProdutos();
+        this.recalcularTabelaPrecosClube();
+        window.App.showToast(`\u{1F3C5} Pre\xE7o de clube aplicado em ${atualizados} produto(s). O pre\xE7o normal do PDV n\xE3o foi alterado.`, "success");
+      };
+      if (window.App && typeof window.App.confirmarAcao === "function") {
+        window.App.confirmarAcao({
+          titulo: "\u{1F3C5} Aplicar pre\xE7os do Clube?",
+          mensagem: `Deseja gravar o <strong>pre\xE7o de clube</strong> nos <strong>${selecionados.length} produto(s) selecionado(s)</strong>?<br><br><span style="font-size: 12.5px; color: #5b21b6; background: #f5f3ff; border: 1px solid #ddd6fe; padding: 6px 12px; border-radius: 8px; display: inline-block;">O pre\xE7o de venda do caixa continua o mesmo. S\xF3 o membro do clube (CPF no PDV) paga o valor especial.</span>`,
+          icone: "\u{1F3C5}",
+          corIcone: "#7c3aed",
+          bgIcone: "#f5f3ff",
+          textoConfirmar: "\u{1F3C5} Sim, aplicar no clube [ENTER]",
+          textoCancelar: "Cancelar [ESC]",
+          perigo: false,
+          corConfirmar: "linear-gradient(135deg, #7c3aed, #6d28d9)",
+          onConfirm: executarAplicacao
+        });
+      } else {
+        executarAplicacao();
+      }
+    },
+    obterTextoOfertaClube() {
+      const textarea = document.getElementById("clube-whatsapp-texto");
+      const texto = (textarea?.value || "").trim();
+      if (!texto || texto.includes("Selecione ao menos um produto")) return "";
+      return texto;
+    },
+    compartilharClubeWhatsApp() {
+      const texto = this.obterTextoOfertaClube();
+      if (!texto) {
+        window.App.showToast("Selecione produtos para gerar a mensagem da oferta!", "warning");
+        return;
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(texto).then(() => {
+          window.App.showToast("\u{1F4CB} Mensagem do clube copiada! Pode colar no WhatsApp ou usar Enviar em cada cliente.", "success");
+        }).catch(() => {
+          window.App.showToast("\u{1F4CB} Mensagem pronta no campo de pr\xE9via!", "success");
+        });
+      } else {
+        window.App.showToast("\u{1F4CB} Mensagem pronta no campo de pr\xE9via!", "success");
+      }
+    },
+    obterClientesClubeWhatsApp() {
+      const termo = (document.getElementById("clube-busca-cliente")?.value || "").trim().toLowerCase();
+      const soMembros = document.getElementById("clube-somente-membros")?.checked !== false;
+      const clientes = StorageService.getClientes() || [];
+      return clientes.map((c) => {
+        const tel = this.normalizarTelefoneWhatsAppClube(c.telefone);
+        return { ...c, telClean: tel };
+      }).filter((c) => {
+        if (c.telClean.length < 10) return false;
+        if (soMembros && c.membroClube === false) return false;
+        if (termo) {
+          const blob = `${c.nome || ""} ${c.telefone || ""} ${c.cpfCnpj || ""}`.toLowerCase();
+          if (!blob.includes(termo)) return false;
+        }
+        return true;
+      }).sort((a, b) => String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR"));
+    },
+    renderClientesClubeWhatsApp() {
+      const box = document.getElementById("clube-clientes-lista");
+      const badge = document.getElementById("clube-total-clientes-badge");
+      const lista = this.obterClientesClubeWhatsApp();
+      this.clubeClientesEnvio = lista;
+      if (badge) {
+        badge.textContent = `${lista.length} ${lista.length === 1 ? "cliente" : "clientes"}`;
+      }
+      if (!box) return;
+      if (lista.length === 0) {
+        box.innerHTML = `<div style="padding: 20px; text-align: center; color: var(--text-dim); font-size: 13px;">Nenhum cliente com WhatsApp encontrado. Cadastre o telefone na aba Clientes.</div>`;
+        return;
+      }
+      box.innerHTML = `<table class="pdv-table"><tbody>${lista.map((c, idx) => {
+        const enviado = !!this.clubeTelefonesEnviados[c.telClean];
+        const nomeEnc = encodeURIComponent(c.nome || "");
+        return `
+        <tr style="${enviado ? "background: #f0fdf4;" : ""}">
+          <td>
+            <strong style="font-size: 13px; color: var(--text-main);">${this.escHtmlClube(c.nome || "Cliente")}</strong>
+            <span style="display: block; font-size: 11px; color: var(--text-muted); font-family: 'JetBrains Mono';">${this.escHtmlClube(c.telefone || c.telClean)}</span>
+          </td>
+          <td style="width: 140px; text-align: right; white-space: nowrap;">
+            <button type="button" class="chip-btn" style="height: 32px; font-size: 12px; font-weight: 800; padding: 0 12px; background: ${enviado ? "#15803d" : "#22c55e"}; color: #ffffff; border-color: ${enviado ? "#15803d" : "#22c55e"};" onclick="EstoqueModule.enviarOfertaClubeWhatsApp('${c.telClean}', '${nomeEnc}', ${idx})">
+              ${enviado ? "\u2713 Enviado" : "\u{1F7E2} Enviar"}
+            </button>
+          </td>
+        </tr>
+      `;
+      }).join("")}</tbody></table>`;
+    },
+    montarMensagemClienteClube(nome) {
+      const base = this.obterTextoOfertaClube();
+      if (!base) return "";
+      const primeiro = String(nome || "").trim().split(/\s+/)[0] || "tudo bem";
+      if (/^ol[aá]\b/i.test(base)) return base;
+      return `Ol\xE1 ${primeiro}! \u{1F44B}
+
+${base}`;
+    },
+    enviarOfertaClubeWhatsApp(telefoneLimpo, nomeCodificado) {
+      const nome = decodeURIComponent(nomeCodificado || "");
+      const texto = this.montarMensagemClienteClube(nome);
+      if (!texto) {
+        window.App.showToast("Selecione produtos e gere a mensagem antes de enviar.", "warning");
+        return;
+      }
+      const tel = this.normalizarTelefoneWhatsAppClube(telefoneLimpo);
+      if (tel.length < 10) {
+        window.App.showToast("Telefone do cliente inv\xE1lido para WhatsApp.", "warning");
+        return;
+      }
+      const url = `https://wa.me/55${tel}?text=${encodeURIComponent(texto)}`;
+      this.abrirUrlExternaClube(url);
+      this.clubeTelefonesEnviados[tel] = true;
+      this.renderClientesClubeWhatsApp();
+      if (window.App) window.App.showToast(`\u{1F7E2} Abrindo WhatsApp de ${nome || "cliente"}...`, "info");
+    },
+    enviarProximoClienteClubeWhatsApp() {
+      const texto = this.obterTextoOfertaClube();
+      if (!texto) {
+        window.App.showToast("Selecione produtos para gerar a mensagem antes de enviar.", "warning");
+        return;
+      }
+      const lista = this.obterClientesClubeWhatsApp();
+      const proximo = lista.find((c) => !this.clubeTelefonesEnviados[c.telClean]);
+      if (!proximo) {
+        window.App.showToast(lista.length === 0 ? "Nenhum cliente com WhatsApp para enviar." : "Todos os clientes vis\xEDveis j\xE1 foram abertos no WhatsApp nesta sess\xE3o.", "info");
+        return;
+      }
+      this.enviarOfertaClubeWhatsApp(proximo.telClean, encodeURIComponent(proximo.nome || ""));
     }
   };
 
@@ -55579,6 +56120,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
             complemento,
             pontoReferencia,
             observacoes,
+            membroClube,
             limiteFiado
           };
         }
@@ -55596,6 +56138,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
           complemento,
           pontoReferencia,
           observacoes,
+          membroClube,
           limiteFiado,
           saldoDevedor: 0,
           historico: [],
@@ -58113,6 +58656,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
     init() {
       this.bindSubNavegacao();
       this.bindScrollAuditoria();
+      this.bindFiltrosAuditoriaOverflow();
       this.renderSubAbaAtual();
     },
     bindSubNavegacao() {
@@ -58124,6 +58668,9 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       });
     },
     trocarSubAba(nomeSubAba) {
+      if (this.subAbaAtiva === "indicadores" && nomeSubAba !== "indicadores") {
+        this.ordenacaoAbc = { coluna: "faturamento", direcao: "desc" };
+      }
       this.subAbaAtiva = nomeSubAba;
       document.querySelectorAll(".gerencia-subnav-btn").forEach((btn) => {
         btn.classList.toggle("active", btn.dataset.subtab === nomeSubAba);
@@ -58148,11 +58695,55 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
         this.renderHistoricoCaixas();
       } else if (this.subAbaAtiva === "auditoria") {
         this.renderAuditoriaAjustes();
+        this.layoutFiltrosAuditoria();
       }
     },
     // =========================================================================
     // 1. INDICADORES GERENCIAIS & CURVA ABC
     // =========================================================================
+    ordenacaoAbc: { coluna: "faturamento", direcao: "desc" },
+    ordenarCurvaAbc(coluna) {
+      if (this.ordenacaoAbc.coluna === coluna) {
+        this.ordenacaoAbc.direcao = this.ordenacaoAbc.direcao === "asc" ? "desc" : "asc";
+      } else {
+        this.ordenacaoAbc.coluna = coluna;
+        const numericas = ["quantidade", "faturamento", "percItem", "ranking"];
+        this.ordenacaoAbc.direcao = numericas.includes(coluna) ? "desc" : "asc";
+      }
+      this.renderIndicadoresCurvaABC();
+    },
+    atualizarIconesOrdenacaoAbc() {
+      const colunas = ["ranking", "nome", "categoria", "quantidade", "faturamento", "percItem", "classe"];
+      colunas.forEach((col) => {
+        const iconEl = document.getElementById(`abc-sort-${col}`);
+        const thEl = iconEl && iconEl.closest("th");
+        if (!iconEl) return;
+        if (this.ordenacaoAbc.coluna === col) {
+          iconEl.textContent = this.ordenacaoAbc.direcao === "asc" ? "\u25B2" : "\u25BC";
+          if (thEl) thEl.classList.add("active-sort");
+        } else {
+          iconEl.textContent = "\u2195";
+          if (thEl) thEl.classList.remove("active-sort");
+        }
+      });
+    },
+    ordenarListaAbc(lista) {
+      const col = this.ordenacaoAbc.coluna || "faturamento";
+      const dir = this.ordenacaoAbc.direcao === "asc" ? 1 : -1;
+      const classeOrdem = { A: 1, B: 2, C: 3 };
+      return [...lista || []].sort((a, b) => {
+        let cmp = 0;
+        if (col === "nome" || col === "categoria") {
+          cmp = String(a[col] || "").localeCompare(String(b[col] || ""), "pt-BR", { sensitivity: "base" });
+        } else if (col === "classe") {
+          cmp = (classeOrdem[a.classe] || 9) - (classeOrdem[b.classe] || 9);
+        } else {
+          cmp = (Number(a[col]) || 0) - (Number(b[col]) || 0);
+        }
+        if (cmp === 0) return (a.ranking || 0) - (b.ranking || 0);
+        return cmp * dir;
+      });
+    },
     calcularCurvaABC() {
       const vendas = StorageService.getVendas() || [];
       const produtosEstoque = StorageService.getProdutos() || [];
@@ -58253,9 +58844,11 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       if (!tbody) return;
       if (dados.ranking.length === 0) {
         tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 36px; color: var(--text-dim);">Nenhuma venda registrada no hist\xF3rico para gerar a Curva ABC. Realize vendas no PDV para calcular os indicadores.</td></tr>`;
+        this.atualizarIconesOrdenacaoAbc();
         return;
       }
-      tbody.innerHTML = dados.ranking.map((item) => {
+      const rankingExibido = this.ordenarListaAbc(dados.ranking);
+      tbody.innerHTML = rankingExibido.map((item) => {
         let badgeClass = "classe-c";
         let badgeLabel = "\u{1F172} Classe C";
         let badgeStyle = "background: #f1f5f9; color: #64748b; border: 1px solid #cbd5e1;";
@@ -58293,6 +58886,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
         </tr>
       `;
       }).join("");
+      this.atualizarIconesOrdenacaoAbc();
     },
     // =========================================================================
     // 2. CONTAS A PAGAR (MÓDULO FINANCEIRO DE DESPESAS)
@@ -58811,6 +59405,8 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
     },
     filtroAuditoria: "todos",
     filtroOperadorAuditoria: "todos",
+    filtroDataAuditoria: "",
+    filtroDataHistorico: "",
     bindScrollAuditoria() {
       const area = document.getElementById("gerencia-auditoria-scroll");
       if (!area || area.dataset.scrollBound === "1") return;
@@ -58861,6 +59457,37 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       this.auditoriaExibidos = 100;
       this.renderAuditoriaFiltrada();
     },
+    ymdLocal(ms) {
+      const n = Number(ms);
+      if (!Number.isFinite(n) || n <= 0) return "";
+      const d = new Date(n);
+      if (!Number.isFinite(d.getTime())) return "";
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${y}-${m}-${day}`;
+    },
+    msDoLogAuditoria(log) {
+      if (window.AuditModule && typeof AuditModule.dataDoLogMs === "function") {
+        return AuditModule.dataDoLogMs(log);
+      }
+      const raw = log && (log.criadoEm || log.dataHoraFormatada);
+      const n = Date.parse(raw || 0);
+      return Number.isFinite(n) ? n : 0;
+    },
+    logBateDataFiltro(log, ymd) {
+      if (!ymd) return true;
+      return this.ymdLocal(this.msDoLogAuditoria(log)) === ymd;
+    },
+    filtrarAuditoriaData(valor) {
+      this.filtroDataAuditoria = String(valor || "").trim();
+      this.auditoriaExibidos = 100;
+      this.renderAuditoriaFiltrada();
+    },
+    filtrarHistoricoData(valor) {
+      this.filtroDataHistorico = String(valor || "").trim();
+      this.renderHistoricoCaixas();
+    },
     async renderAuditoriaAjustes() {
       const tbody = document.getElementById("gerencia-auditoria-tbody");
       if (!tbody) return;
@@ -58882,7 +59509,9 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       }
       try {
         const logs = await AuditModule.buscarLogsAuditoria(100);
-        if (logs && logs.length) {
+        if (AuditModule.consultaNuvemOk) {
+          this.logsAuditoriaCache = logs || [];
+        } else if (logs && logs.length) {
           this.logsAuditoriaCache = logs;
         } else if (!this.logsAuditoriaCache || !this.logsAuditoriaCache.length) {
           this.logsAuditoriaCache = logs || logsLocais || [];
@@ -58898,8 +59527,9 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       } finally {
         if (btnAtualizar) {
           btnAtualizar.disabled = false;
-          btnAtualizar.innerHTML = "\u{1F504} Atualizar Logs";
+          btnAtualizar.innerHTML = "\u{1F504} Atualizar";
         }
+        this.layoutFiltrosAuditoria();
       }
     },
     filtrarAuditoria(tipo) {
@@ -58908,17 +59538,107 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       document.querySelectorAll(".gerencia-audit-filtro-btn").forEach((btn) => {
         btn.classList.toggle("active", btn.getAttribute("data-tipo") === tipo);
       });
+      this.layoutFiltrosAuditoria();
       this.renderAuditoriaFiltrada();
+    },
+    bindFiltrosAuditoriaOverflow() {
+      if (this._filtrosAuditBound) return;
+      this._filtrosAuditBound = true;
+      document.addEventListener("click", (e) => {
+        const wrap2 = document.getElementById("gerencia-auditoria-mais-wrap");
+        if (wrap2 && !wrap2.contains(e.target)) this.fecharDropdownFiltrosAuditoria();
+      });
+      window.addEventListener("resize", () => {
+        if (this.subAbaAtiva === "auditoria") this.layoutFiltrosAuditoria();
+      });
+    },
+    toggleDropdownFiltrosAuditoria(e) {
+      if (e) e.stopPropagation();
+      const dropdown = document.getElementById("dropdown-mais-filtros-auditoria");
+      if (!dropdown) return;
+      dropdown.style.display = dropdown.style.display === "block" ? "none" : "block";
+    },
+    fecharDropdownFiltrosAuditoria() {
+      const dropdown = document.getElementById("dropdown-mais-filtros-auditoria");
+      if (dropdown) dropdown.style.display = "none";
+    },
+    layoutFiltrosAuditoria() {
+      const bar = document.getElementById("gerencia-auditoria-filtros-bar");
+      const wrap2 = document.getElementById("gerencia-auditoria-mais-wrap");
+      const menu = document.getElementById("dropdown-mais-filtros-auditoria");
+      const btnMais = document.getElementById("btn-mais-filtros-auditoria");
+      if (!bar || !wrap2 || !menu || !btnMais) return;
+      const pills = Array.from(bar.querySelectorAll(".gerencia-audit-filtro-btn"));
+      pills.forEach((p) => {
+        p.style.display = "";
+      });
+      wrap2.style.display = "none";
+      menu.style.display = "none";
+      btnMais.classList.remove("active");
+      btnMais.textContent = "\u{1F4C2} Mais \u25BE";
+      const gap = 4;
+      const available = bar.clientWidth;
+      if (available <= 0) {
+        requestAnimationFrame(() => this.layoutFiltrosAuditoria());
+        return;
+      }
+      const widths = pills.map((p) => p.offsetWidth);
+      const total = widths.reduce((acc, w) => acc + w, 0) + gap * Math.max(0, pills.length - 1);
+      if (total <= available) return;
+      wrap2.style.display = "inline-block";
+      const maisW = wrap2.offsetWidth + gap;
+      let budget = Math.max(0, available - maisW);
+      let used = 0;
+      const extras = [];
+      pills.forEach((pill, i) => {
+        const w = widths[i] + (used > 0 ? gap : 0);
+        const isTodos = pill.getAttribute("data-tipo") === "todos";
+        if (isTodos || extras.length === 0 && used + w <= budget) {
+          pill.style.display = "";
+          used += w;
+        } else {
+          pill.style.display = "none";
+          extras.push(pill);
+        }
+      });
+      if (!extras.length) {
+        wrap2.style.display = "none";
+        return;
+      }
+      const ativo = extras.find((p) => p.classList.contains("active"));
+      if (ativo) {
+        btnMais.classList.add("active");
+        btnMais.textContent = `${ativo.textContent.trim()} \u25BE`;
+      } else {
+        btnMais.classList.remove("active");
+        btnMais.textContent = `\u{1F4C2} Mais (${extras.length}) \u25BE`;
+      }
+      menu.innerHTML = `
+      <div style="font-size: 11px; font-weight: 800; color: #64748b; padding: 6px 10px 4px 10px; text-transform: uppercase; letter-spacing: 0.5px;">Outros filtros</div>
+      ${extras.map((p) => {
+        const tipo = p.getAttribute("data-tipo");
+        const label = p.textContent.trim();
+        const active = p.classList.contains("active") ? "active" : "";
+        return `<button type="button" class="category-dropdown-item ${active}" onclick="GerenciaModule.filtrarAuditoria('${tipo}')">${label}</button>`;
+      }).join("")}
+    `;
     },
     renderAuditoriaFiltrada() {
       const tbody = document.getElementById("gerencia-auditoria-tbody");
       if (!tbody) return;
+      const inputData = document.getElementById("gerencia-auditoria-filtro-data");
+      if (inputData && inputData.value !== (this.filtroDataAuditoria || "")) {
+        inputData.value = this.filtroDataAuditoria || "";
+      }
       const todosLogs = this.logsAuditoriaCache || [];
       const tipo = (this.filtroAuditoria || "todos").toLowerCase();
       const opFiltro = (this.filtroOperadorAuditoria || "todos").toLowerCase();
       let logsFiltrados = todosLogs;
       if (opFiltro !== "todos") {
         logsFiltrados = logsFiltrados.filter((l) => (l.operador || "").toLowerCase() === opFiltro);
+      }
+      if (this.filtroDataAuditoria) {
+        logsFiltrados = logsFiltrados.filter((l) => this.logBateDataFiltro(l, this.filtroDataAuditoria));
       }
       const logsCompletos = tipo === "todos" ? logsFiltrados : logsFiltrados.filter((l) => {
         const t = (l.tipo || "").toLowerCase();
@@ -58956,8 +59676,9 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       if (!this.auditoriaExibidos || this.auditoriaExibidos < PAGE) this.auditoriaExibidos = PAGE;
       const visiveis = logsCompletos.slice(0, this.auditoriaExibidos);
       const totalNuvem = AuditModule && AuditModule.totalNuvem || 0;
-      const totalRef = Math.max(totalNuvem, todosLogs.length, logsCompletos.length);
-      const temMais = visiveis.length < logsCompletos.length || Boolean(AuditModule && AuditModule.temMaisNuvem);
+      const filtrandoData = Boolean(this.filtroDataAuditoria);
+      const totalRef = filtrandoData ? logsCompletos.length : Math.max(totalNuvem, todosLogs.length, logsCompletos.length);
+      const temMais = visiveis.length < logsCompletos.length || !filtrandoData && Boolean(AuditModule && AuditModule.temMaisNuvem);
       const contadorEl = document.getElementById("gerencia-auditoria-contador");
       if (contadorEl) {
         const dica = temMais ? " \xB7 role para ver os mais antigos" : "";
@@ -59187,6 +59908,13 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       }
       const mapaLabelsChaves = {
         turnoId: "ID do Turno",
+        numeroNfce: "N\xFAmero NFC-e",
+        serieNfce: "S\xE9rie NFC-e",
+        chaveAcesso: "Chave de Acesso",
+        chaveNfe: "Chave de Acesso",
+        chaveNFe: "Chave de Acesso",
+        protocolo: "Protocolo",
+        idDaVenda: "ID da Venda",
         vendaId: "ID da Venda",
         qtdVendas: "Qtd de Vendas",
         totalVendas: "Total em Vendas",
@@ -59226,8 +59954,12 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
           }
           let valFormatado = valor;
           const chaveLower = chave.toLowerCase();
-          const isCampoMonetario = camposMonetarios.includes(chave) || chaveLower.includes("total") || chaveLower.includes("valor") || chaveLower.includes("saldo") || chaveLower.includes("preco") || chaveLower.includes("diferenca");
-          if (typeof valor === "number") {
+          const isChaveAcesso = chaveLower.includes("chave");
+          const isCampoMonetario = !isChaveAcesso && (camposMonetarios.includes(chave) || chaveLower.includes("total") || chaveLower.includes("valor") || chaveLower.includes("saldo") || chaveLower.includes("preco") || chaveLower.includes("diferenca"));
+          if (isChaveAcesso && valor != null) {
+            const digits = String(valor).replace(/\s/g, "");
+            valFormatado = /^\d{44}$/.test(digits) ? digits.replace(/(.{4})/g, "$1 ").trim() : String(valor);
+          } else if (typeof valor === "number") {
             if (isCampoMonetario) {
               valFormatado = formatarMoedaLocal(valor);
             } else {
@@ -59239,15 +59971,25 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
             valFormatado = JSON.stringify(valor, null, 2);
           }
           const labelExibicao = mapaLabelsChaves[chave] || chave.replace(/([A-Z])/g, " $1");
+          const textoValor = String(valFormatado ?? "");
+          const valorLongo = isChaveAcesso || textoValor.length > 28 || chaveLower.includes("id");
+          if (valorLongo) {
+            return `
+            <div style="padding: 8px 0; border-bottom: 1px dashed #e2e8f0; font-size: 12.5px;">
+              <span style="color: var(--text-muted); font-weight: 700; text-transform: capitalize; display: block; margin-bottom: 4px;">${labelExibicao}:</span>
+              <span style="color: var(--text-main); font-weight: 700; font-family: 'JetBrains Mono'; font-size: 11.5px; line-height: 1.45; display: block; overflow-wrap: anywhere; word-break: break-word;">${textoValor}</span>
+            </div>
+          `;
+          }
           return `
-          <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px dashed #e2e8f0; font-size: 12.5px;">
-            <span style="color: var(--text-muted); font-weight: 700; text-transform: capitalize;">${labelExibicao}:</span>
-            <span style="color: var(--text-main); font-weight: 700; font-family: 'JetBrains Mono'; text-align: right; max-width: 60%;">${valFormatado}</span>
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 8px 0; border-bottom: 1px dashed #e2e8f0; font-size: 12.5px;">
+            <span style="color: var(--text-muted); font-weight: 700; text-transform: capitalize; flex-shrink: 0;">${labelExibicao}:</span>
+            <span style="color: var(--text-main); font-weight: 700; font-family: 'JetBrains Mono'; text-align: right; min-width: 0; flex: 1; overflow-wrap: anywhere; word-break: break-word;">${textoValor}</span>
           </div>
         `;
         }).filter(Boolean).join("");
         detalhesFormatados = `
-        <div style="background: #f8fafc; border: 1px solid var(--border-card); border-radius: 8px; padding: 12px 16px; margin-top: 10px;">
+        <div style="background: #f8fafc; border: 1px solid var(--border-card); border-radius: 8px; padding: 12px 16px; margin-top: 10px; overflow: hidden;">
           <strong style="font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 6px;">Dados Complementares</strong>
           ${itensHtml}
         </div>
@@ -59274,7 +60016,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
 
         <div style="background: #ffffff; border: 1px solid var(--border-card); border-radius: 8px; padding: 14px; margin-bottom: 12px; box-shadow: var(--shadow-sm);">
           <strong style="font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 4px;">${tituloDescricao}</strong>
-          <p style="font-size: 14.5px; font-weight: 800; color: ${log.tipo === "cortesia" ? "#7c3aed" : "var(--text-main)"}; margin: 0; line-height: 1.4;">${textoDescricao}</p>
+          <p style="font-size: 14.5px; font-weight: 800; color: ${log.tipo === "cortesia" ? "#7c3aed" : "var(--text-main)"}; margin: 0; line-height: 1.4; overflow-wrap: anywhere; word-break: break-word;">${textoDescricao}</p>
         </div>
 
         ${cardEspecialHtml}
@@ -59462,12 +60204,26 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       const tbody = document.getElementById("gerencia-historico-turnos-tbody");
       const footerCount = document.getElementById("gerencia-historico-turnos-contador");
       const badgeQtd = document.getElementById("gerencia-badge-historico-qtd");
-      const turnos = StorageService.getHistoricoTurnos() || [];
-      if (badgeQtd) badgeQtd.textContent = `${turnos.length} ${turnos.length === 1 ? "turno" : "turnos"}`;
-      if (footerCount) footerCount.textContent = `\u{1F4CA} Total: ${turnos.length} turnos arquivados`;
+      const inputData = document.getElementById("gerencia-historico-filtro-data");
+      if (inputData && inputData.value !== (this.filtroDataHistorico || "")) {
+        inputData.value = this.filtroDataHistorico || "";
+      }
+      const todosTurnos = StorageService.getHistoricoTurnos() || [];
+      const ymd = this.filtroDataHistorico || "";
+      const turnos = ymd ? todosTurnos.filter((t) => {
+        const ab = t.dataAbertura ? this.ymdLocal(new Date(t.dataAbertura).getTime()) : "";
+        const fc = t.dataFechamento ? this.ymdLocal(new Date(t.dataFechamento).getTime()) : "";
+        return ab === ymd || fc === ymd;
+      }) : todosTurnos;
+      if (badgeQtd) {
+        badgeQtd.textContent = ymd ? `${turnos.length} de ${todosTurnos.length} ${todosTurnos.length === 1 ? "turno" : "turnos"}` : `${turnos.length} ${turnos.length === 1 ? "turno" : "turnos"}`;
+      }
+      if (footerCount) {
+        footerCount.textContent = ymd ? `\u{1F4CA} ${turnos.length} turno(s) em ${ymd.split("-").reverse().join("/")}` : `\u{1F4CA} Total: ${turnos.length} turnos arquivados`;
+      }
       if (!tbody) return;
       if (turnos.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 32px; color: var(--text-dim);">Nenhum turno de caixa finalizado no hist\xF3rico ainda.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 32px; color: var(--text-dim);">${ymd ? "Nenhum turno nesta data." : "Nenhum turno de caixa finalizado no hist\xF3rico ainda."}</td></tr>`;
         return;
       }
       tbody.innerHTML = turnos.map((t) => {

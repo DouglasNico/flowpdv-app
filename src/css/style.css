@@ -193,6 +193,11 @@ body {
   border-color: rgba(0, 0, 0, 0.3);
 }
 
+.btn-voltar-caixa-f1:hover {
+  background: var(--accent-amber-hover) !important;
+  border-color: var(--accent-amber-hover) !important;
+}
+
 
 
 
@@ -4202,6 +4207,26 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   color: #c2410c;
 }
 
+.btn-toolbar-estoque.purple {
+  color: #7c3aed;
+  border-color: #ddd6fe;
+  background: #ffffff;
+}
+
+.btn-toolbar-estoque.purple:hover {
+  background: #f5f3ff;
+  border-color: #8b5cf6;
+  color: #6d28d9;
+}
+
+#modal-precos-clube .chip-btn.active {
+  background: #7c3aed;
+  border-color: #7c3aed;
+  color: #ffffff;
+  font-weight: 800;
+  box-shadow: 0 2px 6px rgba(124, 58, 237, 0.3);
+}
+
 .btn-toolbar-estoque.primary {
   background: linear-gradient(135deg, #f97316, #ea580c);
   border: none;
@@ -6453,29 +6478,41 @@ body.pdv-layout-classico #btn-cpf-nota-nao {
 
 .auditoria-toolbar {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px;
   flex-shrink: 0;
   padding-bottom: 6px;
+  min-width: 0;
 }
 
 .auditoria-filtros {
   display: flex;
   align-items: center;
   gap: 4px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   flex: 1;
   min-width: 0;
+  overflow: visible;
+}
+
+.auditoria-filtros .filter-pill-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .auditoria-acoes {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   flex-shrink: 0;
+}
+
+.auditoria-mais-wrap .category-dropdown-menu {
+  left: 0 !important;
+  right: auto !important;
 }
 
 .auditoria-operador-select {
@@ -6491,6 +6528,22 @@ body.pdv-layout-classico #btn-cpf-nota-nao {
   border: 1px solid var(--border-card);
   cursor: pointer;
   color: var(--text-main);
+}
+
+.auditoria-data-input {
+  width: auto !important;
+  min-width: 128px;
+  max-width: 148px;
+  height: 32px;
+  font-size: 11.5px;
+  font-weight: 700;
+  border-radius: 16px;
+  padding: 0 8px;
+  background: #ffffff;
+  border: 1px solid var(--border-card);
+  color: var(--text-main);
+  cursor: pointer;
+  flex-shrink: 0;
 }
 
 @media (max-width: 1100px) {

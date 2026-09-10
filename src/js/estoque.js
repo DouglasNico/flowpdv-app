@@ -94,6 +94,7 @@ export const EstoqueModule = {
     const btnXml = document.getElementById('btn-importar-xml-nfe');
     const btnBiparValidade = document.getElementById('btn-bipar-validade-express');
     const btnQueimaEstoque = document.getElementById('btn-queima-estoque-promo');
+    const btnPrecosClube = document.getElementById('btn-precos-clube-lote');
     const barFiltrosValidade = document.getElementById('estoque-filtros-validade-bar');
     const boxPrecoClube = document.getElementById('box-preco-clube');
 
@@ -140,6 +141,7 @@ export const EstoqueModule = {
     if (boxValidade) boxValidade.style.display = isValidadeAtivo ? 'block' : 'none';
     if (btnBiparValidade) btnBiparValidade.style.display = isValidadeAtivo ? 'inline-flex' : 'none';
     if (btnQueimaEstoque) btnQueimaEstoque.style.display = isValidadeAtivo ? 'inline-flex' : 'none';
+    if (btnPrecosClube) btnPrecosClube.style.display = isClubeAtivo ? 'inline-flex' : 'none';
     if (barFiltrosValidade) barFiltrosValidade.style.display = isValidadeAtivo ? 'flex' : 'none';
     if (btnXml) btnXml.style.display = (isXmlAtivo && isGerente) ? 'inline-flex' : 'none';
     if (boxPrecoClube) boxPrecoClube.style.display = isClubeAtivo ? 'block' : 'none';
@@ -3112,5 +3114,508 @@ export const EstoqueModule = {
     } else {
       window.App.showToast('📋 Mensagem pronta no campo de prévia!', 'success');
     }
+  },
+
+  // =========================================================================
+  // MÓDULO 3: PREÇOS DO CLUBE EM LOTE & OFERTA WHATSAPP
+  // =========================================================================
+  itensPrecoClubeCalculados: [],
+  clubeMsgEditadaManualmente: false,
+  clubeTelefonesEnviados: {},
+  clubeClientesEnvio: [],
+
+  escHtmlClube(valor) {
+    return String(valor ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  },
+
+  formatarMoedaClube(valor) {
+    const num = parseFloat(valor) || 0;
+    return num.toFixed(2).replace('.', ',');
+  },
+
+  normalizarTelefoneWhatsAppClube(tel) {
+    let d = String(tel || '').replace(/\D/g, '');
+    if (d.startsWith('55') && d.length >= 12) d = d.slice(2);
+    return d;
+  },
+
+  abrirUrlExternaClube(url) {
+    if (window.electronAPI && typeof window.electronAPI.openExternal === 'function') {
+      window.electronAPI.openExternal(url);
+    } else {
+      window.open(url, '_blank');
+    }
+  },
+
+  abrirModalPrecosClube() {
+    if (!StorageService.isModuloAtivo('clubeFidelidade')) {
+      window.App.showToast('O módulo Clube Fidelidade não está ativo nesta loja.', 'warning');
+      return;
+    }
+    this.clubeMsgEditadaManualmente = false;
+    this.clubeTelefonesEnviados = {};
+    const modal = document.getElementById('modal-precos-clube');
+    if (modal) modal.classList.add('active');
+    document.body.classList.add('modal-open');
+    this.preencherFiltroCategoriasClube();
+    const busca = document.getElementById('clube-busca-produto');
+    if (busca) busca.value = '';
+    const buscaCli = document.getElementById('clube-busca-cliente');
+    if (buscaCli) buscaCli.value = '';
+    const checkAll = document.getElementById('clube-check-all');
+    if (checkAll) checkAll.checked = false;
+    this.recalcularTabelaPrecosClube();
+    this.renderClientesClubeWhatsApp();
+  },
+
+  fecharModalPrecosClube() {
+    const modal = document.getElementById('modal-precos-clube');
+    if (modal) modal.classList.remove('active');
+    if (!document.querySelector('.modal-overlay.active')) {
+      document.body.classList.remove('modal-open');
+    }
+  },
+
+  preencherFiltroCategoriasClube() {
+    const sel = document.getElementById('clube-filtro-categoria');
+    if (!sel) return;
+    const atual = sel.value || 'todas';
+    const cats = StorageService.getCategorias() || [];
+    sel.innerHTML = `<option value="todas">Todas as categorias</option>` +
+      cats.map(c => `<option value="${this.escHtmlClube(c)}">${this.escHtmlClube(c)}</option>`).join('');
+    if ([...sel.options].some(o => o.value === atual)) sel.value = atual;
+  },
+
+  marcarChipAtivoClube(btnElement) {
+    const box = document.getElementById('clube-chips-desconto');
+    if (!box) return;
+    box.querySelectorAll('.chip-btn').forEach(b => b.classList.remove('active'));
+    if (btnElement) btnElement.classList.add('active');
+  },
+
+  setDescontoClube(percentual, btnElement) {
+    const modo = document.getElementById('clube-modo-preco');
+    if (modo) modo.value = 'desconto';
+    const inputCustom = document.getElementById('clube-custom-desconto');
+    if (inputCustom) inputCustom.value = percentual;
+    this.marcarChipAtivoClube(btnElement);
+    this.recalcularTabelaPrecosClube();
+  },
+
+  setModoPrecoClube(modoValor, btnElement) {
+    const modo = document.getElementById('clube-modo-preco');
+    if (modo) modo.value = modoValor || 'atual';
+    this.marcarChipAtivoClube(btnElement);
+    this.recalcularTabelaPrecosClube();
+  },
+
+  onInputDescontoClube() {
+    const modo = document.getElementById('clube-modo-preco');
+    if (modo) modo.value = 'desconto';
+    this.marcarChipAtivoClube(null);
+    this.recalcularTabelaPrecosClube();
+  },
+
+  calcularPrecoClubeDesconto(precoDe, descontoPercent) {
+    const fator = (100 - (parseFloat(descontoPercent) || 0)) / 100;
+    return Math.max(0.01, Math.round(precoDe * fator * 100) / 100);
+  },
+
+  recalcularTabelaPrecosClube() {
+    const modo = document.getElementById('clube-modo-preco')?.value || 'desconto';
+    const descontoPercent = parseFloat(document.getElementById('clube-custom-desconto')?.value) || 15;
+    const produtos = StorageService.getProdutos() || [];
+    const prevById = {};
+    (this.itensPrecoClubeCalculados || []).forEach(it => {
+      prevById[it.id] = {
+        selecionado: !!it.selecionado,
+        precoManual: !!it.precoManual,
+        precoPor: parseFloat(it.precoPor) || 0
+      };
+    });
+
+    const itens = [];
+    produtos.forEach(p => {
+      if (!p || !p.id) return;
+      const precoDe = parseFloat(p.precoVenda) || 0;
+      if (precoDe <= 0) return;
+      const precoClubeAtual = parseFloat(p.precoClube) || 0;
+      if (modo === 'atual' && precoClubeAtual <= 0) return;
+
+      const prev = prevById[p.id];
+      let precoPor;
+      let precoManual = !!(prev && prev.precoManual);
+      if (precoManual && prev.precoPor > 0) {
+        precoPor = prev.precoPor;
+      } else if (modo === 'atual') {
+        precoPor = precoClubeAtual;
+        precoManual = false;
+      } else {
+        precoPor = this.calcularPrecoClubeDesconto(precoDe, descontoPercent);
+        precoManual = false;
+      }
+
+      const offCalc = precoDe > 0 ? Math.round((1 - (precoPor / precoDe)) * 100) : 0;
+      itens.push({
+        id: p.id,
+        nome: p.nome || '',
+        codigo: p.codigoBarras || '-',
+        categoria: p.categoria || 'Geral',
+        estoque: parseFloat(p.estoque) || 0,
+        unidade: p.unidade || 'un',
+        controlarEstoque: p.controlarEstoque !== false,
+        precoDe,
+        precoClubeAtual,
+        precoPor,
+        descontoPercent: offCalc > 0 ? offCalc : descontoPercent,
+        precoManual,
+        selecionado: !!(prev && prev.selecionado)
+      });
+    });
+
+    itens.sort((a, b) => String(a.nome).localeCompare(String(b.nome), 'pt-BR'));
+    this.itensPrecoClubeCalculados = itens;
+    this.renderTabelaPrecosClube();
+  },
+
+  obterItensClubeVisiveis() {
+    const termo = (document.getElementById('clube-busca-produto')?.value || '').trim().toLowerCase();
+    const categoria = document.getElementById('clube-filtro-categoria')?.value || 'todas';
+    const status = document.getElementById('clube-filtro-status')?.value || 'todos';
+
+    return this.itensPrecoClubeCalculados
+      .map((it, idx) => ({ it, idx }))
+      .filter(({ it }) => {
+        if (categoria !== 'todas' && String(it.categoria || '').toLowerCase() !== String(categoria).toLowerCase()) return false;
+        if (status === 'sem-clube' && it.precoClubeAtual > 0) return false;
+        if (status === 'com-clube' && it.precoClubeAtual <= 0) return false;
+        if (status === 'com-estoque' && (!it.controlarEstoque || it.estoque <= 0)) return false;
+        if (termo) {
+          const blob = `${it.nome} ${it.codigo} ${it.categoria}`.toLowerCase();
+          if (!blob.includes(termo)) return false;
+        }
+        return true;
+      });
+  },
+
+  renderTabelaPrecosClube() {
+    const tbody = document.getElementById('clube-produtos-tbody');
+    const visiveis = this.obterItensClubeVisiveis();
+    this.atualizarBadgePrecosClube(visiveis);
+
+    const LIMITE = 200;
+    const lista = visiveis.slice(0, LIMITE);
+
+    if (tbody) {
+      if (visiveis.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 24px; color: var(--text-dim);">Nenhum produto encontrado. Ajuste a busca ou o filtro.</td></tr>`;
+      } else {
+        tbody.innerHTML = lista.map(({ it, idx }) => `
+          <tr data-idx="${idx}" style="${it.selecionado ? '' : 'opacity: 0.55;'}">
+            <td style="text-align: center;">
+              <input type="checkbox" ${it.selecionado ? 'checked' : ''} onchange="EstoqueModule.toggleItemPrecoClube(${idx}, this.checked)" style="width: 15px; height: 15px; cursor: pointer;">
+            </td>
+            <td>
+              <strong style="color: var(--text-main); font-size: 13px;">${this.escHtmlClube(it.nome)}</strong>
+              <span style="display: block; font-size: 11px; color: var(--text-muted); font-family: 'JetBrains Mono';">${this.escHtmlClube(it.codigo)}</span>
+            </td>
+            <td style="text-align: center; font-family: 'JetBrains Mono'; font-weight: 700;">
+              ${it.controlarEstoque === false ? '—' : `${it.estoque} ${this.escHtmlClube(it.unidade)}`}
+            </td>
+            <td style="text-align: right; color: var(--text-dim); font-family: 'JetBrains Mono';">
+              R$ ${this.formatarMoedaClube(it.precoDe)}
+            </td>
+            <td style="text-align: right; font-family: 'JetBrains Mono'; color: ${it.precoClubeAtual > 0 ? '#6d28d9' : 'var(--text-dim)'};">
+              ${it.precoClubeAtual > 0 ? `R$ ${this.formatarMoedaClube(it.precoClubeAtual)}` : '—'}
+            </td>
+            <td style="text-align: right;">
+              <input type="text" value="${this.formatarMoedaClube(it.precoPor)}" onchange="EstoqueModule.atualizarPrecoManualClube(${idx}, this.value)" style="width: 92px; height: 32px; text-align: right; font-weight: 800; font-family: 'JetBrains Mono'; border-radius: 6px; border: 1px solid #ddd6fe; color: #6d28d9; padding: 0 8px;">
+            </td>
+          </tr>
+        `).join('') + (visiveis.length > LIMITE
+          ? `<tr><td colspan="6" style="text-align: center; padding: 12px; color: #6d28d9; font-size: 12px; font-weight: 700;">Mostrando os primeiros ${LIMITE} de ${visiveis.length}. Refine a busca para achar o item.</td></tr>`
+          : '');
+      }
+    }
+
+    this.gerarMensagemWhatsAppClube(false);
+  },
+
+  atualizarBadgePrecosClube(visiveis = null) {
+    const totalBadge = document.getElementById('clube-total-itens-badge');
+    const lista = visiveis || this.obterItensClubeVisiveis();
+    const visiveisTela = lista.slice(0, 200);
+    const selecionados = this.itensPrecoClubeCalculados.filter(it => it.selecionado).length;
+    if (totalBadge) {
+      totalBadge.textContent = `${lista.length} ${lista.length === 1 ? 'produto' : 'produtos'}` +
+        (selecionados ? ` · ${selecionados} marcado${selecionados === 1 ? '' : 's'}` : '');
+    }
+    const checkAll = document.getElementById('clube-check-all');
+    if (checkAll) {
+      checkAll.checked = visiveisTela.length > 0 && visiveisTela.every(({ it }) => it.selecionado);
+    }
+  },
+
+  toggleItemPrecoClube(index, checked) {
+    if (this.itensPrecoClubeCalculados[index]) {
+      this.itensPrecoClubeCalculados[index].selecionado = checked;
+      const row = document.querySelector(`#clube-produtos-tbody tr[data-idx="${index}"]`);
+      if (row) row.style.opacity = checked ? '' : '0.55';
+      this.atualizarBadgePrecosClube();
+      this.gerarMensagemWhatsAppClube(false);
+    }
+  },
+
+  toggleCheckAllClube(checked) {
+    this.obterItensClubeVisiveis().slice(0, 200).forEach(({ idx }) => {
+      if (this.itensPrecoClubeCalculados[idx]) {
+        this.itensPrecoClubeCalculados[idx].selecionado = checked;
+      }
+    });
+    const tbody = document.getElementById('clube-produtos-tbody');
+    if (tbody) {
+      tbody.querySelectorAll('tr[data-idx]').forEach(tr => {
+        const cb = tr.querySelector('input[type="checkbox"]');
+        if (cb) cb.checked = checked;
+        tr.style.opacity = checked ? '' : '0.55';
+      });
+    }
+    this.atualizarBadgePrecosClube();
+    this.gerarMensagemWhatsAppClube(false);
+  },
+
+  atualizarPrecoManualClube(index, valorDigitado) {
+    const item = this.itensPrecoClubeCalculados[index];
+    if (!item) return;
+    const precoPor = this.parseMoedaBR(valorDigitado);
+    if (precoPor <= 0) {
+      window.App.showToast('Informe um preço de clube válido.', 'warning');
+      this.renderTabelaPrecosClube();
+      return;
+    }
+    item.precoPor = Math.round(precoPor * 100) / 100;
+    item.precoManual = true;
+    item.selecionado = true;
+    item.descontoPercent = item.precoDe > 0 ? Math.round((1 - (item.precoPor / item.precoDe)) * 100) : 0;
+    this.clubeMsgEditadaManualmente = false;
+    this.renderTabelaPrecosClube();
+  },
+
+  marcarMensagemClubeEditada() {
+    this.clubeMsgEditadaManualmente = true;
+  },
+
+  gerarMensagemWhatsAppClube(forcar = false) {
+    const textarea = document.getElementById('clube-whatsapp-texto');
+    if (!textarea) return;
+    if (this.clubeMsgEditadaManualmente && !forcar) return;
+    if (forcar) this.clubeMsgEditadaManualmente = false;
+
+    const selecionados = this.itensPrecoClubeCalculados.filter(it => it.selecionado);
+    if (selecionados.length === 0) {
+      textarea.value = 'Selecione ao menos um produto acima para gerar a mensagem da oferta do clube.';
+      return;
+    }
+
+    const config = StorageService.getConfig() || {};
+    const nomeLoja = (config.nomeEmpresa || config.nomeLoja || 'Nossa Loja').trim();
+
+    let msg = `🏅 *OFERTAS EXCLUSIVAS DO CLUBE — ${nomeLoja.toUpperCase()}* 🏅\n`;
+    msg += `Só para membros do Clube Fidelidade:\n\n`;
+
+    selecionados.forEach(it => {
+      msg += `🏷️ *${it.nome}*\n`;
+      if (it.precoPor < it.precoDe && it.descontoPercent > 0) {
+        msg += `   De ~R$ ${this.formatarMoedaClube(it.precoDe)}~ por *R$ ${this.formatarMoedaClube(it.precoPor)}* (${it.descontoPercent}% OFF)\n\n`;
+      } else {
+        msg += `   Preço clube: *R$ ${this.formatarMoedaClube(it.precoPor)}*\n\n`;
+      }
+    });
+
+    msg += `📍 Mostre seu CPF no caixa para garantir o desconto.\n`;
+    msg += `Oferta válida para membros do clube, enquanto durarem os estoques.`;
+
+    textarea.value = msg;
+  },
+
+  aplicarPrecosClubeNoPDV() {
+    const selecionados = this.itensPrecoClubeCalculados.filter(it => it.selecionado);
+    if (selecionados.length === 0) {
+      window.App.showToast('Nenhum produto selecionado para atualizar o preço de clube!', 'warning');
+      return;
+    }
+
+    const executarAplicacao = () => {
+      const produtos = StorageService.getProdutos() || [];
+      let atualizados = 0;
+
+      selecionados.forEach(it => {
+        const idx = produtos.findIndex(p => p.id === it.id);
+        if (idx >= 0 && it.precoPor > 0) {
+          produtos[idx].precoClube = it.precoPor;
+          atualizados++;
+        }
+      });
+
+      StorageService.saveProdutos(produtos);
+      AuditModule.registrarLog(
+        'PRECO_CLUBE_LOTE',
+        `Atualizado preço de clube em ${atualizados} produto(s).`
+      );
+
+      if (window.CloudSyncModule && typeof window.CloudSyncModule.enviarAlteracaoNuvem === 'function') {
+        window.CloudSyncModule.enviarAlteracaoNuvem('precos_clube');
+      }
+
+      this.renderTabelaProdutos();
+      this.recalcularTabelaPrecosClube();
+      window.App.showToast(`🏅 Preço de clube aplicado em ${atualizados} produto(s). O preço normal do PDV não foi alterado.`, 'success');
+    };
+
+    if (window.App && typeof window.App.confirmarAcao === 'function') {
+      window.App.confirmarAcao({
+        titulo: '🏅 Aplicar preços do Clube?',
+        mensagem: `Deseja gravar o <strong>preço de clube</strong> nos <strong>${selecionados.length} produto(s) selecionado(s)</strong>?<br><br><span style="font-size: 12.5px; color: #5b21b6; background: #f5f3ff; border: 1px solid #ddd6fe; padding: 6px 12px; border-radius: 8px; display: inline-block;">O preço de venda do caixa continua o mesmo. Só o membro do clube (CPF no PDV) paga o valor especial.</span>`,
+        icone: '🏅',
+        corIcone: '#7c3aed',
+        bgIcone: '#f5f3ff',
+        textoConfirmar: '🏅 Sim, aplicar no clube [ENTER]',
+        textoCancelar: 'Cancelar [ESC]',
+        perigo: false,
+        corConfirmar: 'linear-gradient(135deg, #7c3aed, #6d28d9)',
+        onConfirm: executarAplicacao
+      });
+    } else {
+      executarAplicacao();
+    }
+  },
+
+  obterTextoOfertaClube() {
+    const textarea = document.getElementById('clube-whatsapp-texto');
+    const texto = (textarea?.value || '').trim();
+    if (!texto || texto.includes('Selecione ao menos um produto')) return '';
+    return texto;
+  },
+
+  compartilharClubeWhatsApp() {
+    const texto = this.obterTextoOfertaClube();
+    if (!texto) {
+      window.App.showToast('Selecione produtos para gerar a mensagem da oferta!', 'warning');
+      return;
+    }
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(texto).then(() => {
+        window.App.showToast('📋 Mensagem do clube copiada! Pode colar no WhatsApp ou usar Enviar em cada cliente.', 'success');
+      }).catch(() => {
+        window.App.showToast('📋 Mensagem pronta no campo de prévia!', 'success');
+      });
+    } else {
+      window.App.showToast('📋 Mensagem pronta no campo de prévia!', 'success');
+    }
+  },
+
+  obterClientesClubeWhatsApp() {
+    const termo = (document.getElementById('clube-busca-cliente')?.value || '').trim().toLowerCase();
+    const soMembros = document.getElementById('clube-somente-membros')?.checked !== false;
+    const clientes = StorageService.getClientes() || [];
+
+    return clientes
+      .map(c => {
+        const tel = this.normalizarTelefoneWhatsAppClube(c.telefone);
+        return { ...c, telClean: tel };
+      })
+      .filter(c => {
+        if (c.telClean.length < 10) return false;
+        if (soMembros && c.membroClube === false) return false;
+        if (termo) {
+          const blob = `${c.nome || ''} ${c.telefone || ''} ${c.cpfCnpj || ''}`.toLowerCase();
+          if (!blob.includes(termo)) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'));
+  },
+
+  renderClientesClubeWhatsApp() {
+    const box = document.getElementById('clube-clientes-lista');
+    const badge = document.getElementById('clube-total-clientes-badge');
+    const lista = this.obterClientesClubeWhatsApp();
+    this.clubeClientesEnvio = lista;
+    if (badge) {
+      badge.textContent = `${lista.length} ${lista.length === 1 ? 'cliente' : 'clientes'}`;
+    }
+    if (!box) return;
+
+    if (lista.length === 0) {
+      box.innerHTML = `<div style="padding: 20px; text-align: center; color: var(--text-dim); font-size: 13px;">Nenhum cliente com WhatsApp encontrado. Cadastre o telefone na aba Clientes.</div>`;
+      return;
+    }
+
+    box.innerHTML = `<table class="pdv-table"><tbody>${lista.map((c, idx) => {
+      const enviado = !!this.clubeTelefonesEnviados[c.telClean];
+      const nomeEnc = encodeURIComponent(c.nome || '');
+      return `
+        <tr style="${enviado ? 'background: #f0fdf4;' : ''}">
+          <td>
+            <strong style="font-size: 13px; color: var(--text-main);">${this.escHtmlClube(c.nome || 'Cliente')}</strong>
+            <span style="display: block; font-size: 11px; color: var(--text-muted); font-family: 'JetBrains Mono';">${this.escHtmlClube(c.telefone || c.telClean)}</span>
+          </td>
+          <td style="width: 140px; text-align: right; white-space: nowrap;">
+            <button type="button" class="chip-btn" style="height: 32px; font-size: 12px; font-weight: 800; padding: 0 12px; background: ${enviado ? '#15803d' : '#22c55e'}; color: #ffffff; border-color: ${enviado ? '#15803d' : '#22c55e'};" onclick="EstoqueModule.enviarOfertaClubeWhatsApp('${c.telClean}', '${nomeEnc}', ${idx})">
+              ${enviado ? '✓ Enviado' : '🟢 Enviar'}
+            </button>
+          </td>
+        </tr>
+      `;
+    }).join('')}</tbody></table>`;
+  },
+
+  montarMensagemClienteClube(nome) {
+    const base = this.obterTextoOfertaClube();
+    if (!base) return '';
+    const primeiro = String(nome || '').trim().split(/\s+/)[0] || 'tudo bem';
+    if (/^ol[aá]\b/i.test(base)) return base;
+    return `Olá ${primeiro}! 👋\n\n${base}`;
+  },
+
+  enviarOfertaClubeWhatsApp(telefoneLimpo, nomeCodificado) {
+    const nome = decodeURIComponent(nomeCodificado || '');
+    const texto = this.montarMensagemClienteClube(nome);
+    if (!texto) {
+      window.App.showToast('Selecione produtos e gere a mensagem antes de enviar.', 'warning');
+      return;
+    }
+    const tel = this.normalizarTelefoneWhatsAppClube(telefoneLimpo);
+    if (tel.length < 10) {
+      window.App.showToast('Telefone do cliente inválido para WhatsApp.', 'warning');
+      return;
+    }
+    const url = `https://wa.me/55${tel}?text=${encodeURIComponent(texto)}`;
+    this.abrirUrlExternaClube(url);
+    this.clubeTelefonesEnviados[tel] = true;
+    this.renderClientesClubeWhatsApp();
+    if (window.App) window.App.showToast(`🟢 Abrindo WhatsApp de ${nome || 'cliente'}...`, 'info');
+  },
+
+  enviarProximoClienteClubeWhatsApp() {
+    const texto = this.obterTextoOfertaClube();
+    if (!texto) {
+      window.App.showToast('Selecione produtos para gerar a mensagem antes de enviar.', 'warning');
+      return;
+    }
+    const lista = this.obterClientesClubeWhatsApp();
+    const proximo = lista.find(c => !this.clubeTelefonesEnviados[c.telClean]);
+    if (!proximo) {
+      window.App.showToast(lista.length === 0
+        ? 'Nenhum cliente com WhatsApp para enviar.'
+        : 'Todos os clientes visíveis já foram abertos no WhatsApp nesta sessão.', 'info');
+      return;
+    }
+    this.enviarOfertaClubeWhatsApp(proximo.telClean, encodeURIComponent(proximo.nome || ''));
   }
 };

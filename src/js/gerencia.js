@@ -20,6 +20,7 @@ export const GerenciaModule = {
   init() {
     this.bindSubNavegacao();
     this.bindScrollAuditoria();
+    this.bindFiltrosAuditoriaOverflow();
     this.renderSubAbaAtual();
   },
 
@@ -33,6 +34,10 @@ export const GerenciaModule = {
   },
 
   trocarSubAba(nomeSubAba) {
+    if (this.subAbaAtiva === 'indicadores' && nomeSubAba !== 'indicadores') {
+      this.ordenacaoAbc = { coluna: 'faturamento', direcao: 'desc' };
+    }
+
     this.subAbaAtiva = nomeSubAba;
 
     // Atualizar botões de sub-navegação
@@ -63,12 +68,59 @@ export const GerenciaModule = {
       this.renderHistoricoCaixas();
     } else if (this.subAbaAtiva === 'auditoria') {
       this.renderAuditoriaAjustes();
+      this.layoutFiltrosAuditoria();
     }
   },
 
   // =========================================================================
   // 1. INDICADORES GERENCIAIS & CURVA ABC
   // =========================================================================
+  ordenacaoAbc: { coluna: 'faturamento', direcao: 'desc' },
+
+  ordenarCurvaAbc(coluna) {
+    if (this.ordenacaoAbc.coluna === coluna) {
+      this.ordenacaoAbc.direcao = this.ordenacaoAbc.direcao === 'asc' ? 'desc' : 'asc';
+    } else {
+      this.ordenacaoAbc.coluna = coluna;
+      const numericas = ['quantidade', 'faturamento', 'percItem', 'ranking'];
+      this.ordenacaoAbc.direcao = numericas.includes(coluna) ? 'desc' : 'asc';
+    }
+    this.renderIndicadoresCurvaABC();
+  },
+
+  atualizarIconesOrdenacaoAbc() {
+    const colunas = ['ranking', 'nome', 'categoria', 'quantidade', 'faturamento', 'percItem', 'classe'];
+    colunas.forEach((col) => {
+      const iconEl = document.getElementById(`abc-sort-${col}`);
+      const thEl = iconEl && iconEl.closest('th');
+      if (!iconEl) return;
+      if (this.ordenacaoAbc.coluna === col) {
+        iconEl.textContent = this.ordenacaoAbc.direcao === 'asc' ? '▲' : '▼';
+        if (thEl) thEl.classList.add('active-sort');
+      } else {
+        iconEl.textContent = '↕';
+        if (thEl) thEl.classList.remove('active-sort');
+      }
+    });
+  },
+
+  ordenarListaAbc(lista) {
+    const col = this.ordenacaoAbc.coluna || 'faturamento';
+    const dir = this.ordenacaoAbc.direcao === 'asc' ? 1 : -1;
+    const classeOrdem = { A: 1, B: 2, C: 3 };
+    return [...(lista || [])].sort((a, b) => {
+      let cmp = 0;
+      if (col === 'nome' || col === 'categoria') {
+        cmp = String(a[col] || '').localeCompare(String(b[col] || ''), 'pt-BR', { sensitivity: 'base' });
+      } else if (col === 'classe') {
+        cmp = (classeOrdem[a.classe] || 9) - (classeOrdem[b.classe] || 9);
+      } else {
+        cmp = (Number(a[col]) || 0) - (Number(b[col]) || 0);
+      }
+      if (cmp === 0) return (a.ranking || 0) - (b.ranking || 0);
+      return cmp * dir;
+    });
+  },
   calcularCurvaABC() {
     const vendas = StorageService.getVendas() || [];
     const produtosEstoque = StorageService.getProdutos() || [];
@@ -195,10 +247,13 @@ export const GerenciaModule = {
 
     if (dados.ranking.length === 0) {
       tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 36px; color: var(--text-dim);">Nenhuma venda registrada no histórico para gerar a Curva ABC. Realize vendas no PDV para calcular os indicadores.</td></tr>`;
+      this.atualizarIconesOrdenacaoAbc();
       return;
     }
 
-    tbody.innerHTML = dados.ranking.map(item => {
+    const rankingExibido = this.ordenarListaAbc(dados.ranking);
+
+    tbody.innerHTML = rankingExibido.map(item => {
       let badgeClass = 'classe-c';
       let badgeLabel = '🅲 Classe C';
       let badgeStyle = 'background: #f1f5f9; color: #64748b; border: 1px solid #cbd5e1;';
@@ -238,6 +293,7 @@ export const GerenciaModule = {
         </tr>
       `;
     }).join('');
+    this.atualizarIconesOrdenacaoAbc();
   },
 
   // =========================================================================
@@ -851,6 +907,8 @@ export const GerenciaModule = {
 
   filtroAuditoria: 'todos',
   filtroOperadorAuditoria: 'todos',
+  filtroDataAuditoria: '',
+  filtroDataHistorico: '',
   bindScrollAuditoria() {
     const area = document.getElementById('gerencia-auditoria-scroll');
     if (!area || area.dataset.scrollBound === '1') return;
@@ -910,6 +968,42 @@ export const GerenciaModule = {
     this.renderAuditoriaFiltrada();
   },
 
+  ymdLocal(ms) {
+    const n = Number(ms);
+    if (!Number.isFinite(n) || n <= 0) return '';
+    const d = new Date(n);
+    if (!Number.isFinite(d.getTime())) return '';
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  },
+
+  msDoLogAuditoria(log) {
+    if (window.AuditModule && typeof AuditModule.dataDoLogMs === 'function') {
+      return AuditModule.dataDoLogMs(log);
+    }
+    const raw = log && (log.criadoEm || log.dataHoraFormatada);
+    const n = Date.parse(raw || 0);
+    return Number.isFinite(n) ? n : 0;
+  },
+
+  logBateDataFiltro(log, ymd) {
+    if (!ymd) return true;
+    return this.ymdLocal(this.msDoLogAuditoria(log)) === ymd;
+  },
+
+  filtrarAuditoriaData(valor) {
+    this.filtroDataAuditoria = String(valor || '').trim();
+    this.auditoriaExibidos = 100;
+    this.renderAuditoriaFiltrada();
+  },
+
+  filtrarHistoricoData(valor) {
+    this.filtroDataHistorico = String(valor || '').trim();
+    this.renderHistoricoCaixas();
+  },
+
   async renderAuditoriaAjustes() {
     const tbody = document.getElementById('gerencia-auditoria-tbody');
     if (!tbody) return;
@@ -941,7 +1035,9 @@ export const GerenciaModule = {
     // 2. BUSCA ATUALIZAÇÃO NA NUVEM EM BACKGROUND COM TIMEOUT DE 3.5s
     try {
       const logs = await AuditModule.buscarLogsAuditoria(100);
-      if (logs && logs.length) {
+      if (AuditModule.consultaNuvemOk) {
+        this.logsAuditoriaCache = logs || [];
+      } else if (logs && logs.length) {
         this.logsAuditoriaCache = logs;
       } else if (!this.logsAuditoriaCache || !this.logsAuditoriaCache.length) {
         this.logsAuditoriaCache = logs || logsLocais || [];
@@ -958,8 +1054,9 @@ export const GerenciaModule = {
     } finally {
       if (btnAtualizar) {
         btnAtualizar.disabled = false;
-        btnAtualizar.innerHTML = '🔄 Atualizar Logs';
+        btnAtualizar.innerHTML = '🔄 Atualizar';
       }
+      this.layoutFiltrosAuditoria();
     }
   },
 
@@ -969,12 +1066,109 @@ export const GerenciaModule = {
     document.querySelectorAll('.gerencia-audit-filtro-btn').forEach(btn => {
       btn.classList.toggle('active', btn.getAttribute('data-tipo') === tipo);
     });
+    this.layoutFiltrosAuditoria();
     this.renderAuditoriaFiltrada();
+  },
+
+  bindFiltrosAuditoriaOverflow() {
+    if (this._filtrosAuditBound) return;
+    this._filtrosAuditBound = true;
+    document.addEventListener('click', (e) => {
+      const wrap = document.getElementById('gerencia-auditoria-mais-wrap');
+      if (wrap && !wrap.contains(e.target)) this.fecharDropdownFiltrosAuditoria();
+    });
+    window.addEventListener('resize', () => {
+      if (this.subAbaAtiva === 'auditoria') this.layoutFiltrosAuditoria();
+    });
+  },
+
+  toggleDropdownFiltrosAuditoria(e) {
+    if (e) e.stopPropagation();
+    const dropdown = document.getElementById('dropdown-mais-filtros-auditoria');
+    if (!dropdown) return;
+    dropdown.style.display = dropdown.style.display === 'block' ? 'none' : 'block';
+  },
+
+  fecharDropdownFiltrosAuditoria() {
+    const dropdown = document.getElementById('dropdown-mais-filtros-auditoria');
+    if (dropdown) dropdown.style.display = 'none';
+  },
+
+  layoutFiltrosAuditoria() {
+    const bar = document.getElementById('gerencia-auditoria-filtros-bar');
+    const wrap = document.getElementById('gerencia-auditoria-mais-wrap');
+    const menu = document.getElementById('dropdown-mais-filtros-auditoria');
+    const btnMais = document.getElementById('btn-mais-filtros-auditoria');
+    if (!bar || !wrap || !menu || !btnMais) return;
+
+    const pills = Array.from(bar.querySelectorAll('.gerencia-audit-filtro-btn'));
+    pills.forEach((p) => { p.style.display = ''; });
+    wrap.style.display = 'none';
+    menu.style.display = 'none';
+    btnMais.classList.remove('active');
+    btnMais.textContent = '📂 Mais ▾';
+
+    const gap = 4;
+    const available = bar.clientWidth;
+    if (available <= 0) {
+      requestAnimationFrame(() => this.layoutFiltrosAuditoria());
+      return;
+    }
+
+    const widths = pills.map((p) => p.offsetWidth);
+    const total = widths.reduce((acc, w) => acc + w, 0) + gap * Math.max(0, pills.length - 1);
+    if (total <= available) return;
+
+    wrap.style.display = 'inline-block';
+    const maisW = wrap.offsetWidth + gap;
+    let budget = Math.max(0, available - maisW);
+    let used = 0;
+    const extras = [];
+
+    pills.forEach((pill, i) => {
+      const w = widths[i] + (used > 0 ? gap : 0);
+      const isTodos = pill.getAttribute('data-tipo') === 'todos';
+      if (isTodos || (extras.length === 0 && used + w <= budget)) {
+        pill.style.display = '';
+        used += w;
+      } else {
+        pill.style.display = 'none';
+        extras.push(pill);
+      }
+    });
+
+    if (!extras.length) {
+      wrap.style.display = 'none';
+      return;
+    }
+
+    const ativo = extras.find((p) => p.classList.contains('active'));
+    if (ativo) {
+      btnMais.classList.add('active');
+      btnMais.textContent = `${ativo.textContent.trim()} ▾`;
+    } else {
+      btnMais.classList.remove('active');
+      btnMais.textContent = `📂 Mais (${extras.length}) ▾`;
+    }
+
+    menu.innerHTML = `
+      <div style="font-size: 11px; font-weight: 800; color: #64748b; padding: 6px 10px 4px 10px; text-transform: uppercase; letter-spacing: 0.5px;">Outros filtros</div>
+      ${extras.map((p) => {
+        const tipo = p.getAttribute('data-tipo');
+        const label = p.textContent.trim();
+        const active = p.classList.contains('active') ? 'active' : '';
+        return `<button type="button" class="category-dropdown-item ${active}" onclick="GerenciaModule.filtrarAuditoria('${tipo}')">${label}</button>`;
+      }).join('')}
+    `;
   },
 
   renderAuditoriaFiltrada() {
     const tbody = document.getElementById('gerencia-auditoria-tbody');
     if (!tbody) return;
+    const inputData = document.getElementById('gerencia-auditoria-filtro-data');
+    if (inputData && inputData.value !== (this.filtroDataAuditoria || '')) {
+      inputData.value = this.filtroDataAuditoria || '';
+    }
     const todosLogs = this.logsAuditoriaCache || [];
     const tipo = (this.filtroAuditoria || 'todos').toLowerCase();
     const opFiltro = (this.filtroOperadorAuditoria || 'todos').toLowerCase();
@@ -982,6 +1176,9 @@ export const GerenciaModule = {
     let logsFiltrados = todosLogs;
     if (opFiltro !== 'todos') {
       logsFiltrados = logsFiltrados.filter(l => (l.operador || '').toLowerCase() === opFiltro);
+    }
+    if (this.filtroDataAuditoria) {
+      logsFiltrados = logsFiltrados.filter(l => this.logBateDataFiltro(l, this.filtroDataAuditoria));
     }
 
     const logsCompletos = tipo === 'todos' 
@@ -1024,8 +1221,11 @@ export const GerenciaModule = {
     if (!this.auditoriaExibidos || this.auditoriaExibidos < PAGE) this.auditoriaExibidos = PAGE;
     const visiveis = logsCompletos.slice(0, this.auditoriaExibidos);
     const totalNuvem = (AuditModule && AuditModule.totalNuvem) || 0;
-    const totalRef = Math.max(totalNuvem, todosLogs.length, logsCompletos.length);
-    const temMais = visiveis.length < logsCompletos.length || Boolean(AuditModule && AuditModule.temMaisNuvem);
+    const filtrandoData = Boolean(this.filtroDataAuditoria);
+    const totalRef = filtrandoData
+      ? logsCompletos.length
+      : Math.max(totalNuvem, todosLogs.length, logsCompletos.length);
+    const temMais = visiveis.length < logsCompletos.length || (!filtrandoData && Boolean(AuditModule && AuditModule.temMaisNuvem));
 
     const contadorEl = document.getElementById('gerencia-auditoria-contador');
     if (contadorEl) {
@@ -1281,6 +1481,13 @@ export const GerenciaModule = {
 
     const mapaLabelsChaves = {
       turnoId: 'ID do Turno',
+      numeroNfce: 'Número NFC-e',
+      serieNfce: 'Série NFC-e',
+      chaveAcesso: 'Chave de Acesso',
+      chaveNfe: 'Chave de Acesso',
+      chaveNFe: 'Chave de Acesso',
+      protocolo: 'Protocolo',
+      idDaVenda: 'ID da Venda',
       vendaId: 'ID da Venda',
       qtdVendas: 'Qtd de Vendas',
       totalVendas: 'Total em Vendas',
@@ -1326,14 +1533,20 @@ export const GerenciaModule = {
 
         let valFormatado = valor;
         const chaveLower = chave.toLowerCase();
-        const isCampoMonetario = camposMonetarios.includes(chave) || 
-                               chaveLower.includes('total') || 
-                               chaveLower.includes('valor') || 
-                               chaveLower.includes('saldo') || 
-                               chaveLower.includes('preco') || 
-                               chaveLower.includes('diferenca');
+        const isChaveAcesso = chaveLower.includes('chave');
+        const isCampoMonetario = !isChaveAcesso && (camposMonetarios.includes(chave) ||
+                               chaveLower.includes('total') ||
+                               chaveLower.includes('valor') ||
+                               chaveLower.includes('saldo') ||
+                               chaveLower.includes('preco') ||
+                               chaveLower.includes('diferenca'));
 
-        if (typeof valor === 'number') {
+        if (isChaveAcesso && valor != null) {
+          const digits = String(valor).replace(/\s/g, '');
+          valFormatado = /^\d{44}$/.test(digits)
+            ? digits.replace(/(.{4})/g, '$1 ').trim()
+            : String(valor);
+        } else if (typeof valor === 'number') {
           if (isCampoMonetario) {
             valFormatado = formatarMoedaLocal(valor);
           } else {
@@ -1346,17 +1559,28 @@ export const GerenciaModule = {
         }
 
         const labelExibicao = mapaLabelsChaves[chave] || chave.replace(/([A-Z])/g, ' $1');
+        const textoValor = String(valFormatado ?? '');
+        const valorLongo = isChaveAcesso || textoValor.length > 28 || chaveLower.includes('id');
+
+        if (valorLongo) {
+          return `
+            <div style="padding: 8px 0; border-bottom: 1px dashed #e2e8f0; font-size: 12.5px;">
+              <span style="color: var(--text-muted); font-weight: 700; text-transform: capitalize; display: block; margin-bottom: 4px;">${labelExibicao}:</span>
+              <span style="color: var(--text-main); font-weight: 700; font-family: 'JetBrains Mono'; font-size: 11.5px; line-height: 1.45; display: block; overflow-wrap: anywhere; word-break: break-word;">${textoValor}</span>
+            </div>
+          `;
+        }
 
         return `
-          <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px dashed #e2e8f0; font-size: 12.5px;">
-            <span style="color: var(--text-muted); font-weight: 700; text-transform: capitalize;">${labelExibicao}:</span>
-            <span style="color: var(--text-main); font-weight: 700; font-family: 'JetBrains Mono'; text-align: right; max-width: 60%;">${valFormatado}</span>
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 8px 0; border-bottom: 1px dashed #e2e8f0; font-size: 12.5px;">
+            <span style="color: var(--text-muted); font-weight: 700; text-transform: capitalize; flex-shrink: 0;">${labelExibicao}:</span>
+            <span style="color: var(--text-main); font-weight: 700; font-family: 'JetBrains Mono'; text-align: right; min-width: 0; flex: 1; overflow-wrap: anywhere; word-break: break-word;">${textoValor}</span>
           </div>
         `;
       }).filter(Boolean).join('');
 
       detalhesFormatados = `
-        <div style="background: #f8fafc; border: 1px solid var(--border-card); border-radius: 8px; padding: 12px 16px; margin-top: 10px;">
+        <div style="background: #f8fafc; border: 1px solid var(--border-card); border-radius: 8px; padding: 12px 16px; margin-top: 10px; overflow: hidden;">
           <strong style="font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 6px;">Dados Complementares</strong>
           ${itensHtml}
         </div>
@@ -1386,7 +1610,7 @@ export const GerenciaModule = {
 
         <div style="background: #ffffff; border: 1px solid var(--border-card); border-radius: 8px; padding: 14px; margin-bottom: 12px; box-shadow: var(--shadow-sm);">
           <strong style="font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 4px;">${tituloDescricao}</strong>
-          <p style="font-size: 14.5px; font-weight: 800; color: ${log.tipo === 'cortesia' ? '#7c3aed' : 'var(--text-main)'}; margin: 0; line-height: 1.4;">${textoDescricao}</p>
+          <p style="font-size: 14.5px; font-weight: 800; color: ${log.tipo === 'cortesia' ? '#7c3aed' : 'var(--text-main)'}; margin: 0; line-height: 1.4; overflow-wrap: anywhere; word-break: break-word;">${textoDescricao}</p>
         </div>
 
         ${cardEspecialHtml}
@@ -1607,15 +1831,35 @@ export const GerenciaModule = {
     const tbody = document.getElementById('gerencia-historico-turnos-tbody');
     const footerCount = document.getElementById('gerencia-historico-turnos-contador');
     const badgeQtd = document.getElementById('gerencia-badge-historico-qtd');
-    const turnos = StorageService.getHistoricoTurnos() || [];
+    const inputData = document.getElementById('gerencia-historico-filtro-data');
+    if (inputData && inputData.value !== (this.filtroDataHistorico || '')) {
+      inputData.value = this.filtroDataHistorico || '';
+    }
+    const todosTurnos = StorageService.getHistoricoTurnos() || [];
+    const ymd = this.filtroDataHistorico || '';
+    const turnos = ymd
+      ? todosTurnos.filter((t) => {
+          const ab = t.dataAbertura ? this.ymdLocal(new Date(t.dataAbertura).getTime()) : '';
+          const fc = t.dataFechamento ? this.ymdLocal(new Date(t.dataFechamento).getTime()) : '';
+          return ab === ymd || fc === ymd;
+        })
+      : todosTurnos;
 
-    if (badgeQtd) badgeQtd.textContent = `${turnos.length} ${turnos.length === 1 ? 'turno' : 'turnos'}`;
-    if (footerCount) footerCount.textContent = `📊 Total: ${turnos.length} turnos arquivados`;
+    if (badgeQtd) {
+      badgeQtd.textContent = ymd
+        ? `${turnos.length} de ${todosTurnos.length} ${todosTurnos.length === 1 ? 'turno' : 'turnos'}`
+        : `${turnos.length} ${turnos.length === 1 ? 'turno' : 'turnos'}`;
+    }
+    if (footerCount) {
+      footerCount.textContent = ymd
+        ? `📊 ${turnos.length} turno(s) em ${ymd.split('-').reverse().join('/')}`
+        : `📊 Total: ${turnos.length} turnos arquivados`;
+    }
 
     if (!tbody) return;
 
     if (turnos.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 32px; color: var(--text-dim);">Nenhum turno de caixa finalizado no histórico ainda.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 32px; color: var(--text-dim);">${ymd ? 'Nenhum turno nesta data.' : 'Nenhum turno de caixa finalizado no histórico ainda.'}</td></tr>`;
       return;
     }
 

@@ -457,6 +457,7 @@ export const ClientesModule = {
           complemento,
           pontoReferencia,
           observacoes,
+          membroClube,
           limiteFiado
         };
       }
@@ -474,6 +475,7 @@ export const ClientesModule = {
         complemento,
         pontoReferencia,
         observacoes,
+        membroClube,
         limiteFiado,
         saldoDevedor: 0.00,
         historico: [],
