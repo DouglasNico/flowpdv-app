@@ -25367,6 +25367,39 @@
   var ThermalPrintModule = {
     init() {
     },
+    rotuloFormaCupom(forma) {
+      return String(forma || "Dinheiro").replace(/\s*-\s*/g, " ").replace(/-/g, " ").replace(/\s+/g, " ").trim();
+    },
+    formatarMoedaCupom(valor) {
+      return `R$ ${Number(valor || 0).toFixed(2).replace(".", ",")}`;
+    },
+    linhaPagamentoHtml(nome, valor) {
+      return `<tr><td>${this.rotuloFormaCupom(nome)}</td><td class="text-right money">${this.formatarMoedaCupom(valor)}</td></tr>`;
+    },
+    htmlBlocoPagamento(venda) {
+      const linhas = [];
+      if (venda.pagamentos && venda.pagamentos.length > 0) {
+        venda.pagamentos.forEach((p) => linhas.push(this.linhaPagamentoHtml(p.forma, p.valor)));
+      } else if (venda.pagamentoDividido && venda.parcela1 && venda.parcela2) {
+        linhas.push(this.linhaPagamentoHtml(venda.parcela1.forma, venda.parcela1.valor));
+        linhas.push(this.linhaPagamentoHtml(venda.parcela2.forma, venda.parcela2.valor));
+      } else {
+        linhas.push(this.linhaPagamentoHtml(venda.formaPagamento || "Dinheiro", venda.total));
+      }
+      const somaPagos = venda.pagamentos && venda.pagamentos.length ? venda.pagamentos.reduce((acc, p) => acc + (Number(p.valor) || 0), 0) : venda.pagamentoDividido ? Number(venda.parcela1?.valor || 0) + Number(venda.parcela2?.valor || 0) : Number(venda.total || 0);
+      if (venda.valorPago > 0 && Math.abs(Number(venda.valorPago) - somaPagos) > 9e-3) {
+        linhas.push(this.linhaPagamentoHtml("Valor pago", venda.valorPago));
+      }
+      if (venda.troco > 0) {
+        linhas.push(this.linhaPagamentoHtml("Troco", venda.troco));
+      }
+      return `
+      <div class="bold">Pagamento</div>
+      <table class="pay-table">
+        ${linhas.join("")}
+      </table>
+    `;
+    },
     executarImpressao(html) {
       if (window.electronAPI && typeof window.electronAPI.printThermalReceipt === "function") {
         window.electronAPI.printThermalReceipt(html, false).catch((err) => {
@@ -25405,7 +25438,7 @@
       if (!venda) return;
       const config = StorageService.getConfig();
       const largura = config.impressoraTipo === "80mm" ? "72mm" : "48mm";
-      const teveDinheiro = venda.formaPagamento === "Dinheiro" || venda.pagamentoDividido && (venda.parcela1?.forma === "Dinheiro" || venda.parcela2?.forma === "Dinheiro");
+      const teveDinheiro = venda.formaPagamento === "Dinheiro" || Array.isArray(venda.pagamentos) && venda.pagamentos.some((p) => p && p.forma === "Dinheiro") || venda.pagamentoDividido && (venda.parcela1?.forma === "Dinheiro" || venda.parcela2?.forma === "Dinheiro");
       if (teveDinheiro) {
         this.abrirGavetaDinheiro();
       }
@@ -25427,13 +25460,22 @@
             line-height: 1.3;
             color: #000;
             background: #fff;
+            hyphens: none;
+            -webkit-hyphens: none;
           }
           .text-center { text-align: center; }
           .text-right { text-align: right; }
           .bold { font-weight: bold; }
           .divider { border-top: 1px dashed #000; margin: 6px 0; }
-          .table-items { width: 100%; border-collapse: collapse; font-size: 10px; }
-          .table-items td { padding: 2px 0; vertical-align: top; }
+          .money { white-space: nowrap; }
+          .table-items { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 10px; }
+          .table-items td { padding: 2px 0; vertical-align: top; overflow-wrap: anywhere; }
+          .table-items td:nth-child(2) { width: 22px; white-space: nowrap; }
+          .table-items td:nth-child(3) { width: 64px; white-space: nowrap; }
+          .pay-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 11px; margin-top: 2px; }
+          .pay-table td { padding: 1px 0; vertical-align: top; }
+          .pay-table td:first-child { overflow-wrap: anywhere; padding-right: 6px; }
+          .pay-table td:last-child { width: 64px; }
         </style>
       </head>
       <body>
@@ -25444,7 +25486,8 @@
         
         <div class="divider"></div>
         ${isNfce ? `
-          <div class="text-center bold">DANFE NFC-e - Documento Auxiliar</div>
+          <div class="text-center bold">DANFE NFC-e</div>
+          <div class="text-center bold">Documento Auxiliar</div>
           <div class="text-center bold">Nota Fiscal de Consumidor Eletr\xF4nica</div>
           ${venda.ambiente === "homologacao" ? '<div class="text-center bold" style="color: #555; font-size: 9.5px; margin-top: 2px;">EMITIDA EM HOMOLOGA\xC7\xC3O - SEM VALOR FISCAL</div>' : ""}
           <div style="font-size: 10px; margin-top: 4px;">NFC-e N\xBA: <strong>${venda.numeroNfce || 1}</strong> &bull; S\xE9rie: <strong>${venda.serieNfce || 1}</strong></div>
@@ -25475,7 +25518,7 @@
               <tr>
                 <td>${item.nome}</td>
                 <td class="text-center">${item.quantidade}x</td>
-                <td class="text-right">R$ ${(item.precoUnitario * item.quantidade).toFixed(2).replace(".", ",")}</td>
+                <td class="text-right money">R$ ${(item.precoUnitario * item.quantidade).toFixed(2).replace(".", ",")}</td>
               </tr>
             `).join("")}
           </tbody>
@@ -25484,37 +25527,21 @@
         <div class="divider"></div>
         <div style="display: flex; justify-content: space-between;">
           <span>Subtotal:</span>
-          <span>R$ ${(venda.subtotal || venda.total || 0).toFixed(2).replace(".", ",")}</span>
+          <span class="money">R$ ${(venda.subtotal || venda.total || 0).toFixed(2).replace(".", ",")}</span>
         </div>
         ${venda.desconto > 0 ? `
           <div style="display: flex; justify-content: space-between;">
             <span>Desconto:</span>
-            <span>- R$ ${venda.desconto.toFixed(2).replace(".", ",")}</span>
+            <span class="money">- R$ ${venda.desconto.toFixed(2).replace(".", ",")}</span>
           </div>
         ` : ""}
         <div class="bold" style="display: flex; justify-content: space-between; font-size: 13px; margin-top: 4px;">
           <span>TOTAL:</span>
-          <span>R$ ${(venda.total || 0).toFixed(2).replace(".", ",")}</span>
+          <span class="money">R$ ${(venda.total || 0).toFixed(2).replace(".", ",")}</span>
         </div>
         
         <div class="divider"></div>
-        ${venda.pagamentos && venda.pagamentos.length > 0 ? `
-          <div>Forma de Pagto: <span class="bold">MULTI-PAGAMENTO</span></div>
-          ${venda.pagamentos.map((p) => `
-            <div style="font-size: 11px; padding-left: 4px; display: flex; justify-content: space-between;">
-              <span>\u2022 ${p.forma}:</span>
-              <span>R$ ${p.valor.toFixed(2).replace(".", ",")}</span>
-            </div>
-          `).join("")}
-        ` : venda.pagamentoDividido && venda.parcela1 && venda.parcela2 ? `
-          <div>Forma de Pagto: <span class="bold">DIVIDIDO</span></div>
-          <div style="font-size: 11px; padding-left: 4px;">\u2022 ${venda.parcela1.forma}: R$ ${venda.parcela1.valor.toFixed(2).replace(".", ",")}</div>
-          <div style="font-size: 11px; padding-left: 4px;">\u2022 ${venda.parcela2.forma}: R$ ${venda.parcela2.valor.toFixed(2).replace(".", ",")}</div>
-        ` : `
-          <div>Forma de Pagto: <span class="bold">${venda.formaPagamento || "Dinheiro"}</span></div>
-        `}
-        ${venda.valorPago > 0 ? `<div>Valor Pago: R$ ${venda.valorPago.toFixed(2).replace(".", ",")}</div>` : ""}
-        ${venda.troco > 0 ? `<div>Troco: R$ ${venda.troco.toFixed(2).replace(".", ",")}</div>` : ""}
+        ${this.htmlBlocoPagamento(venda)}
 
         ${isNfce ? `
           <div class="divider"></div>
