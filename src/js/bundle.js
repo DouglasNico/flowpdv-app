@@ -60499,19 +60499,260 @@ NSU: ${nsuGerado}`
   window.TefModule = TefModule;
 
   // src/js/etiquetas.js
+  var MODELOS_ETIQUETA = [
+    {
+      id: "a4-gondola-30",
+      grupo: "Folha A4 (Pimaco)",
+      label: "Pimaco 3\xD710 \u2014 30 etiquetas (g\xF4ndola)",
+      hint: "66,7 \xD7 25,4 mm \xB7 30 por folha A4",
+      tipo: "a4",
+      cols: 3,
+      pageMargin: "7mm 5mm",
+      gap: "2.5mm 3.5mm",
+      altura: "25.4mm",
+      previewCols: 2,
+      lojaPx: 7.5,
+      nomePx: 9.5,
+      precoPx: 14,
+      codPx: 7.5,
+      barraH: 34
+    },
+    {
+      id: "a4-2x10-20",
+      grupo: "Folha A4 (Pimaco)",
+      label: "Pimaco 2\xD710 \u2014 20 etiquetas (larga)",
+      hint: "101,6 \xD7 25,4 mm \xB7 20 por folha A4",
+      tipo: "a4",
+      cols: 2,
+      pageMargin: "8mm 6mm",
+      gap: "2.5mm 4mm",
+      altura: "25.4mm",
+      previewCols: 2,
+      lojaPx: 8,
+      nomePx: 11,
+      precoPx: 16,
+      codPx: 8,
+      barraH: 32
+    },
+    {
+      id: "a4-3x7-21",
+      grupo: "Folha A4 (Pimaco)",
+      label: "Pimaco 3\xD77 \u2014 21 etiquetas (g\xF4ndola m\xE9dia)",
+      hint: "66,7 \xD7 38,1 mm \xB7 21 por folha A4",
+      tipo: "a4",
+      cols: 3,
+      pageMargin: "8mm 5mm",
+      gap: "2.5mm 3.5mm",
+      altura: "36mm",
+      previewCols: 2,
+      lojaPx: 8,
+      nomePx: 11,
+      precoPx: 18,
+      codPx: 8,
+      barraH: 36
+    },
+    {
+      id: "a4-2x7-14",
+      grupo: "Folha A4 (Pimaco)",
+      label: "Pimaco 2\xD77 \u2014 14 etiquetas (g\xF4ndola grande)",
+      hint: "101,6 \xD7 33,9 mm \xB7 14 por folha A4",
+      tipo: "a4",
+      cols: 2,
+      pageMargin: "10mm 6mm",
+      gap: "3mm 4mm",
+      altura: "33.9mm",
+      previewCols: 1,
+      lojaPx: 9,
+      nomePx: 13,
+      precoPx: 22,
+      codPx: 9,
+      barraH: 38
+    },
+    {
+      id: "a4-2x5-10",
+      grupo: "Folha A4 (Pimaco)",
+      label: "Pimaco 2\xD75 \u2014 10 etiquetas (pre\xE7o grande)",
+      hint: "101,6 \xD7 50,8 mm \xB7 10 por folha A4",
+      tipo: "a4",
+      cols: 2,
+      pageMargin: "10mm 8mm",
+      gap: "4mm 5mm",
+      altura: "50mm",
+      previewCols: 1,
+      lojaPx: 10,
+      nomePx: 15,
+      precoPx: 28,
+      codPx: 10,
+      barraH: 42
+    },
+    {
+      id: "a4-mini-65",
+      grupo: "Folha A4 (Pimaco)",
+      label: "Pimaco 5\xD713 \u2014 65 etiquetas (mini)",
+      hint: "38,1 \xD7 21,2 mm \xB7 65 por folha A4",
+      tipo: "a4",
+      cols: 5,
+      pageMargin: "10mm 5mm",
+      gap: "1mm 2mm",
+      altura: "20.5mm",
+      previewCols: 3,
+      lojaPx: 6,
+      nomePx: 7.5,
+      precoPx: 11,
+      codPx: 6.5,
+      barraH: 22
+    },
+    {
+      id: "termica-40",
+      grupo: "Bobina t\xE9rmica",
+      label: "Bobina t\xE9rmica 40 mm",
+      hint: "Bobina cont\xEDnua 40 mm",
+      tipo: "termica",
+      pageSize: "40mm auto",
+      previewMaxWidth: "180px",
+      lojaPx: 7.5,
+      nomePx: 10,
+      precoPx: 14,
+      codPx: 7.5,
+      barraH: 28
+    },
+    {
+      id: "termica-58",
+      grupo: "Bobina t\xE9rmica",
+      label: "Bobina t\xE9rmica 58 mm",
+      hint: "Bobina cont\xEDnua 58 mm (padr\xE3o PDV)",
+      tipo: "termica",
+      pageSize: "58mm auto",
+      previewMaxWidth: "220px",
+      lojaPx: 8.5,
+      nomePx: 11,
+      precoPx: 16,
+      codPx: 8.5,
+      barraH: 34
+    },
+    {
+      id: "termica-80",
+      grupo: "Bobina t\xE9rmica",
+      label: "Bobina t\xE9rmica 80 mm",
+      hint: "Bobina cont\xEDnua 80 mm",
+      tipo: "termica",
+      pageSize: "80mm auto",
+      previewMaxWidth: "280px",
+      lojaPx: 10,
+      nomePx: 13,
+      precoPx: 20,
+      codPx: 9.5,
+      barraH: 38
+    },
+    {
+      id: "argox-40x30",
+      grupo: "Argox / adesiva t\xE9rmica",
+      label: "Argox 40\xD730 mm",
+      hint: "Etiqueta adesiva 40 \xD7 30 mm",
+      tipo: "argox",
+      pageSize: "40mm 30mm",
+      altura: "30mm",
+      previewMaxWidth: "200px",
+      lojaPx: 7,
+      nomePx: 9.5,
+      precoPx: 13,
+      codPx: 7,
+      barraH: 24
+    },
+    {
+      id: "argox-50x30",
+      grupo: "Argox / adesiva t\xE9rmica",
+      label: "Argox 50\xD730 mm",
+      hint: "Etiqueta adesiva 50 \xD7 30 mm",
+      tipo: "argox",
+      pageSize: "50mm 30mm",
+      altura: "30mm",
+      previewMaxWidth: "240px",
+      lojaPx: 8,
+      nomePx: 10.5,
+      precoPx: 15,
+      codPx: 8,
+      barraH: 28
+    },
+    {
+      id: "argox-60x40",
+      grupo: "Argox / adesiva t\xE9rmica",
+      label: "Argox 60\xD740 mm",
+      hint: "Etiqueta adesiva 60 \xD7 40 mm",
+      tipo: "argox",
+      pageSize: "60mm 40mm",
+      altura: "40mm",
+      previewMaxWidth: "260px",
+      lojaPx: 9,
+      nomePx: 12,
+      precoPx: 18,
+      codPx: 8.5,
+      barraH: 32
+    },
+    {
+      id: "argox-100x50",
+      grupo: "Argox / adesiva t\xE9rmica",
+      label: "Argox 100\xD750 mm (g\xF4ndola)",
+      hint: "Etiqueta adesiva 100 \xD7 50 mm",
+      tipo: "argox",
+      pageSize: "100mm 50mm",
+      altura: "50mm",
+      previewMaxWidth: "300px",
+      lojaPx: 11,
+      nomePx: 15,
+      precoPx: 26,
+      codPx: 10,
+      barraH: 40
+    }
+  ];
+  var ALIAS_MODELO = {
+    "termica-avulsa": "termica-58"
+  };
   var EtiquetasModule = {
     produtosSelecionados: /* @__PURE__ */ new Map(),
-    // produtoId -> quantidade de etiquetas
     modeloSelecionado: "a4-gondola-30",
-    // 'a4-gondola-30', 'a4-mini-65', 'termica-avulsa'
     init() {
+      try {
+        const salvo = localStorage.getItem("flowpdv_etiqueta_modelo");
+        if (salvo) this.modeloSelecionado = this.obterModelo(salvo).id;
+      } catch (e) {
+      }
       this.bindEventos();
+      this.preencherSelectModelos();
     },
     bindEventos() {
       const buscaInput = document.getElementById("etiquetas-busca-input");
       if (buscaInput) {
         buscaInput.addEventListener("input", () => this.renderListaProdutos());
       }
+      const selectModelo = document.getElementById("etiquetas-modelo-select");
+      if (selectModelo) {
+        selectModelo.addEventListener("change", () => this.mudarModelo(selectModelo.value));
+      }
+    },
+    preencherSelectModelos() {
+      const select = document.getElementById("etiquetas-modelo-select");
+      if (!select) return;
+      const grupos = [];
+      MODELOS_ETIQUETA.forEach((m) => {
+        if (!grupos.includes(m.grupo)) grupos.push(m.grupo);
+      });
+      select.innerHTML = grupos.map((grupo) => {
+        const opts = MODELOS_ETIQUETA.filter((m) => m.grupo === grupo).map((m) => `<option value="${m.id}">${m.label}</option>`).join("");
+        return `<optgroup label="${grupo}">${opts}</optgroup>`;
+      }).join("");
+      select.value = this.modeloSelecionado;
+      this.atualizarHintModelo();
+    },
+    atualizarHintModelo() {
+      const hintEl = document.getElementById("etiquetas-modelo-hint");
+      if (!hintEl) return;
+      const modelo = this.obterModelo(this.modeloSelecionado);
+      hintEl.textContent = modelo.hint || "";
+    },
+    obterModelo(id) {
+      const real = ALIAS_MODELO[id] || id;
+      return MODELOS_ETIQUETA.find((m) => m.id === real) || MODELOS_ETIQUETA[0];
     },
     abrirModal() {
       const modal = document.getElementById("modal-gerador-etiquetas");
@@ -60519,6 +60760,7 @@ NSU: ${nsuGerado}`
       this.produtosSelecionados.clear();
       const buscaInput = document.getElementById("etiquetas-busca-input");
       if (buscaInput) buscaInput.value = "";
+      this.preencherSelectModelos();
       this.renderListaProdutos();
       this.atualizarContadorEtiquetas();
       this.renderPreviewEtiquetas();
@@ -60606,7 +60848,14 @@ NSU: ${nsuGerado}`
       this.renderPreviewEtiquetas();
     },
     mudarModelo(modelo) {
-      this.modeloSelecionado = modelo;
+      this.modeloSelecionado = this.obterModelo(modelo).id;
+      const select = document.getElementById("etiquetas-modelo-select");
+      if (select && select.value !== this.modeloSelecionado) select.value = this.modeloSelecionado;
+      try {
+        localStorage.setItem("flowpdv_etiqueta_modelo", this.modeloSelecionado);
+      } catch (e) {
+      }
+      this.atualizarHintModelo();
       this.renderPreviewEtiquetas();
     },
     atualizarContadorEtiquetas() {
@@ -60619,9 +60868,31 @@ NSU: ${nsuGerado}`
         badgeEl.textContent = `${totalEtiquetas} ${totalEtiquetas === 1 ? "etiqueta" : "etiquetas"}`;
       }
     },
-    // Gerador de SVG de Código de Barras Code 128 / EAN Compacto
-    gerarSvgCodigoBarras(codigo) {
+    listarItensSelecionados() {
+      const todosProdutos = StorageService.getProdutos();
+      const listaItens = [];
+      for (const [prodId, qtd] of this.produtosSelecionados.entries()) {
+        const p = todosProdutos.find((item) => item.id === prodId);
+        if (p) {
+          for (let i = 0; i < qtd; i++) listaItens.push(p);
+        }
+      }
+      return listaItens;
+    },
+    nomeLoja() {
+      const config = StorageService.getConfig() || {};
+      return config.nomeEmpresa || config.nomeLoja || "FlowPDV";
+    },
+    dadosProduto(p) {
+      return {
+        nome: p.nome || "",
+        preco: parseFloat(p.precoVenda || p.preco || 0).toFixed(2).replace(".", ","),
+        cod: p.codigoBarras || p.codigo || p.id
+      };
+    },
+    gerarSvgCodigoBarras(codigo, altura = 34) {
       const cod = String(codigo || "7890000000000").replace(/[^a-zA-Z0-9]/g, "") || "0000";
+      const height = Number(altura) || 34;
       let pattern = "";
       for (let i = 0; i < cod.length; i++) {
         const charCode = cod.charCodeAt(i);
@@ -60632,7 +60903,6 @@ NSU: ${nsuGerado}`
       let svgBars = "";
       let x2 = 4;
       const barWidth = 1.6;
-      const height = 34;
       for (let i = 0; i < pattern.length; i++) {
         if (pattern[i] === "1") {
           svgBars += `<rect x="${x2.toFixed(1)}" y="0" width="${barWidth}" height="${height}" fill="#000000" />`;
@@ -60641,26 +60911,47 @@ NSU: ${nsuGerado}`
       }
       const totalWidth = x2 + 4;
       return `
-      <svg viewBox="0 0 ${totalWidth} ${height}" style="width: 100%; max-height: 34px; display: block; margin: 0 auto;">
+      <svg viewBox="0 0 ${totalWidth} ${height}" style="width: 100%; max-height: ${height}px; display: block; margin: 0 auto;">
         ${svgBars}
       </svg>
+    `;
+    },
+    htmlCardEtiqueta(p, modelo, modo) {
+      const { nome, preco, cod } = this.dadosProduto(p);
+      const loja = this.nomeLoja();
+      const barra = this.gerarSvgCodigoBarras(cod, modelo.barraH);
+      const preview = modo === "preview";
+      if (modelo.tipo === "a4") {
+        const box = preview ? `border: 1px dashed #94a3b8; border-radius: 6px; padding: 5px 6px; min-height: 88px;` : "";
+        return `
+        <div class="${preview ? "" : "etiqueta-card"}" style="background: #ffffff; text-align: center; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; overflow: hidden; ${box}">
+          <div style="font-size: ${modelo.lojaPx}px; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: 0.3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${loja}</div>
+          <div style="font-size: ${modelo.nomePx}px; font-weight: 900; color: #0f172a; line-height: 1.1; margin: 2px 0; max-height: ${modelo.nomePx * 2.2}px; overflow: hidden; word-break: break-word;">${nome}</div>
+          <div style="margin: 2px 0; max-height: ${modelo.barraH}px; overflow: hidden;">${barra}</div>
+          <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 2px; gap: 4px;">
+            <span style="font-size: ${modelo.codPx}px; font-family: monospace; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${cod}</span>
+            <strong style="font-size: ${modelo.precoPx}px; font-weight: 900; color: #000000; font-family: 'JetBrains Mono', 'Courier New', monospace; white-space: nowrap;">R$ ${preco}</strong>
+          </div>
+        </div>
+      `;
+      }
+      const borda = preview ? "border: 1px solid #000000; border-radius: 4px; padding: 6px 8px;" : "";
+      return `
+      <div class="${preview ? "" : "etiqueta-termica-card"}" style="background: #ffffff; text-align: center; ${borda}">
+        <div style="font-size: ${modelo.lojaPx}px; font-weight: 800; text-transform: uppercase;">${loja}</div>
+        <div style="font-size: ${modelo.nomePx}px; font-weight: 900; margin: 2px 0; line-height: 1.1; overflow: hidden;">${nome}</div>
+        <div style="margin: 2px 0; max-height: ${modelo.barraH}px; overflow: hidden;">${barra}</div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 3px; gap: 4px;">
+          <span style="font-size: ${modelo.codPx}px; font-family: monospace;">${cod}</span>
+          <strong style="font-size: ${modelo.precoPx}px; font-weight: 900; font-family: 'JetBrains Mono', 'Courier New', monospace;">R$ ${preco}</strong>
+        </div>
+      </div>
     `;
     },
     renderPreviewEtiquetas() {
       const previewContainer = document.getElementById("etiquetas-preview-container");
       if (!previewContainer) return;
-      const todosProdutos = StorageService.getProdutos();
-      const config = StorageService.getConfig() || {};
-      const nomeLoja = config.nomeEmpresa || config.nomeLoja || "FlowPDV";
-      const listaItens = [];
-      for (const [prodId, qtd] of this.produtosSelecionados.entries()) {
-        const p = todosProdutos.find((item) => item.id === prodId);
-        if (p) {
-          for (let i = 0; i < qtd; i++) {
-            listaItens.push(p);
-          }
-        }
-      }
+      const listaItens = this.listarItensSelecionados();
       if (listaItens.length === 0) {
         previewContainer.innerHTML = `
         <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; min-height: 280px; color: var(--text-muted); text-align: center; padding: 20px;">
@@ -60671,231 +60962,91 @@ NSU: ${nsuGerado}`
       `;
         return;
       }
-      if (this.modeloSelecionado === "a4-gondola-30") {
+      const modelo = this.obterModelo(this.modeloSelecionado);
+      const cards = listaItens.map((p) => this.htmlCardEtiqueta(p, modelo, "preview")).join("");
+      if (modelo.tipo === "a4") {
         previewContainer.innerHTML = `
-        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; padding: 6px; background: #ffffff;">
-          ${listaItens.map((p) => {
-          const preco = parseFloat(p.precoVenda || p.preco || 0).toFixed(2).replace(".", ",");
-          const cod = p.codigoBarras || p.codigo || p.id;
-          return `
-              <div style="border: 1px dashed #94a3b8; border-radius: 6px; padding: 5px 6px; background: #ffffff; text-align: center; display: flex; flex-direction: column; justify-content: space-between; min-height: 88px; box-sizing: border-box; overflow: hidden;">
-                <div style="font-size: 8px; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: 0.3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${nomeLoja}</div>
-                <div style="font-size: 10.5px; font-weight: 900; color: #0f172a; line-height: 1.1; margin: 2px 0; max-height: 24px; overflow: hidden; word-break: break-word;">${p.nome}</div>
-                <div style="margin: 2px 0; max-height: 26px; overflow: hidden;">${this.gerarSvgCodigoBarras(cod)}</div>
-                <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 2px;">
-                  <span style="font-size: 8px; font-family: monospace; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${cod}</span>
-                  <strong style="font-size: 14px; font-weight: 900; color: #000000; font-family: 'JetBrains Mono'; white-space: nowrap;">R$ ${preco}</strong>
-                </div>
-              </div>
-            `;
-        }).join("")}
+        <div style="display: grid; grid-template-columns: repeat(${modelo.previewCols}, minmax(0, 1fr)); gap: 6px; padding: 6px; background: #ffffff;">
+          ${cards}
         </div>
       `;
-      } else {
-        previewContainer.innerHTML = `
-        <div style="display: flex; flex-direction: column; gap: 8px; max-width: 220px; margin: 0 auto; padding: 8px; background: #ffffff;">
-          ${listaItens.map((p) => {
-          const preco = parseFloat(p.precoVenda || p.preco || 0).toFixed(2).replace(".", ",");
-          const cod = p.codigoBarras || p.codigo || p.id;
-          return `
-              <div style="border: 1px solid #000000; border-radius: 4px; padding: 6px 8px; background: #ffffff; text-align: center;">
-                <div style="font-size: 8.5px; font-weight: 800; text-transform: uppercase;">${nomeLoja}</div>
-                <div style="font-size: 11px; font-weight: 900; margin: 2px 0; line-height: 1.1; overflow: hidden;">${p.nome}</div>
-                <div style="margin: 2px 0; max-height: 28px; overflow: hidden;">${this.gerarSvgCodigoBarras(cod)}</div>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 3px;">
-                  <span style="font-size: 8.5px; font-family: monospace;">${cod}</span>
-                  <strong style="font-size: 15px; font-weight: 900; font-family: 'JetBrains Mono';">R$ ${preco}</strong>
-                </div>
-              </div>
-            `;
-        }).join("")}
-        </div>
-      `;
-      }
-    },
-    imprimirEtiquetas() {
-      const todosProdutos = StorageService.getProdutos();
-      const config = StorageService.getConfig() || {};
-      const nomeLoja = config.nomeEmpresa || config.nomeLoja || "FlowPDV";
-      const listaItens = [];
-      for (const [prodId, qtd] of this.produtosSelecionados.entries()) {
-        const p = todosProdutos.find((item) => item.id === prodId);
-        if (p) {
-          for (let i = 0; i < qtd; i++) {
-            listaItens.push(p);
-          }
-        }
-      }
-      if (listaItens.length === 0) {
-        if (window.App) window.App.showToast("Selecione pelo menos um produto para imprimir etiquetas!", "warning");
         return;
       }
-      let htmlContent = "";
-      if (this.modeloSelecionado === "a4-gondola-30") {
-        htmlContent = `
-        <!DOCTYPE html>
+      previewContainer.innerHTML = `
+      <div style="display: flex; flex-direction: column; gap: 8px; max-width: ${modelo.previewMaxWidth || "220px"}; margin: 0 auto; padding: 8px; background: #ffffff;">
+        ${cards}
+      </div>
+    `;
+    },
+    htmlDocumentoImpressao(listaItens, modelo) {
+      const loja = this.nomeLoja();
+      const cards = listaItens.map((p) => this.htmlCardEtiqueta(p, modelo, "print")).join("");
+      if (modelo.tipo === "a4") {
+        return `<!DOCTYPE html>
         <html lang="pt-BR">
         <head>
           <meta charset="UTF-8">
-          <title>Impress\xE3o de Etiquetas A4 \u2014 ${nomeLoja}</title>
+          <title>Impress\xE3o de Etiquetas A4 \u2014 ${loja}</title>
           <style>
-            @page {
-              size: A4 portrait;
-              margin: 7mm 5mm;
-            }
-            * {
-              box-sizing: border-box;
-              margin: 0;
-              padding: 0;
-              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            }
-            body {
-              background: #ffffff;
-              color: #000000;
-              width: 100%;
-            }
-            .grid-a4-gondola {
+            @page { size: A4 portrait; margin: ${modelo.pageMargin}; }
+            * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+            body { background: #ffffff; color: #000000; width: 100%; }
+            .grid-a4 {
               display: grid;
-              grid-template-columns: repeat(3, minmax(0, 1fr));
-              gap: 2.5mm 3.5mm;
+              grid-template-columns: repeat(${modelo.cols}, minmax(0, 1fr));
+              gap: ${modelo.gap};
               width: 100%;
             }
             .etiqueta-card {
               border: 1px dashed #94a3b8;
               border-radius: 4px;
-              padding: 2mm 3mm;
+              padding: 1.6mm 2mm;
               text-align: center;
               display: flex;
               flex-direction: column;
               justify-content: space-between;
-              height: 25.4mm;
+              height: ${modelo.altura};
               box-sizing: border-box;
               page-break-inside: avoid;
               break-inside: avoid;
               overflow: hidden;
             }
-            .loja-nome {
-              font-size: 7.5px;
-              font-weight: 800;
-              text-transform: uppercase;
-              letter-spacing: 0.3px;
-              white-space: nowrap;
-              overflow: hidden;
-              text-overflow: ellipsis;
-            }
-            .prod-nome {
-              font-size: 9.5px;
-              font-weight: 900;
-              line-height: 1.1;
-              margin: 0.5mm 0;
-              max-height: 6mm;
-              overflow: hidden;
-              word-break: break-word;
-            }
-            .preco-destaque {
-              font-size: 14px;
-              font-weight: 900;
-              font-family: 'Courier New', Courier, monospace;
-            }
-            .cod-texto {
-              font-size: 7.5px;
-              font-family: monospace;
-            }
           </style>
         </head>
         <body>
-          <div class="grid-a4-gondola">
-            ${listaItens.map((p) => {
-          const preco = parseFloat(p.precoVenda || p.preco || 0).toFixed(2).replace(".", ",");
-          const cod = p.codigoBarras || p.codigo || p.id;
-          return `
-                <div class="etiqueta-card">
-                  <div class="loja-nome">${nomeLoja}</div>
-                  <div class="prod-nome">${p.nome}</div>
-                  <div style="margin: 0.5mm 0; max-height: 24px; overflow: hidden;">${this.gerarSvgCodigoBarras(cod)}</div>
-                  <div style="display: flex; justify-content: space-between; align-items: flex-end;">
-                    <span class="cod-texto">${cod}</span>
-                    <span class="preco-destaque">R$ ${preco}</span>
-                  </div>
-                </div>
-              `;
-        }).join("")}
-          </div>
+          <div class="grid-a4">${cards}</div>
         </body>
-        </html>
-      `;
-      } else {
-        htmlContent = `
-        <!DOCTYPE html>
-        <html lang="pt-BR">
-        <head>
-          <meta charset="UTF-8">
-          <title>Impress\xE3o de Etiquetas T\xE9rmica \u2014 ${nomeLoja}</title>
-          <style>
-            @page {
-              size: 58mm auto;
-              margin: 2mm;
-            }
-            * {
-              box-sizing: border-box;
-              margin: 0;
-              padding: 0;
-              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            }
-            body {
-              background: #ffffff;
-              color: #000000;
-              width: 100%;
-            }
-            .etiqueta-termica-card {
-              border-bottom: 1px dashed #000000;
-              padding: 4mm 2mm;
-              text-align: center;
-              page-break-inside: avoid;
-              break-inside: avoid;
-            }
-            .loja-nome {
-              font-size: 8.5px;
-              font-weight: 800;
-              text-transform: uppercase;
-            }
-            .prod-nome {
-              font-size: 11px;
-              font-weight: 900;
-              line-height: 1.15;
-              margin: 1.5mm 0;
-            }
-            .preco-destaque {
-              font-size: 16px;
-              font-weight: 900;
-              font-family: 'Courier New', Courier, monospace;
-            }
-            .cod-texto {
-              font-size: 8.5px;
-              font-family: monospace;
-            }
-          </style>
-        </head>
-        <body>
-          ${listaItens.map((p) => {
-          const preco = parseFloat(p.precoVenda || p.preco || 0).toFixed(2).replace(".", ",");
-          const cod = p.codigoBarras || p.codigo || p.id;
-          return `
-              <div class="etiqueta-termica-card">
-                <div class="loja-nome">${nomeLoja}</div>
-                <div class="prod-nome">${p.nome}</div>
-                <div style="margin: 1.5mm 0; max-height: 28px; overflow: hidden;">${this.gerarSvgCodigoBarras(cod)}</div>
-                <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 1mm;">
-                  <span class="cod-texto">${cod}</span>
-                  <span class="preco-destaque">R$ ${preco}</span>
-                </div>
-              </div>
-            `;
-        }).join("")}
-        </body>
-        </html>
-      `;
+        </html>`;
       }
+      const corte = modelo.tipo === "argox" ? `page-break-after: always; height: ${modelo.altura || "30mm"}; display: flex; flex-direction: column; justify-content: center; padding: 1.5mm;` : "border-bottom: 1px dashed #000000; padding: 4mm 2mm;";
+      return `<!DOCTYPE html>
+      <html lang="pt-BR">
+      <head>
+        <meta charset="UTF-8">
+        <title>Impress\xE3o de Etiquetas \u2014 ${loja}</title>
+        <style>
+          @page { size: ${modelo.pageSize}; margin: 2mm; }
+          * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+          body { background: #ffffff; color: #000000; width: 100%; }
+          .etiqueta-termica-card {
+            ${corte}
+            text-align: center;
+            page-break-inside: avoid;
+            break-inside: avoid;
+          }
+        </style>
+      </head>
+      <body>${cards}</body>
+      </html>`;
+    },
+    imprimirEtiquetas() {
+      const listaItens = this.listarItensSelecionados();
+      if (listaItens.length === 0) {
+        if (window.App) window.App.showToast("Selecione pelo menos um produto para imprimir etiquetas!", "warning");
+        return;
+      }
+      const modelo = this.obterModelo(this.modeloSelecionado);
+      const htmlContent = this.htmlDocumentoImpressao(listaItens, modelo);
       try {
         const win = window.open("", "_blank", "width=800,height=900");
         if (win) {

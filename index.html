@@ -623,12 +623,12 @@
       <div class="view-container" style="max-width: 1440px; margin: 0 auto; padding: 4px 14px; width: 100%; box-sizing: border-box; height: calc(100vh - 75px); display: flex; flex-direction: column;">
         
         <!-- Header da Aba de Comandas -->
-        <div class="view-header" style="margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0; flex-wrap: wrap;">
-          <div>
-            <h2 style="font-size: 19px; font-weight: 800; margin: 0; color: var(--text-main); display: flex; align-items: center; gap: 8px;">
+        <div class="view-header" style="margin-bottom: 8px; display: flex; flex-direction: column; align-items: center; text-align: center; justify-content: center; flex-shrink: 0;">
+          <div style="text-align: center;">
+            <h2 style="font-size: 19px; font-weight: 800; margin: 0; color: var(--text-main); display: flex; align-items: center; justify-content: center; gap: 8px; text-align: center;">
               <span id="comandas-header-icone">🍽️</span> <span id="comandas-header-titulo">Gestão de Comandas & Mesas</span>
             </h2>
-            <p style="font-size: 11.5px; margin: 2px 0 0 0; color: var(--text-muted);">Consumo em tempo real, lançamento rápido e fechamento no caixa.</p>
+            <p style="font-size: 11.5px; margin: 2px 0 0 0; color: var(--text-muted); text-align: center;">Consumo em tempo real, lançamento rápido e fechamento no caixa.</p>
           </div>
         </div>
 
@@ -3960,15 +3960,9 @@
             <!-- Coluna 2: Formato e Prévia -->
             <div style="display: flex; flex-direction: column; border: 1px solid var(--border-card); border-radius: 10px; padding: 12px; background: #f8fafc; min-width: 0; overflow: hidden;">
               <div style="margin-bottom: 8px; flex-shrink: 0;">
-                <label style="font-size: 11px; font-weight: 800; color: var(--text-dim); text-transform: uppercase; display: block; margin-bottom: 4px;">Formato de Impressão:</label>
-                <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px;">
-                  <button type="button" class="cat-filter-btn active" id="btn-modelo-a4" onclick="EtiquetasModule.mudarModelo('a4-gondola-30'); this.classList.add('active'); document.getElementById('btn-modelo-termica').classList.remove('active');" style="font-size: 11.5px; padding: 7px 4px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                    📄 Folha A4 (Pimaco 3x10)
-                  </button>
-                  <button type="button" class="cat-filter-btn" id="btn-modelo-termica" onclick="EtiquetasModule.mudarModelo('termica-avulsa'); this.classList.add('active'); document.getElementById('btn-modelo-a4').classList.remove('active');" style="font-size: 11.5px; padding: 7px 4px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                    🖨️ Bobina Térmica
-                  </button>
-                </div>
+                <label for="etiquetas-modelo-select" style="font-size: 11px; font-weight: 800; color: var(--text-dim); text-transform: uppercase; display: block; margin-bottom: 4px;">Formato de Impressão:</label>
+                <select id="etiquetas-modelo-select" class="form-select-custom" style="height: 38px; font-size: 12.5px; font-weight: 700; line-height: 36px;"></select>
+                <span id="etiquetas-modelo-hint" style="display: block; margin-top: 4px; font-size: 11px; color: var(--text-muted);"></span>
               </div>
 
               <!-- Prévia das Etiquetas -->
