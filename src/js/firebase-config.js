@@ -7,7 +7,7 @@
  */
 
 import { initializeApp } from "firebase/app";
-import { getFirestore, doc, getDoc, getDocs, collection, onSnapshot, setDoc, updateDoc, deleteDoc, deleteField, addDoc, query, orderBy, limit, where, startAfter, getCountFromServer } from "firebase/firestore";
+import { getFirestore, doc, getDoc, getDocs, collection, onSnapshot, setDoc, updateDoc, deleteDoc, deleteField, addDoc, query, orderBy, limit, where, startAfter, getCountFromServer, writeBatch } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "firebase/auth";
 
@@ -26,7 +26,7 @@ export const db = getFirestore(app);
 export const functions = getFunctions(app, "us-central1");
 export const auth = getAuth(app);
 
-export { doc, getDoc, getDocs, collection, onSnapshot, setDoc, updateDoc, deleteDoc, deleteField, addDoc, query, orderBy, limit, where, startAfter, getCountFromServer };
+export { doc, getDoc, getDocs, collection, onSnapshot, setDoc, updateDoc, deleteDoc, deleteField, addDoc, query, orderBy, limit, where, startAfter, getCountFromServer, writeBatch };
 
 export async function buscarLicencaNuvem({ chave = "", cnpj = "", clienteId = "" } = {}) {
   const fn = httpsCallable(functions, "buscarLicenca");

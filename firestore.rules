@@ -66,10 +66,9 @@ service cloud.firestore {
         allow read, write: if isAdmin() || isLoja(chave);
       }
 
-      // Logs de auditoria da loja: mesmo isolamento do backup, por caminho.
+      // Logs de auditoria da loja: a loja le, grava e apaga so o que e dela.
       match /auditoria/{logId} {
-        allow read, create: if isAdmin() || isLoja(chave);
-        allow update, delete: if isAdmin();
+        allow read, create, update, delete: if isAdmin() || isLoja(chave);
       }
     }
 
@@ -78,8 +77,7 @@ service cloud.firestore {
       allow list: if false;
     }
 
-    // A loja le a propria auditoria (consulta sempre filtrada por chaveLicenca),
-    // mas so o admin apaga ou altera registro ja gravado.
+    // A loja le, grava e apaga so a propria auditoria (sempre filtrada por chave).
     match /auditoria_lojas/{id} {
       allow create: if isAdmin() || (
         request.resource.data.keys().hasAll(['chaveLicenca'])
@@ -89,7 +87,10 @@ service cloud.firestore {
         resource.data.keys().hasAll(['chaveLicenca'])
         && isLoja(resource.data.chaveLicenca)
       );
-      allow update, delete: if isAdmin();
+      allow update, delete: if isAdmin() || (
+        resource.data.keys().hasAll(['chaveLicenca'])
+        && isLoja(resource.data.chaveLicenca)
+      );
     }
   }
 }

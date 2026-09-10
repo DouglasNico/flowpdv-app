@@ -40760,8 +40760,61 @@ This typically indicates that your device does not have a healthy Internet conne
       })(n, e, t2)
     )));
   }
+  var WriteBatch = class {
+    /** @hideconstructor */
+    constructor(e, t) {
+      this._firestore = e, this._commitHandler = t, this._mutations = [], this._committed = false, this._dataReader = __PRIVATE_newUserDataReader(e);
+    }
+    set(e, t, n) {
+      this._verifyNotCommitted();
+      const r = __PRIVATE_validateReference(e, this._firestore), i = __PRIVATE_applyFirestoreDataConverter(r.converter, t, n), s = __PRIVATE_parseSetData(this._dataReader, "WriteBatch.set", r._key, i, null !== r.converter, n);
+      return this._mutations.push(s.toMutation(r._key, Precondition.none())), this;
+    }
+    update(e, t, n, ...r) {
+      this._verifyNotCommitted();
+      const i = __PRIVATE_validateReference(e, this._firestore);
+      let s;
+      return s = "string" == typeof (t = getModularInstance(t)) || t instanceof FieldPath ? __PRIVATE_parseUpdateVarargs(this._dataReader, "WriteBatch.update", i._key, t, n, r) : __PRIVATE_parseUpdateData(this._dataReader, "WriteBatch.update", i._key, t), this._mutations.push(s.toMutation(i._key, Precondition.exists(true))), this;
+    }
+    /**
+     * Deletes the document referred to by the provided {@link DocumentReference}.
+     *
+     * @param documentRef - A reference to the document to be deleted.
+     * @returns This `WriteBatch` instance. Used for chaining method calls.
+     */
+    delete(e) {
+      this._verifyNotCommitted();
+      const t = __PRIVATE_validateReference(e, this._firestore);
+      return this._mutations = this._mutations.concat(new __PRIVATE_DeleteMutation(t._key, Precondition.none())), this;
+    }
+    /**
+     * Commits all of the writes in this write batch as a single atomic unit.
+     *
+     * The result of these writes will only be reflected in document reads that
+     * occur after the returned promise resolves. If the client is offline, the
+     * write fails. If you would like to see local modifications or buffer writes
+     * until the client is online, use the full Firestore SDK.
+     *
+     * @returns A `Promise` resolved once all of the writes in the batch have been
+     * successfully written to the backend as an atomic unit (note that it won't
+     * resolve while you're offline).
+     */
+    commit() {
+      return this._verifyNotCommitted(), this._committed = true, this._mutations.length > 0 ? this._commitHandler(this._mutations) : Promise.resolve();
+    }
+    _verifyNotCommitted() {
+      if (this._committed) throw new FirestoreError(N.FAILED_PRECONDITION, "A write batch can no longer be used after commit() has been called.");
+    }
+  };
+  function __PRIVATE_validateReference(e, t) {
+    if ((e = getModularInstance(e)).firestore !== t) throw new FirestoreError(N.INVALID_ARGUMENT, "Provided document reference is from a different Firestore instance.");
+    return e;
+  }
   function deleteField() {
     return new __PRIVATE_DeleteFieldValueImpl("deleteField");
+  }
+  function writeBatch(e) {
+    return ensureFirestoreConfigured(e = __PRIVATE_cast(e, Firestore)), new WriteBatch(e, ((t) => executeWrite(e, t)));
   }
   !(function __PRIVATE_registerFirestore(e, t = true) {
     !(function __PRIVATE_setSDKVersion(e2) {
@@ -47910,22 +47963,41 @@ This typically indicates that your device does not have a healthy Internet conne
         return todos;
       } catch (err) {
         console.warn("[AuditModule] Erro ao buscar logs na nuvem, retornando locais:", err);
-        this.ultimoErroNuvem = "N\xE3o foi poss\xEDvel ler os logs da nuvem neste computador.";
+        const timeout = String(err && err.message || "").includes("Timeout");
+        this.ultimoErroNuvem = timeout ? "" : "N\xE3o foi poss\xEDvel ler os logs da nuvem neste computador.";
         this.temMaisNuvem = false;
-        this.totalNuvem = logsLocais.length;
+        if (!this.totalNuvem) this.totalNuvem = logsLocais.length;
         return logsLocais.slice(0, maxLogs);
       }
     },
+    dataDoLogMs(log) {
+      if (!log) return 0;
+      const raw = log.criadoEm || log.dataHoraFormatada || 0;
+      if (!raw) return 0;
+      if (typeof raw === "object") {
+        if (typeof raw.toDate === "function") {
+          const d = raw.toDate();
+          return d instanceof Date ? d.getTime() : 0;
+        }
+        if (typeof raw.seconds === "number") return raw.seconds * 1e3;
+      }
+      const s = String(raw).trim();
+      const iso = Date.parse(s);
+      if (Number.isFinite(iso) && !/^\d{1,2}\/\d{1,2}\/\d{4}/.test(s)) return iso;
+      const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[,\s]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+      if (m) {
+        return new Date(+m[3], +m[2] - 1, +m[1], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0)).getTime();
+      }
+      return Number.isFinite(iso) ? iso : 0;
+    },
     logEstaNoPeriodo(log, dias) {
       if (!dias) return true;
-      const ms = new Date(log && (log.criadoEm || log.dataHoraFormatada) || 0).getTime();
+      const ms = this.dataDoLogMs(log);
       if (!Number.isFinite(ms) || ms <= 0) return false;
       const corte = Date.now() - dias * 24 * 60 * 60 * 1e3;
       return ms >= corte;
     },
-    async excluirLogsPorPeriodo(dias) {
-      const chave = this.getChaveLicencaAtual();
-      const soPeriodo = (log) => this.logEstaNoPeriodo(log, dias);
+    aplicarExclusaoLocal(soPeriodo) {
       const locaisAntes = this.getLocalLogs();
       const locaisNovos = locaisAntes.filter((l) => !soPeriodo(l));
       const removidosLocal = locaisAntes.length - locaisNovos.length;
@@ -47934,15 +48006,41 @@ This typically indicates that your device does not have a healthy Internet conne
       } catch (e) {
       }
       this.salvarPendentes(this.getPendentes().filter((l) => !soPeriodo(l)));
-      let apagadosNuvem = 0;
-      if (!chave || chave === "LOCAL" || typeof navigator !== "undefined" && !navigator.onLine) {
-        return { local: removidosLocal, nuvem: 0 };
+      if (window.GerenciaModule && Array.isArray(window.GerenciaModule.logsAuditoriaCache)) {
+        window.GerenciaModule.logsAuditoriaCache = window.GerenciaModule.logsAuditoriaCache.filter((l) => !soPeriodo(l));
       }
-      try {
-        await garantirSessaoLoja(chave, { deviceId: StorageService.getDeviceId() });
-      } catch (e) {
+      return { locaisNovos, removidosLocal };
+    },
+    async apagarRefsEmLote(refs) {
+      const lista = (refs || []).filter(Boolean);
+      let apagados = 0;
+      let falhas = 0;
+      let ultimoErro = "";
+      for (let i = 0; i < lista.length; i += 400) {
+        const fatia = lista.slice(i, i + 400);
+        try {
+          const batch = writeBatch(db);
+          fatia.forEach((ref) => batch.delete(ref));
+          await batch.commit();
+          apagados += fatia.length;
+        } catch (err) {
+          ultimoErro = err && (err.code || err.message) || String(err);
+          for (const ref of fatia) {
+            try {
+              await deleteDoc(ref);
+              apagados++;
+            } catch (e2) {
+              falhas++;
+              ultimoErro = e2 && (e2.code || e2.message) || ultimoErro;
+            }
+          }
+        }
       }
+      return { apagados, falhas, ultimoErro };
+    },
+    async coletarRefsSubcolecao(chave, soPeriodo, dias) {
       const col = collection(db, "backups_lojas", chave, "auditoria");
+      const refs = [];
       let cursor = null;
       let guard = 0;
       const corte = dias ? Date.now() - dias * 24 * 60 * 60 * 1e3 : 0;
@@ -47955,42 +48053,124 @@ This typically indicates that your device does not have a healthy Internet conne
         }
         if (!snap || snap.empty) break;
         const docs = snap.docs || [];
-        for (const d of docs) {
-          if (soPeriodo({ id: d.id, ...d.data() })) {
-            try {
-              await deleteDoc(d.ref);
-              apagadosNuvem++;
-            } catch (err) {
-            }
-          }
-        }
+        docs.forEach((d) => {
+          if (soPeriodo({ id: d.id, ...d.data() })) refs.push(d.ref);
+        });
         const last = docs[docs.length - 1];
         if (!last) break;
-        const lastMs = new Date(last.data() && last.data().criadoEm || 0).getTime();
         cursor = last;
-        if (dias && Number.isFinite(lastMs) && lastMs < corte) break;
+        const lastMs = this.dataDoLogMs(last.data() || {});
+        if (dias && Number.isFinite(lastMs) && lastMs > 0 && lastMs < corte) break;
         if (docs.length < 100) break;
       }
+      return refs;
+    },
+    async coletarRefsLegado(chave, soPeriodo) {
+      const refs = [];
+      const chaves = [...new Set([chave, ...this.getChavesConsulta ? this.getChavesConsulta() : []].filter(Boolean))];
+      for (const c of chaves) {
+        try {
+          const snapLeg = await getDocs(query(
+            collection(db, "auditoria_lojas"),
+            where("chaveLicenca", "==", c),
+            limit(400)
+          ));
+          (snapLeg.docs || []).forEach((d) => {
+            if (soPeriodo({ id: d.id, ...d.data() })) refs.push(d.ref);
+          });
+        } catch (e) {
+          console.warn("[AuditModule] Falha ao listar auditoria legado:", e);
+        }
+      }
+      return refs;
+    },
+    async excluirLogNuvem(logId) {
+      const chave = this.getChaveLicencaAtual();
+      const id = String(logId || "").trim();
+      if (!id || !chave || chave === "LOCAL") return { ok: true, nuvem: 0 };
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        return { ok: true, nuvem: 0 };
+      }
+      try {
+        await garantirSessaoLoja(chave, { deviceId: StorageService.getDeviceId() });
+      } catch (e) {
+      }
+      const refs = [];
+      refs.push(doc(db, "backups_lojas", chave, "auditoria", id));
       try {
         const snapLeg = await getDocs(query(
           collection(db, "auditoria_lojas"),
           where("chaveLicenca", "==", chave),
-          limit(400)
+          where("id", "==", id),
+          limit(20)
         ));
-        for (const d of snapLeg.docs) {
-          if (soPeriodo({ id: d.id, ...d.data() })) {
-            try {
-              await deleteDoc(d.ref);
-              apagadosNuvem++;
-            } catch (err) {
-            }
-          }
-        }
+        (snapLeg.docs || []).forEach((d) => refs.push(d.ref));
       } catch (e) {
       }
+      const res = await this.apagarRefsEmLote(refs);
+      return {
+        ok: res.falhas === 0,
+        nuvem: res.apagados,
+        falhas: res.falhas,
+        erro: res.ultimoErro
+      };
+    },
+    async excluirLogsPorPeriodo(dias) {
+      const chave = this.getChaveLicencaAtual();
+      const soPeriodo = (log) => this.logEstaNoPeriodo(log, dias);
+      const offline = !chave || chave === "LOCAL" || typeof navigator !== "undefined" && !navigator.onLine;
+      if (offline) {
+        const local2 = this.aplicarExclusaoLocal(soPeriodo);
+        this.ultimoCursorSub = null;
+        this.temMaisNuvem = false;
+        return { local: local2.removidosLocal, nuvem: 0, falhas: 0, erro: "" };
+      }
+      let autenticou = false;
+      try {
+        autenticou = await garantirSessaoLoja(chave, { deviceId: StorageService.getDeviceId() });
+      } catch (e) {
+      }
+      if (!autenticou) {
+        return {
+          local: 0,
+          nuvem: 0,
+          falhas: 1,
+          erro: "Este terminal n\xE3o autenticou na nuvem; os logs n\xE3o foram apagados."
+        };
+      }
+      const refsSub = await this.coletarRefsSubcolecao(chave, soPeriodo, dias);
+      const refsLeg = await this.coletarRefsLegado(chave, soPeriodo);
+      const idsTela = (window.GerenciaModule && window.GerenciaModule.logsAuditoriaCache || []).filter(soPeriodo).map((l) => l && l.id).filter(Boolean);
+      idsTela.forEach((id) => refsSub.push(doc(db, "backups_lojas", chave, "auditoria", String(id))));
+      const vistos = /* @__PURE__ */ new Set();
+      const refs = [...refsSub, ...refsLeg].filter((ref) => {
+        const path = ref && ref.path;
+        if (!path || vistos.has(path)) return false;
+        vistos.add(path);
+        return true;
+      });
+      const resNuvem = await this.apagarRefsEmLote(refs);
+      if (resNuvem.falhas > 0 && resNuvem.apagados === 0) {
+        return {
+          local: 0,
+          nuvem: 0,
+          falhas: resNuvem.falhas,
+          erro: "A nuvem recusou a exclus\xE3o dos logs. Atualize o FlowPDV e tente de novo."
+        };
+      }
+      const local = this.aplicarExclusaoLocal(soPeriodo);
       this.ultimoCursorSub = null;
       this.temMaisNuvem = false;
-      return { local: removidosLocal, nuvem: apagadosNuvem };
+      this.ultimoErroNuvem = "";
+      if (this.totalNuvem) {
+        this.totalNuvem = Math.max(0, this.totalNuvem - (resNuvem.apagados || 0));
+      }
+      return {
+        local: local.removidosLocal,
+        nuvem: resNuvem.apagados,
+        falhas: resNuvem.falhas,
+        erro: resNuvem.ultimoErro
+      };
     }
   };
 
@@ -58675,7 +58855,11 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       }
       try {
         const logs = await AuditModule.buscarLogsAuditoria(100);
-        this.logsAuditoriaCache = logs;
+        if (logs && logs.length) {
+          this.logsAuditoriaCache = logs;
+        } else if (!this.logsAuditoriaCache || !this.logsAuditoriaCache.length) {
+          this.logsAuditoriaCache = logs || logsLocais || [];
+        }
         this.preencherSelectOperadoresAuditoria();
         this.renderAuditoriaFiltrada();
       } catch (err) {
@@ -58886,18 +59070,22 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
     async confirmarExclusaoLogsPeriodo(dias) {
       const modal = document.getElementById("modal-confirmacao-custom");
       if (modal) modal.style.display = "none";
-      const btn = document.getElementById("gerencia-auditoria-excluir-periodo");
       if (window.App) window.App.showToast("\u{1F5D1}\uFE0F Excluindo logs do per\xEDodo...", "info");
       try {
         const res = await AuditModule.excluirLogsPorPeriodo(dias);
-        const total = (res.local || 0) + (res.nuvem || 0);
-        this.logsAuditoriaCache = [];
         this.auditoriaExibidos = 100;
-        await this.renderAuditoriaAjustes();
-        if (btn) btn.value = "";
+        this.preencherSelectOperadoresAuditoria();
+        this.renderAuditoriaFiltrada();
         const sel = document.getElementById("gerencia-auditoria-excluir-periodo");
         if (sel) sel.value = "";
-        if (window.App) window.App.showToast(`\u{1F5D1}\uFE0F ${total} registro(s) exclu\xEDdo(s).`, "success");
+        if (res.falhas && !res.nuvem && !res.local) {
+          if (window.App) window.App.showToast(res.erro || "N\xE3o foi poss\xEDvel excluir os logs agora.", "error");
+          await this.renderAuditoriaAjustes();
+          return;
+        }
+        const total = Math.max(res.nuvem || 0, res.local || 0);
+        const extra = res.falhas ? ` (${res.falhas} n\xE3o sa\xEDram da nuvem)` : "";
+        if (window.App) window.App.showToast(`\u{1F5D1}\uFE0F ${total} registro(s) exclu\xEDdo(s).${extra}`, res.falhas ? "warning" : "success");
       } catch (e) {
         console.warn("[GerenciaModule] Exclus\xE3o por per\xEDodo falhou:", e);
         if (window.App) window.App.showToast("N\xE3o foi poss\xEDvel excluir os logs agora.", "error");
@@ -59117,18 +59305,29 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       }
       if (modal) modal.style.display = "flex";
     },
-    confirmarExclusaoLogExecutar() {
-      if (this.logExcluindoId) {
-        if (window.AuditModule && typeof window.AuditModule.removerLogLocal === "function") {
-          window.AuditModule.removerLogLocal(this.logExcluindoId);
-        }
-        this.logsAuditoriaCache = (this.logsAuditoriaCache || []).filter((l) => l.id !== this.logExcluindoId);
-        this.renderAuditoriaAjustes();
-        window.App.showToast("\u{1F5D1}\uFE0F Registro de auditoria removido.", "info");
-        this.logExcluindoId = null;
-      }
+    async confirmarExclusaoLogExecutar() {
+      const logId = this.logExcluindoId;
       const modal = document.getElementById("modal-confirmacao-custom");
       if (modal) modal.style.display = "none";
+      if (!logId) return;
+      if (window.AuditModule && typeof window.AuditModule.removerLogLocal === "function") {
+        window.AuditModule.removerLogLocal(logId);
+      }
+      this.logsAuditoriaCache = (this.logsAuditoriaCache || []).filter((l) => l.id !== logId);
+      this.renderAuditoriaFiltrada();
+      this.logExcluindoId = null;
+      if (window.AuditModule && typeof window.AuditModule.excluirLogNuvem === "function") {
+        try {
+          const res = await window.AuditModule.excluirLogNuvem(logId);
+          if (res && res.falhas) {
+            if (window.App) window.App.showToast(res.erro || "O log saiu desta tela, mas a nuvem recusou apagar.", "warning");
+            return;
+          }
+        } catch (e) {
+          console.warn("[GerenciaModule] Falha ao excluir log na nuvem:", e);
+        }
+      }
+      if (window.App) window.App.showToast("\u{1F5D1}\uFE0F Registro de auditoria removido.", "info");
     },
     // Modal de Ajuste Manual de Estoque (Quebra, Perda, Avaria, Inventário)
     abrirModalAjusteEstoque(produtoId = null) {
@@ -64457,8 +64656,6 @@ firebase/app/dist/esm/index.esm.js:
 @firebase/firestore/dist/index.esm2017.js:
 @firebase/firestore/dist/index.esm2017.js:
 @firebase/firestore/dist/index.esm2017.js:
-@firebase/firestore/dist/index.esm2017.js:
-@firebase/firestore/dist/index.esm2017.js:
 @firebase/auth/dist/esm2017/index-35c79a8a.js:
 @firebase/auth/dist/esm2017/index-35c79a8a.js:
 @firebase/auth/dist/esm2017/index-35c79a8a.js:
@@ -64509,7 +64706,6 @@ firebase/app/dist/esm/index.esm.js:
    *)
 
 @firebase/util/dist/index.esm2017.js:
-@firebase/firestore/dist/index.esm2017.js:
 @firebase/auth/dist/esm2017/index-35c79a8a.js:
   (**
    * @license
@@ -65440,6 +65636,40 @@ firebase/app/dist/esm/index.esm.js:
   (**
    * @license
    * Copyright 2020 Google LLC
+   *
+   * Licensed under the Apache License, Version 2.0 (the "License");
+   * you may not use this file except in compliance with the License.
+   * You may obtain a copy of the License at
+   *
+   *   http://www.apache.org/licenses/LICENSE-2.0
+   *
+   * Unless required by applicable law or agreed to in writing, software
+   * distributed under the License is distributed on an "AS IS" BASIS,
+   * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   * See the License for the specific language governing permissions and
+   * limitations under the License.
+   *)
+
+@firebase/firestore/dist/index.esm2017.js:
+  (**
+   * @license
+   * Copyright 2020 Google LLC
+   *
+   * Licensed under the Apache License, Version 2.0 (the "License");
+   * you may not use this file except in compliance with the License.
+   * You may obtain a copy of the License at
+   *
+   *   http://www.apache.org/licenses/LICENSE-2.0
+   *
+   * Unless required by applicable law or agreed to in writing, software
+   * distributed under the License is distributed on an "AS IS" BASIS,
+   * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   * See the License for the specific language governing permissions and
+   * limitations under the License.
+   *)
+  (**
+   * @license
+   * Copyright 2021 Google LLC
    *
    * Licensed under the Apache License, Version 2.0 (the "License");
    * you may not use this file except in compliance with the License.

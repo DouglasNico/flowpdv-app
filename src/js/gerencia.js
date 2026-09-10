@@ -941,7 +941,11 @@ export const GerenciaModule = {
     // 2. BUSCA ATUALIZAÇÃO NA NUVEM EM BACKGROUND COM TIMEOUT DE 3.5s
     try {
       const logs = await AuditModule.buscarLogsAuditoria(100);
-      this.logsAuditoriaCache = logs;
+      if (logs && logs.length) {
+        this.logsAuditoriaCache = logs;
+      } else if (!this.logsAuditoriaCache || !this.logsAuditoriaCache.length) {
+        this.logsAuditoriaCache = logs || logsLocais || [];
+      }
       this.preencherSelectOperadoresAuditoria();
       this.renderAuditoriaFiltrada();
     } catch (err) {
@@ -1176,18 +1180,24 @@ export const GerenciaModule = {
     const modal = document.getElementById('modal-confirmacao-custom');
     if (modal) modal.style.display = 'none';
 
-    const btn = document.getElementById('gerencia-auditoria-excluir-periodo');
     if (window.App) window.App.showToast('🗑️ Excluindo logs do período...', 'info');
     try {
       const res = await AuditModule.excluirLogsPorPeriodo(dias);
-      const total = (res.local || 0) + (res.nuvem || 0);
-      this.logsAuditoriaCache = [];
       this.auditoriaExibidos = 100;
-      await this.renderAuditoriaAjustes();
-      if (btn) btn.value = '';
+      this.preencherSelectOperadoresAuditoria();
+      this.renderAuditoriaFiltrada();
       const sel = document.getElementById('gerencia-auditoria-excluir-periodo');
       if (sel) sel.value = '';
-      if (window.App) window.App.showToast(`🗑️ ${total} registro(s) excluído(s).`, 'success');
+
+      if (res.falhas && !res.nuvem && !res.local) {
+        if (window.App) window.App.showToast(res.erro || 'Não foi possível excluir os logs agora.', 'error');
+        await this.renderAuditoriaAjustes();
+        return;
+      }
+
+      const total = Math.max(res.nuvem || 0, res.local || 0);
+      const extra = res.falhas ? ` (${res.falhas} não saíram da nuvem)` : '';
+      if (window.App) window.App.showToast(`🗑️ ${total} registro(s) excluído(s).${extra}`, res.falhas ? 'warning' : 'success');
     } catch (e) {
       console.warn('[GerenciaModule] Exclusão por período falhou:', e);
       if (window.App) window.App.showToast('Não foi possível excluir os logs agora.', 'error');
@@ -1443,18 +1453,31 @@ export const GerenciaModule = {
     if (modal) modal.style.display = 'flex';
   },
 
-  confirmarExclusaoLogExecutar() {
-    if (this.logExcluindoId) {
-      if (window.AuditModule && typeof window.AuditModule.removerLogLocal === 'function') {
-        window.AuditModule.removerLogLocal(this.logExcluindoId);
-      }
-      this.logsAuditoriaCache = (this.logsAuditoriaCache || []).filter(l => l.id !== this.logExcluindoId);
-      this.renderAuditoriaAjustes();
-      window.App.showToast('🗑️ Registro de auditoria removido.', 'info');
-      this.logExcluindoId = null;
-    }
+  async confirmarExclusaoLogExecutar() {
+    const logId = this.logExcluindoId;
     const modal = document.getElementById('modal-confirmacao-custom');
     if (modal) modal.style.display = 'none';
+    if (!logId) return;
+
+    if (window.AuditModule && typeof window.AuditModule.removerLogLocal === 'function') {
+      window.AuditModule.removerLogLocal(logId);
+    }
+    this.logsAuditoriaCache = (this.logsAuditoriaCache || []).filter(l => l.id !== logId);
+    this.renderAuditoriaFiltrada();
+    this.logExcluindoId = null;
+
+    if (window.AuditModule && typeof window.AuditModule.excluirLogNuvem === 'function') {
+      try {
+        const res = await window.AuditModule.excluirLogNuvem(logId);
+        if (res && res.falhas) {
+          if (window.App) window.App.showToast(res.erro || 'O log saiu desta tela, mas a nuvem recusou apagar.', 'warning');
+          return;
+        }
+      } catch (e) {
+        console.warn('[GerenciaModule] Falha ao excluir log na nuvem:', e);
+      }
+    }
+    if (window.App) window.App.showToast('🗑️ Registro de auditoria removido.', 'info');
   },
 
   // Modal de Ajuste Manual de Estoque (Quebra, Perda, Avaria, Inventário)

@@ -5,7 +5,7 @@
  */
 
 import { StorageService } from './storage.js';
-import { db, doc, collection, addDoc, setDoc, getDocs, query, where, orderBy, limit, startAfter, getCountFromServer, deleteDoc, garantirSessaoLoja } from './firebase-config.js';
+import { db, doc, collection, addDoc, setDoc, getDocs, query, where, orderBy, limit, startAfter, getCountFromServer, deleteDoc, writeBatch, garantirSessaoLoja } from './firebase-config.js';
 
 export const AuditModule = {
   ultimoErroNuvem: '',
@@ -454,43 +454,90 @@ export const AuditModule = {
       return todos;
     } catch (err) {
       console.warn('[AuditModule] Erro ao buscar logs na nuvem, retornando locais:', err);
-      this.ultimoErroNuvem = 'Não foi possível ler os logs da nuvem neste computador.';
+      const timeout = String(err && err.message || '').includes('Timeout');
+      this.ultimoErroNuvem = timeout
+        ? ''
+        : 'Não foi possível ler os logs da nuvem neste computador.';
       this.temMaisNuvem = false;
-      this.totalNuvem = logsLocais.length;
+      if (!this.totalNuvem) this.totalNuvem = logsLocais.length;
       return logsLocais.slice(0, maxLogs);
     }
   },
 
+  dataDoLogMs(log) {
+    if (!log) return 0;
+    const raw = log.criadoEm || log.dataHoraFormatada || 0;
+    if (!raw) return 0;
+    if (typeof raw === 'object') {
+      if (typeof raw.toDate === 'function') {
+        const d = raw.toDate();
+        return d instanceof Date ? d.getTime() : 0;
+      }
+      if (typeof raw.seconds === 'number') return raw.seconds * 1000;
+    }
+    const s = String(raw).trim();
+    const iso = Date.parse(s);
+    if (Number.isFinite(iso) && !/^\d{1,2}\/\d{1,2}\/\d{4}/.test(s)) return iso;
+    const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[,\s]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+    if (m) {
+      return new Date(+m[3], +m[2] - 1, +m[1], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0)).getTime();
+    }
+    return Number.isFinite(iso) ? iso : 0;
+  },
+
   logEstaNoPeriodo(log, dias) {
     if (!dias) return true;
-    const ms = new Date(log && (log.criadoEm || log.dataHoraFormatada) || 0).getTime();
+    const ms = this.dataDoLogMs(log);
     if (!Number.isFinite(ms) || ms <= 0) return false;
     const corte = Date.now() - (dias * 24 * 60 * 60 * 1000);
     return ms >= corte;
   },
 
-  async excluirLogsPorPeriodo(dias) {
-    const chave = this.getChaveLicencaAtual();
-    const soPeriodo = (log) => this.logEstaNoPeriodo(log, dias);
-
+  aplicarExclusaoLocal(soPeriodo) {
     const locaisAntes = this.getLocalLogs();
-    const locaisNovos = locaisAntes.filter(l => !soPeriodo(l));
+    const locaisNovos = locaisAntes.filter((l) => !soPeriodo(l));
     const removidosLocal = locaisAntes.length - locaisNovos.length;
     try {
       localStorage.setItem(this.getStorageKey(), JSON.stringify(locaisNovos));
     } catch (e) {}
-    this.salvarPendentes(this.getPendentes().filter(l => !soPeriodo(l)));
-
-    let apagadosNuvem = 0;
-    if (!chave || chave === 'LOCAL' || (typeof navigator !== 'undefined' && !navigator.onLine)) {
-      return { local: removidosLocal, nuvem: 0 };
+    this.salvarPendentes(this.getPendentes().filter((l) => !soPeriodo(l)));
+    if (window.GerenciaModule && Array.isArray(window.GerenciaModule.logsAuditoriaCache)) {
+      window.GerenciaModule.logsAuditoriaCache = window.GerenciaModule.logsAuditoriaCache.filter((l) => !soPeriodo(l));
     }
+    return { locaisNovos, removidosLocal };
+  },
 
-    try {
-      await garantirSessaoLoja(chave, { deviceId: StorageService.getDeviceId() });
-    } catch (e) {}
+  async apagarRefsEmLote(refs) {
+    const lista = (refs || []).filter(Boolean);
+    let apagados = 0;
+    let falhas = 0;
+    let ultimoErro = '';
+    for (let i = 0; i < lista.length; i += 400) {
+      const fatia = lista.slice(i, i + 400);
+      try {
+        const batch = writeBatch(db);
+        fatia.forEach((ref) => batch.delete(ref));
+        await batch.commit();
+        apagados += fatia.length;
+      } catch (err) {
+        ultimoErro = (err && (err.code || err.message)) || String(err);
+        for (const ref of fatia) {
+          try {
+            await deleteDoc(ref);
+            apagados++;
+          } catch (e2) {
+            falhas++;
+            ultimoErro = (e2 && (e2.code || e2.message)) || ultimoErro;
+          }
+        }
+      }
+    }
+    return { apagados, falhas, ultimoErro };
+  },
 
+  async coletarRefsSubcolecao(chave, soPeriodo, dias) {
     const col = collection(db, 'backups_lojas', chave, 'auditoria');
+    const refs = [];
     let cursor = null;
     let guard = 0;
     const corte = dias ? (Date.now() - dias * 24 * 60 * 60 * 1000) : 0;
@@ -504,43 +551,132 @@ export const AuditModule = {
         snap = await getDocs(query(col, limit(200)));
       }
       if (!snap || snap.empty) break;
-
       const docs = snap.docs || [];
-      for (const d of docs) {
-        if (soPeriodo({ id: d.id, ...d.data() })) {
-          try {
-            await deleteDoc(d.ref);
-            apagadosNuvem++;
-          } catch (err) {}
-        }
-      }
-
+      docs.forEach((d) => {
+        if (soPeriodo({ id: d.id, ...d.data() })) refs.push(d.ref);
+      });
       const last = docs[docs.length - 1];
       if (!last) break;
-      const lastMs = new Date((last.data() && last.data().criadoEm) || 0).getTime();
       cursor = last;
-      if (dias && Number.isFinite(lastMs) && lastMs < corte) break;
+      const lastMs = this.dataDoLogMs(last.data() || {});
+      if (dias && Number.isFinite(lastMs) && lastMs > 0 && lastMs < corte) break;
       if (docs.length < 100) break;
     }
+    return refs;
+  },
 
+  async coletarRefsLegado(chave, soPeriodo) {
+    const refs = [];
+    const chaves = [...new Set([chave, ...(this.getChavesConsulta ? this.getChavesConsulta() : [])].filter(Boolean))];
+    for (const c of chaves) {
+      try {
+        const snapLeg = await getDocs(query(
+          collection(db, 'auditoria_lojas'),
+          where('chaveLicenca', '==', c),
+          limit(400)
+        ));
+        (snapLeg.docs || []).forEach((d) => {
+          if (soPeriodo({ id: d.id, ...d.data() })) refs.push(d.ref);
+        });
+      } catch (e) {
+        console.warn('[AuditModule] Falha ao listar auditoria legado:', e);
+      }
+    }
+    return refs;
+  },
+
+  async excluirLogNuvem(logId) {
+    const chave = this.getChaveLicencaAtual();
+    const id = String(logId || '').trim();
+    if (!id || !chave || chave === 'LOCAL') return { ok: true, nuvem: 0 };
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      return { ok: true, nuvem: 0 };
+    }
+    try {
+      await garantirSessaoLoja(chave, { deviceId: StorageService.getDeviceId() });
+    } catch (e) {}
+    const refs = [];
+    refs.push(doc(db, 'backups_lojas', chave, 'auditoria', id));
     try {
       const snapLeg = await getDocs(query(
         collection(db, 'auditoria_lojas'),
         where('chaveLicenca', '==', chave),
-        limit(400)
+        where('id', '==', id),
+        limit(20)
       ));
-      for (const d of snapLeg.docs) {
-        if (soPeriodo({ id: d.id, ...d.data() })) {
-          try {
-            await deleteDoc(d.ref);
-            apagadosNuvem++;
-          } catch (err) {}
-        }
-      }
+      (snapLeg.docs || []).forEach((d) => refs.push(d.ref));
     } catch (e) {}
+    const res = await this.apagarRefsEmLote(refs);
+    return {
+      ok: res.falhas === 0,
+      nuvem: res.apagados,
+      falhas: res.falhas,
+      erro: res.ultimoErro
+    };
+  },
 
+  async excluirLogsPorPeriodo(dias) {
+    const chave = this.getChaveLicencaAtual();
+    const soPeriodo = (log) => this.logEstaNoPeriodo(log, dias);
+    const offline = !chave || chave === 'LOCAL' || (typeof navigator !== 'undefined' && !navigator.onLine);
+
+    if (offline) {
+      const local = this.aplicarExclusaoLocal(soPeriodo);
+      this.ultimoCursorSub = null;
+      this.temMaisNuvem = false;
+      return { local: local.removidosLocal, nuvem: 0, falhas: 0, erro: '' };
+    }
+
+    let autenticou = false;
+    try {
+      autenticou = await garantirSessaoLoja(chave, { deviceId: StorageService.getDeviceId() });
+    } catch (e) {}
+    if (!autenticou) {
+      return {
+        local: 0,
+        nuvem: 0,
+        falhas: 1,
+        erro: 'Este terminal não autenticou na nuvem; os logs não foram apagados.'
+      };
+    }
+
+    const refsSub = await this.coletarRefsSubcolecao(chave, soPeriodo, dias);
+    const refsLeg = await this.coletarRefsLegado(chave, soPeriodo);
+    const idsTela = ((window.GerenciaModule && window.GerenciaModule.logsAuditoriaCache) || [])
+      .filter(soPeriodo)
+      .map((l) => l && l.id)
+      .filter(Boolean);
+    idsTela.forEach((id) => refsSub.push(doc(db, 'backups_lojas', chave, 'auditoria', String(id))));
+    const vistos = new Set();
+    const refs = [...refsSub, ...refsLeg].filter((ref) => {
+      const path = ref && ref.path;
+      if (!path || vistos.has(path)) return false;
+      vistos.add(path);
+      return true;
+    });
+    const resNuvem = await this.apagarRefsEmLote(refs);
+
+    if (resNuvem.falhas > 0 && resNuvem.apagados === 0) {
+      return {
+        local: 0,
+        nuvem: 0,
+        falhas: resNuvem.falhas,
+        erro: 'A nuvem recusou a exclusão dos logs. Atualize o FlowPDV e tente de novo.'
+      };
+    }
+
+    const local = this.aplicarExclusaoLocal(soPeriodo);
     this.ultimoCursorSub = null;
     this.temMaisNuvem = false;
-    return { local: removidosLocal, nuvem: apagadosNuvem };
+    this.ultimoErroNuvem = '';
+    if (this.totalNuvem) {
+      this.totalNuvem = Math.max(0, this.totalNuvem - (resNuvem.apagados || 0));
+    }
+    return {
+      local: local.removidosLocal,
+      nuvem: resNuvem.apagados,
+      falhas: resNuvem.falhas,
+      erro: resNuvem.ultimoErro
+    };
   }
 };
