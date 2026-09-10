@@ -5,11 +5,13 @@
  */
 
 import { StorageService } from './storage.js';
+import { logCaiuNaExclusao } from './merge-core.js';
 import { db, doc, collection, addDoc, setDoc, getDoc, getDocs, query, where, orderBy, limit, startAfter, getCountFromServer, deleteDoc, writeBatch, garantirSessaoLoja } from './firebase-config.js';
 
 export const AuditModule = {
   ultimoErroNuvem: '',
   consultaNuvemOk: false,
+  exclusaoNuvemConfirmada: false,
   ultimoCursorSub: null,
   temMaisNuvem: false,
   totalNuvem: 0,
@@ -53,8 +55,13 @@ export const AuditModule = {
       const key = this.getStorageKey();
       const logs = JSON.parse(localStorage.getItem(key) || '[]');
       const chaveAtual = this.getChaveLicencaAtual();
-      // Garantia estrita de isolamento por licença:
-      return (logs || []).filter(l => !l.chaveLicenca || String(l.chaveLicenca).trim().toUpperCase() === chaveAtual);
+      const exclusao = this.lerExclusaoLocal();
+      return (logs || []).filter(l => {
+        if (!l) return false;
+        if (l.chaveLicenca && String(l.chaveLicenca).trim().toUpperCase() !== chaveAtual) return false;
+        if (this.logFoiExcluidoNaNuvem(l, exclusao)) return false;
+        return true;
+      });
     } catch(e) {
       return [];
     }
@@ -190,19 +197,23 @@ export const AuditModule = {
         return false;
       }
 
+      let hostname = '';
       if (window.electronAPI && typeof window.electronAPI.getSystemInfo === 'function') {
         try {
           const info = await window.electronAPI.getSystemInfo();
-          if (info && info.hostname) {
-            pendentes.forEach((item) => { item.hostname = info.hostname; });
-          }
+          if (info && info.hostname) hostname = info.hostname;
         } catch (e) {}
       }
 
       const exclusao = await this.lerExclusaoNuvem(chave);
       this.purgarPendentesExcluidos(exclusao);
+      if (!this.exclusaoNuvemConfirmada && !exclusao) {
+        return false;
+      }
+      const fila = this.getPendentes();
       const restantes = [];
-      for (const item of pendentes) {
+      for (const item of fila) {
+        if (hostname) item.hostname = hostname;
         const limpo = this.limparParaFirestore(item);
         if (!limpo || !limpo.id) continue;
         if (this.logFoiExcluidoNaNuvem(limpo, exclusao)) continue;
@@ -361,15 +372,42 @@ export const AuditModule = {
     return String(id || '').startsWith('__');
   },
 
-  async lerExclusaoNuvem(chave) {
-    const c = String(chave || this.getChaveLicencaAtual() || '').trim();
-    if (!c || c === 'LOCAL') return null;
+  getExclusaoLocalKey() {
+    return `flowpdv_logs_exclusao_${this.getChaveLicencaAtual()}`;
+  },
+
+  lerExclusaoLocal() {
     try {
-      const snap = await getDoc(doc(db, 'backups_lojas', c, 'auditoria', this.DOC_EXCLUSAO));
-      if (!snap || !snap.exists()) return null;
-      return { id: snap.id, ...snap.data() };
+      const raw = localStorage.getItem(this.getExclusaoLocalKey());
+      if (!raw) return null;
+      const dados = JSON.parse(raw);
+      return dados && typeof dados === 'object' ? dados : null;
     } catch (e) {
       return null;
+    }
+  },
+
+  salvarExclusaoLocal(exclusao) {
+    if (!exclusao) return;
+    try {
+      localStorage.setItem(this.getExclusaoLocalKey(), JSON.stringify(exclusao));
+    } catch (e) {}
+  },
+
+  async lerExclusaoNuvem(chave) {
+    const c = String(chave || this.getChaveLicencaAtual() || '').trim();
+    this.exclusaoNuvemConfirmada = false;
+    if (!c || c === 'LOCAL') return this.lerExclusaoLocal();
+    try {
+      const snap = await getDoc(doc(db, 'backups_lojas', c, 'auditoria', this.DOC_EXCLUSAO));
+      this.exclusaoNuvemConfirmada = true;
+      if (!snap || !snap.exists()) return this.lerExclusaoLocal();
+      const dados = { id: snap.id, ...snap.data() };
+      this.salvarExclusaoLocal(dados);
+      return dados;
+    } catch (e) {
+      this.exclusaoNuvemConfirmada = false;
+      return this.lerExclusaoLocal();
     }
   },
 
@@ -392,7 +430,9 @@ export const AuditModule = {
     };
     try {
       await setDoc(doc(db, 'backups_lojas', c, 'auditoria', this.DOC_EXCLUSAO), payload);
+      this.salvarExclusaoLocal(payload);
     } catch (e) {
+      this.salvarExclusaoLocal(payload);
       console.warn('[AuditModule] Não gravou o recado de exclusão para os outros caixas:', e);
     }
   },
@@ -400,24 +440,22 @@ export const AuditModule = {
   logFoiExcluidoNaNuvem(log, exclusao) {
     if (!log || !exclusao) return false;
     if (this.ehDocMeta(log.id)) return true;
-    const ids = exclusao.ids || [];
-    if (log.id && ids.includes(log.id)) return true;
-    const emMs = Date.parse(exclusao.em || '') || 0;
-    const ms = this.dataDoLogMs(log);
-    if (exclusao.apagarTudo) {
-      if (!emMs) return true;
-      if (!Number.isFinite(ms) || ms <= 0) return true;
-      return ms <= emMs;
-    }
-    const corte = Number(exclusao.corteMs) || 0;
-    if (!Number.isFinite(ms) || ms <= 0) return false;
-    return corte > 0 && emMs > 0 && ms >= corte && ms <= emMs;
+    return logCaiuNaExclusao(log, exclusao, this.dataDoLogMs(log));
   },
 
   purgarPendentesExcluidos(exclusao) {
     if (!exclusao) return;
     const restantes = this.getPendentes().filter((item) => !this.logFoiExcluidoNaNuvem(item, exclusao));
     this.salvarPendentes(restantes);
+  },
+
+  reapagarLogsExcluidosNaNuvem(chave, logs, exclusao) {
+    if (!chave || !exclusao || !Array.isArray(logs) || !logs.length) return;
+    const ids = [...new Set(logs.filter((l) => this.logFoiExcluidoNaNuvem(l, exclusao)).map((l) => l && l.id).filter(Boolean))];
+    if (!ids.length) return;
+    ids.slice(0, 80).forEach((id) => {
+      deleteDoc(doc(db, 'backups_lojas', chave, 'auditoria', String(id))).catch(() => {});
+    });
   },
 
   reconciliarLocaisComNuvem(logsNuvem, logsLocais, exclusao) {
@@ -534,11 +572,12 @@ export const AuditModule = {
       }
 
       this.consultaNuvemOk = true;
-      const exclusao = cursor ? null : await this.lerExclusaoNuvem(chaveLicenca);
+      const exclusao = await this.lerExclusaoNuvem(chaveLicenca);
       if (exclusao) this.purgarPendentesExcluidos(exclusao);
       const subOk = Boolean(snapSub);
-      const logsNuvem = (subOk ? logsSub : [...logsSub, ...logsLegado])
-        .filter((l) => !this.logFoiExcluidoNaNuvem(l, exclusao));
+      const brutos = subOk ? logsSub : [...logsSub, ...logsLegado];
+      const logsNuvem = brutos.filter((l) => !this.logFoiExcluidoNaNuvem(l, exclusao));
+      this.reapagarLogsExcluidosNaNuvem(chaveLicenca, brutos, exclusao);
 
       if (!cursor) {
         this.contarLogsNuvem(chaveLicenca).then((n) => {
@@ -565,7 +604,8 @@ export const AuditModule = {
         : 'Não foi possível ler os logs da nuvem neste computador.';
       this.temMaisNuvem = false;
       if (!this.totalNuvem) this.totalNuvem = logsLocais.length;
-      return logsLocais.slice(0, maxLogs);
+      const exclusaoLocal = this.lerExclusaoLocal();
+      return logsLocais.filter((l) => !this.logFoiExcluidoNaNuvem(l, exclusaoLocal)).slice(0, maxLogs);
     }
   },
 
@@ -749,12 +789,20 @@ export const AuditModule = {
       };
     }
 
-    const refsSub = await this.coletarRefsSubcolecao(chave, soPeriodo, dias);
-    const refsLeg = await this.coletarRefsLegado(chave, soPeriodo);
     const idsTela = ((window.GerenciaModule && window.GerenciaModule.logsAuditoriaCache) || [])
       .filter(soPeriodo)
       .map((l) => l && l.id)
       .filter(Boolean);
+
+    await this.registrarExclusaoNuvem(chave, {
+      dias: dias || 0,
+      corteMs: dias ? (Date.now() - dias * 24 * 60 * 60 * 1000) : 0,
+      apagarTudo: !dias,
+      ids: idsTela
+    });
+
+    const refsSub = await this.coletarRefsSubcolecao(chave, soPeriodo, dias);
+    const refsLeg = await this.coletarRefsLegado(chave, soPeriodo);
     idsTela.forEach((id) => refsSub.push(doc(db, 'backups_lojas', chave, 'auditoria', String(id))));
     const vistos = new Set();
     const refs = [...refsSub, ...refsLeg].filter((ref) => {
@@ -765,22 +813,15 @@ export const AuditModule = {
     });
     const resNuvem = await this.apagarRefsEmLote(refs);
 
+    const local = this.aplicarExclusaoLocal(soPeriodo);
     if (resNuvem.falhas > 0 && resNuvem.apagados === 0) {
       return {
-        local: 0,
+        local: local.removidosLocal,
         nuvem: 0,
         falhas: resNuvem.falhas,
         erro: 'A nuvem recusou a exclusão dos logs. Atualize o FlowPDV e tente de novo.'
       };
     }
-
-    const local = this.aplicarExclusaoLocal(soPeriodo);
-    await this.registrarExclusaoNuvem(chave, {
-      dias: dias || 0,
-      corteMs: dias ? (Date.now() - dias * 24 * 60 * 60 * 1000) : 0,
-      apagarTudo: !dias,
-      ids: idsTela.concat(refsSub.map((r) => r && r.id).filter(Boolean))
-    });
     this.ultimoCursorSub = null;
     this.temMaisNuvem = false;
     this.ultimoErroNuvem = '';

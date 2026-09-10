@@ -57,6 +57,7 @@ const {
   consolidarProdutosComMovimentos,
   dividirEmLotes,
   carimbarAlterados,
+  logCaiuNaExclusao,
   StorageService
 } = core;
 
@@ -269,6 +270,21 @@ teste('nenhum operador nasce com PIN de fábrica', () => {
   assert.strictEqual(usuarios[0].cargo, 'gerente');
   assert.strictEqual(usuarios[0].pin, '7391');
   assert.ok(!usuarios.some(u => u.pin === '1234'), 'existe usuário com PIN 1234');
+});
+
+teste('exclusao total esconde log antigo e libera log novo', () => {
+  const em = '2026-09-10T12:00:00.000Z';
+  const exclusao = { apagarTudo: true, em, ids: [] };
+  const antigo = { id: 'LOG-1' };
+  const novo = { id: 'LOG-2' };
+  assert.strictEqual(logCaiuNaExclusao(antigo, exclusao, Date.parse('2026-09-09T12:00:00.000Z')), true);
+  assert.strictEqual(logCaiuNaExclusao(novo, exclusao, Date.parse('2026-09-10T13:00:00.000Z')), false);
+});
+
+teste('fila de pendentes nao ressuscita log ja apagado por id', () => {
+  const exclusao = { apagarTudo: false, em: '2026-09-10T12:00:00.000Z', ids: ['LOG-X'], corteMs: 0 };
+  assert.strictEqual(logCaiuNaExclusao({ id: 'LOG-X' }, exclusao, Date.parse('2026-09-10T11:00:00.000Z')), true);
+  assert.strictEqual(logCaiuNaExclusao({ id: 'LOG-Y' }, exclusao, Date.parse('2026-09-10T11:00:00.000Z')), false);
 });
 
 // ---------------------------------------------------------------------------

@@ -65,6 +65,7 @@ export const EstoqueModule = {
     }
     this.fecharMenuAcoesEstoque();
     this.atualizarBannerListaCompras();
+    this.atualizarChipsFiltrosAcoes();
     this.renderBarraCategorias();
     this.renderTabelaProdutos();
   },
@@ -178,6 +179,39 @@ export const EstoqueModule = {
       }
     }
     this.renderTabelaProdutos();
+    this.atualizarChipsFiltrosAcoes();
+  },
+
+  limparFiltroEstoqueBaixo() {
+    if (!this.filtroEstoqueBaixo) return;
+    this.toggleFiltroEstoqueBaixo();
+  },
+
+  limparFiltroListaCompras() {
+    if (!this.filtroListaCompras) return;
+    this.toggleFiltroListaCompras(false);
+  },
+
+  atualizarChipsFiltrosAcoes() {
+    const box = document.getElementById('estoque-chips-filtros-acoes');
+    if (!box) return;
+    let html = '';
+    if (this.filtroEstoqueBaixo) {
+      html += `
+        <div class="cat-filter-btn active estoque-chip-filtro alerta">
+          <span>⚠️ Estoque Baixo</span>
+          <button type="button" class="estoque-chip-x" title="Limpar filtro" onclick="EstoqueModule.limparFiltroEstoqueBaixo()">✕</button>
+        </div>`;
+    }
+    if (this.filtroListaCompras) {
+      html += `
+        <div class="cat-filter-btn active estoque-chip-filtro lista">
+          <span>📋 Lista Compras</span>
+          <button type="button" class="estoque-chip-x" title="Limpar filtro" onclick="EstoqueModule.limparFiltroListaCompras()">✕</button>
+        </div>`;
+    }
+    box.innerHTML = html;
+    box.style.display = html ? 'flex' : 'none';
   },
 
   toggleFiltroListaCompras(forcar = null) {
@@ -216,6 +250,7 @@ export const EstoqueModule = {
 
     this.renderTabelaProdutos();
     this.atualizarBannerListaCompras();
+    this.atualizarChipsFiltrosAcoes();
   },
 
   atualizarBannerListaCompras() {

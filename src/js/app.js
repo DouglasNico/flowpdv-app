@@ -173,6 +173,9 @@ export const App = {
     if (abaAnterior === 'estoque' && nomeAba !== 'estoque' && window.EstoqueModule && typeof window.EstoqueModule.resetarFiltrosEstoque === 'function') {
       window.EstoqueModule.resetarFiltrosEstoque();
     }
+    if (abaAnterior === 'gerencia' && nomeAba !== 'gerencia' && window.GerenciaModule && typeof window.GerenciaModule.resetarFiltrosGerencia === 'function') {
+      window.GerenciaModule.resetarFiltrosGerencia();
+    }
 
     // Refresh específico por tela
     if (nomeAba === 'pdv') {
@@ -183,8 +186,14 @@ export const App = {
         PdvModule.focarInputLeitor();
       }, 200);
     } else if (nomeAba === 'estoque') {
-      EstoqueModule.renderBarraCategorias();
-      EstoqueModule.renderTabelaProdutos();
+      const manterValidade = this._manterFiltroValidadeEstoque;
+      this._manterFiltroValidadeEstoque = null;
+      if (window.EstoqueModule && typeof window.EstoqueModule.resetarFiltrosEstoque === 'function') {
+        window.EstoqueModule.resetarFiltrosEstoque();
+      }
+      if (manterValidade && manterValidade !== 'todos' && typeof EstoqueModule.setFiltroValidade === 'function') {
+        EstoqueModule.setFiltroValidade(manterValidade);
+      }
     } else if (nomeAba === 'caixa') {
       CaixaModule.renderStatusTurno();
       CaixaModule.renderHistoricoVendasTurno();
@@ -194,6 +203,9 @@ export const App = {
     } else if (nomeAba === 'comandas') {
       ComandasModule.abrirAba();
     } else if (nomeAba === 'gerencia') {
+      if (abaAnterior !== 'gerencia' && window.GerenciaModule && typeof window.GerenciaModule.resetarFiltrosGerencia === 'function') {
+        window.GerenciaModule.resetarFiltrosGerencia();
+      }
       this.verificarAcessoGerencia();
     } else if (nomeAba === 'config') {
       this.verificarAcessoConfiguracoes();
@@ -1915,11 +1927,9 @@ export const App = {
   },
 
   irParaEstoqueComFiltro(filtro = 'todos') {
+    this._manterFiltroValidadeEstoque = filtro || 'todos';
     this.fecharModalAlertaGerencial();
     this.trocarAba('estoque');
-    if (window.EstoqueModule && typeof window.EstoqueModule.setFiltroValidade === 'function') {
-      setTimeout(() => window.EstoqueModule.setFiltroValidade(filtro), 150);
-    }
   },
 
   irParaContasPagar(filtro = 'todos') {

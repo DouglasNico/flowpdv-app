@@ -426,6 +426,7 @@
             <div id="estoque-category-bar" style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap; overflow: visible; position: relative;">
               <!-- Categorias Dinâmicas Injetadas por EstoqueModule.renderBarraCategorias() -->
             </div>
+            <div id="estoque-chips-filtros-acoes" class="estoque-chips-filtros" style="display: none;"></div>
           </div>
 
           <!-- Filtros Rápidos de Validade e Alertas -->
@@ -940,7 +941,7 @@
                 <span class="filtro-data-texto" id="gerencia-historico-filtro-data-label">Filtrar Caixa</span>
                 <input type="date" id="gerencia-historico-filtro-data" class="filtro-data-nativo" onchange="GerenciaModule.filtrarHistoricoData(this.value)" onclick="GerenciaModule.abrirCalendarioFiltro('gerencia-historico-filtro-data')" title="Filtrar turnos por data">
               </label>
-              <span class="badge-stock" id="gerencia-badge-historico-qtd" style="font-size: 11px; padding: 2px 8px; border-radius: 10px; background: #e0e7ff; color: #4338ca; border-color: #c7d2fe; font-weight: 800;">0 turnos</span>
+              <span class="badge-stock" id="gerencia-badge-historico-qtd" style="font-size: 11px; height: 32px; padding: 0 10px; border-radius: 16px; background: #e0e7ff; color: #4338ca; border-color: #c7d2fe; font-weight: 800;">0 turnos</span>
               <button type="button" class="btn-primary-action" style="padding: 0 14px; height: 32px; font-size: 12px; font-weight: 700; background: #059669; color: #ffffff;" onclick="CaixaModule.exportarTodosTurnosExcel()" title="Baixar histórico completo em Excel (.xlsx)">
                 📊 Exportar Todos (Excel)
               </button>

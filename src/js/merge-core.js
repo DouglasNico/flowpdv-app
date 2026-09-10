@@ -229,3 +229,25 @@ export function carimbarAlterados(listaNova, listaAnterior, agora = new Date().t
     return { ...item, atualizadoEm: agora };
   });
 }
+
+/**
+ * Recado de exclusão de logs: o outro caixa não pode reenviar o que já foi apagado.
+ * apagarTudo vale até o horário do recado; logs novos (depois de `em`) passam.
+ */
+export function logCaiuNaExclusao(log, exclusao, dataMs) {
+  if (!log || !exclusao) return false;
+  const id = log.id != null ? String(log.id) : '';
+  if (id.startsWith('__')) return true;
+  const ids = exclusao.ids || [];
+  if (id && ids.includes(id)) return true;
+  const emMs = Date.parse(exclusao.em || '') || 0;
+  const ms = Number(dataMs) || 0;
+  if (exclusao.apagarTudo) {
+    if (!emMs) return true;
+    if (!ms) return true;
+    return ms <= emMs;
+  }
+  const corte = Number(exclusao.corteMs) || 0;
+  if (!ms) return false;
+  return corte > 0 && emMs > 0 && ms >= corte && ms <= emMs;
+}

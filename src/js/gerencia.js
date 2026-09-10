@@ -55,6 +55,31 @@ export const GerenciaModule = {
     this.renderSubAbaAtual();
   },
 
+  resetarFiltrosGerencia() {
+    this.ordenacaoAbc = { coluna: 'faturamento', direcao: 'desc' };
+    this.filtroContasStatus = 'todos';
+    document.querySelectorAll('.gerencia-contas-filtro-btn').forEach(btn => {
+      btn.classList.toggle('active', (btn.dataset.status || '') === 'todos');
+    });
+    this.filtroAuditoria = 'todos';
+    this.filtroOperadorAuditoria = 'todos';
+    this.filtroDataAuditoria = '';
+    this.filtroDataHistorico = '';
+    const opSel = document.getElementById('gerencia-auditoria-operador-select');
+    if (opSel) opSel.value = 'todos';
+    const dataLog = document.getElementById('gerencia-auditoria-filtro-data');
+    if (dataLog) dataLog.value = '';
+    const dataCx = document.getElementById('gerencia-historico-filtro-data');
+    if (dataCx) dataCx.value = '';
+    if (typeof this.atualizarLabelFiltroData === 'function') {
+      this.atualizarLabelFiltroData('gerencia-auditoria-filtro-data', 'gerencia-auditoria-filtro-data-label', 'Filtrar Log');
+      this.atualizarLabelFiltroData('gerencia-historico-filtro-data', 'gerencia-historico-filtro-data-label', 'Filtrar Caixa');
+    }
+    document.querySelectorAll('.gerencia-audit-filtro-btn').forEach(btn => {
+      btn.classList.toggle('active', (btn.dataset.tipo || '') === 'todos');
+    });
+  },
+
   renderSubAbaAtual() {
     if (this.subAbaAtiva === 'indicadores') {
       this.renderIndicadoresCurvaABC();
@@ -1052,9 +1077,15 @@ export const GerenciaModule = {
     const logsIniciais = (this.logsAuditoriaCache && this.logsAuditoriaCache.length > 0)
       ? this.logsAuditoriaCache
       : logsLocais;
+    const exclusaoLocal = AuditModule && typeof AuditModule.lerExclusaoLocal === 'function'
+      ? AuditModule.lerExclusaoLocal()
+      : null;
+    const logsVisiveis = exclusaoLocal && AuditModule.logFoiExcluidoNaNuvem
+      ? (logsIniciais || []).filter((l) => !AuditModule.logFoiExcluidoNaNuvem(l, exclusaoLocal))
+      : logsIniciais;
 
-    if (logsIniciais && logsIniciais.length > 0) {
-      this.logsAuditoriaCache = logsIniciais;
+    if (logsVisiveis && logsVisiveis.length > 0) {
+      this.logsAuditoriaCache = logsVisiveis;
       this.preencherSelectOperadoresAuditoria();
       this.renderAuditoriaFiltrada();
     } else {

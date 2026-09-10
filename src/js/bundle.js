@@ -23871,6 +23871,23 @@
       return { ...item, atualizadoEm: agora };
     });
   }
+  function logCaiuNaExclusao(log, exclusao, dataMs) {
+    if (!log || !exclusao) return false;
+    const id = log.id != null ? String(log.id) : "";
+    if (id.startsWith("__")) return true;
+    const ids = exclusao.ids || [];
+    if (id && ids.includes(id)) return true;
+    const emMs = Date.parse(exclusao.em || "") || 0;
+    const ms = Number(dataMs) || 0;
+    if (exclusao.apagarTudo) {
+      if (!emMs) return true;
+      if (!ms) return true;
+      return ms <= emMs;
+    }
+    const corte = Number(exclusao.corteMs) || 0;
+    if (!ms) return false;
+    return corte > 0 && emMs > 0 && ms >= corte && ms <= emMs;
+  }
 
   // src/js/storage.js
   var StorageService = {
@@ -24735,7 +24752,7 @@
       "adega_licenca_backup",
       "flowpdv_terminal_heartbeat_ms"
     ],
-    PREFIXOS_DA_LOJA: ["flowpdv_logs_auditoria_", "flowpdv_logs_nuvem_pendentes_", "flowpdv_logs_migrados_", "flowpdv_cache_", "flowpdv_master_"],
+    PREFIXOS_DA_LOJA: ["flowpdv_logs_auditoria_", "flowpdv_logs_nuvem_pendentes_", "flowpdv_logs_migrados_", "flowpdv_logs_exclusao_", "flowpdv_cache_", "flowpdv_master_"],
     // Limpeza de Isolamento Multi-Tenant ao Trocar de Empresa/Licença
     limparDadosLocaisParaNovaEmpresa(novaLic) {
       this.CHAVES_DA_LOJA.forEach((chave) => localStorage.removeItem(chave));
@@ -47637,6 +47654,7 @@ This typically indicates that your device does not have a healthy Internet conne
   var AuditModule = {
     ultimoErroNuvem: "",
     consultaNuvemOk: false,
+    exclusaoNuvemConfirmada: false,
     ultimoCursorSub: null,
     temMaisNuvem: false,
     totalNuvem: 0,
@@ -47676,7 +47694,13 @@ This typically indicates that your device does not have a healthy Internet conne
         const key = this.getStorageKey();
         const logs = JSON.parse(localStorage.getItem(key) || "[]");
         const chaveAtual = this.getChaveLicencaAtual();
-        return (logs || []).filter((l) => !l.chaveLicenca || String(l.chaveLicenca).trim().toUpperCase() === chaveAtual);
+        const exclusao = this.lerExclusaoLocal();
+        return (logs || []).filter((l) => {
+          if (!l) return false;
+          if (l.chaveLicenca && String(l.chaveLicenca).trim().toUpperCase() !== chaveAtual) return false;
+          if (this.logFoiExcluidoNaNuvem(l, exclusao)) return false;
+          return true;
+        });
       } catch (e) {
         return [];
       }
@@ -47800,21 +47824,23 @@ This typically indicates that your device does not have a healthy Internet conne
           this.ultimoErroNuvem = "Este terminal n\xE3o autenticou na nuvem; o log ficou s\xF3 neste computador.";
           return false;
         }
+        let hostname = "";
         if (window.electronAPI && typeof window.electronAPI.getSystemInfo === "function") {
           try {
             const info = await window.electronAPI.getSystemInfo();
-            if (info && info.hostname) {
-              pendentes.forEach((item) => {
-                item.hostname = info.hostname;
-              });
-            }
+            if (info && info.hostname) hostname = info.hostname;
           } catch (e) {
           }
         }
         const exclusao = await this.lerExclusaoNuvem(chave);
         this.purgarPendentesExcluidos(exclusao);
+        if (!this.exclusaoNuvemConfirmada && !exclusao) {
+          return false;
+        }
+        const fila = this.getPendentes();
         const restantes = [];
-        for (const item of pendentes) {
+        for (const item of fila) {
+          if (hostname) item.hostname = hostname;
           const limpo = this.limparParaFirestore(item);
           if (!limpo || !limpo.id) continue;
           if (this.logFoiExcluidoNaNuvem(limpo, exclusao)) continue;
@@ -47959,15 +47985,40 @@ This typically indicates that your device does not have a healthy Internet conne
     ehDocMeta(id) {
       return String(id || "").startsWith("__");
     },
-    async lerExclusaoNuvem(chave) {
-      const c = String(chave || this.getChaveLicencaAtual() || "").trim();
-      if (!c || c === "LOCAL") return null;
+    getExclusaoLocalKey() {
+      return `flowpdv_logs_exclusao_${this.getChaveLicencaAtual()}`;
+    },
+    lerExclusaoLocal() {
       try {
-        const snap = await getDoc(doc(db, "backups_lojas", c, "auditoria", this.DOC_EXCLUSAO));
-        if (!snap || !snap.exists()) return null;
-        return { id: snap.id, ...snap.data() };
+        const raw = localStorage.getItem(this.getExclusaoLocalKey());
+        if (!raw) return null;
+        const dados = JSON.parse(raw);
+        return dados && typeof dados === "object" ? dados : null;
       } catch (e) {
         return null;
+      }
+    },
+    salvarExclusaoLocal(exclusao) {
+      if (!exclusao) return;
+      try {
+        localStorage.setItem(this.getExclusaoLocalKey(), JSON.stringify(exclusao));
+      } catch (e) {
+      }
+    },
+    async lerExclusaoNuvem(chave) {
+      const c = String(chave || this.getChaveLicencaAtual() || "").trim();
+      this.exclusaoNuvemConfirmada = false;
+      if (!c || c === "LOCAL") return this.lerExclusaoLocal();
+      try {
+        const snap = await getDoc(doc(db, "backups_lojas", c, "auditoria", this.DOC_EXCLUSAO));
+        this.exclusaoNuvemConfirmada = true;
+        if (!snap || !snap.exists()) return this.lerExclusaoLocal();
+        const dados = { id: snap.id, ...snap.data() };
+        this.salvarExclusaoLocal(dados);
+        return dados;
+      } catch (e) {
+        this.exclusaoNuvemConfirmada = false;
+        return this.lerExclusaoLocal();
       }
     },
     async registrarExclusaoNuvem(chave, patch = {}) {
@@ -47989,30 +48040,30 @@ This typically indicates that your device does not have a healthy Internet conne
       };
       try {
         await setDoc(doc(db, "backups_lojas", c, "auditoria", this.DOC_EXCLUSAO), payload);
+        this.salvarExclusaoLocal(payload);
       } catch (e) {
+        this.salvarExclusaoLocal(payload);
         console.warn("[AuditModule] N\xE3o gravou o recado de exclus\xE3o para os outros caixas:", e);
       }
     },
     logFoiExcluidoNaNuvem(log, exclusao) {
       if (!log || !exclusao) return false;
       if (this.ehDocMeta(log.id)) return true;
-      const ids = exclusao.ids || [];
-      if (log.id && ids.includes(log.id)) return true;
-      const emMs = Date.parse(exclusao.em || "") || 0;
-      const ms = this.dataDoLogMs(log);
-      if (exclusao.apagarTudo) {
-        if (!emMs) return true;
-        if (!Number.isFinite(ms) || ms <= 0) return true;
-        return ms <= emMs;
-      }
-      const corte = Number(exclusao.corteMs) || 0;
-      if (!Number.isFinite(ms) || ms <= 0) return false;
-      return corte > 0 && emMs > 0 && ms >= corte && ms <= emMs;
+      return logCaiuNaExclusao(log, exclusao, this.dataDoLogMs(log));
     },
     purgarPendentesExcluidos(exclusao) {
       if (!exclusao) return;
       const restantes = this.getPendentes().filter((item) => !this.logFoiExcluidoNaNuvem(item, exclusao));
       this.salvarPendentes(restantes);
+    },
+    reapagarLogsExcluidosNaNuvem(chave, logs, exclusao) {
+      if (!chave || !exclusao || !Array.isArray(logs) || !logs.length) return;
+      const ids = [...new Set(logs.filter((l) => this.logFoiExcluidoNaNuvem(l, exclusao)).map((l) => l && l.id).filter(Boolean))];
+      if (!ids.length) return;
+      ids.slice(0, 80).forEach((id) => {
+        deleteDoc(doc(db, "backups_lojas", chave, "auditoria", String(id))).catch(() => {
+        });
+      });
     },
     reconciliarLocaisComNuvem(logsNuvem, logsLocais, exclusao) {
       const idsNuvem = new Set((logsNuvem || []).map((l) => l && l.id).filter(Boolean));
@@ -48118,10 +48169,12 @@ This typically indicates that your device does not have a healthy Internet conne
           this.temMaisNuvem = false;
         }
         this.consultaNuvemOk = true;
-        const exclusao = cursor ? null : await this.lerExclusaoNuvem(chaveLicenca);
+        const exclusao = await this.lerExclusaoNuvem(chaveLicenca);
         if (exclusao) this.purgarPendentesExcluidos(exclusao);
         const subOk = Boolean(snapSub);
-        const logsNuvem = (subOk ? logsSub : [...logsSub, ...logsLegado]).filter((l) => !this.logFoiExcluidoNaNuvem(l, exclusao));
+        const brutos = subOk ? logsSub : [...logsSub, ...logsLegado];
+        const logsNuvem = brutos.filter((l) => !this.logFoiExcluidoNaNuvem(l, exclusao));
+        this.reapagarLogsExcluidosNaNuvem(chaveLicenca, brutos, exclusao);
         if (!cursor) {
           this.contarLogsNuvem(chaveLicenca).then((n) => {
             this.totalNuvem = Math.max(n || 0, logsNuvem.length);
@@ -48143,7 +48196,8 @@ This typically indicates that your device does not have a healthy Internet conne
         this.ultimoErroNuvem = timeout ? "" : "N\xE3o foi poss\xEDvel ler os logs da nuvem neste computador.";
         this.temMaisNuvem = false;
         if (!this.totalNuvem) this.totalNuvem = logsLocais.length;
-        return logsLocais.slice(0, maxLogs);
+        const exclusaoLocal = this.lerExclusaoLocal();
+        return logsLocais.filter((l) => !this.logFoiExcluidoNaNuvem(l, exclusaoLocal)).slice(0, maxLogs);
       }
     },
     dataDoLogMs(log) {
@@ -48318,9 +48372,15 @@ This typically indicates that your device does not have a healthy Internet conne
           erro: "Este terminal n\xE3o autenticou na nuvem; os logs n\xE3o foram apagados."
         };
       }
+      const idsTela = (window.GerenciaModule && window.GerenciaModule.logsAuditoriaCache || []).filter(soPeriodo).map((l) => l && l.id).filter(Boolean);
+      await this.registrarExclusaoNuvem(chave, {
+        dias: dias || 0,
+        corteMs: dias ? Date.now() - dias * 24 * 60 * 60 * 1e3 : 0,
+        apagarTudo: !dias,
+        ids: idsTela
+      });
       const refsSub = await this.coletarRefsSubcolecao(chave, soPeriodo, dias);
       const refsLeg = await this.coletarRefsLegado(chave, soPeriodo);
-      const idsTela = (window.GerenciaModule && window.GerenciaModule.logsAuditoriaCache || []).filter(soPeriodo).map((l) => l && l.id).filter(Boolean);
       idsTela.forEach((id) => refsSub.push(doc(db, "backups_lojas", chave, "auditoria", String(id))));
       const vistos = /* @__PURE__ */ new Set();
       const refs = [...refsSub, ...refsLeg].filter((ref) => {
@@ -48330,21 +48390,15 @@ This typically indicates that your device does not have a healthy Internet conne
         return true;
       });
       const resNuvem = await this.apagarRefsEmLote(refs);
+      const local = this.aplicarExclusaoLocal(soPeriodo);
       if (resNuvem.falhas > 0 && resNuvem.apagados === 0) {
         return {
-          local: 0,
+          local: local.removidosLocal,
           nuvem: 0,
           falhas: resNuvem.falhas,
           erro: "A nuvem recusou a exclus\xE3o dos logs. Atualize o FlowPDV e tente de novo."
         };
       }
-      const local = this.aplicarExclusaoLocal(soPeriodo);
-      await this.registrarExclusaoNuvem(chave, {
-        dias: dias || 0,
-        corteMs: dias ? Date.now() - dias * 24 * 60 * 60 * 1e3 : 0,
-        apagarTudo: !dias,
-        ids: idsTela.concat(refsSub.map((r) => r && r.id).filter(Boolean))
-      });
       this.ultimoCursorSub = null;
       this.temMaisNuvem = false;
       this.ultimoErroNuvem = "";
@@ -51238,6 +51292,7 @@ Venda bloqueada no PDV!`);
       }
       this.fecharMenuAcoesEstoque();
       this.atualizarBannerListaCompras();
+      this.atualizarChipsFiltrosAcoes();
       this.renderBarraCategorias();
       this.renderTabelaProdutos();
     },
@@ -51341,6 +51396,36 @@ Venda bloqueada no PDV!`);
         }
       }
       this.renderTabelaProdutos();
+      this.atualizarChipsFiltrosAcoes();
+    },
+    limparFiltroEstoqueBaixo() {
+      if (!this.filtroEstoqueBaixo) return;
+      this.toggleFiltroEstoqueBaixo();
+    },
+    limparFiltroListaCompras() {
+      if (!this.filtroListaCompras) return;
+      this.toggleFiltroListaCompras(false);
+    },
+    atualizarChipsFiltrosAcoes() {
+      const box = document.getElementById("estoque-chips-filtros-acoes");
+      if (!box) return;
+      let html = "";
+      if (this.filtroEstoqueBaixo) {
+        html += `
+        <div class="cat-filter-btn active estoque-chip-filtro alerta">
+          <span>\u26A0\uFE0F Estoque Baixo</span>
+          <button type="button" class="estoque-chip-x" title="Limpar filtro" onclick="EstoqueModule.limparFiltroEstoqueBaixo()">\u2715</button>
+        </div>`;
+      }
+      if (this.filtroListaCompras) {
+        html += `
+        <div class="cat-filter-btn active estoque-chip-filtro lista">
+          <span>\u{1F4CB} Lista Compras</span>
+          <button type="button" class="estoque-chip-x" title="Limpar filtro" onclick="EstoqueModule.limparFiltroListaCompras()">\u2715</button>
+        </div>`;
+      }
+      box.innerHTML = html;
+      box.style.display = html ? "flex" : "none";
     },
     toggleFiltroListaCompras(forcar = null) {
       if (forcar !== null) {
@@ -51375,6 +51460,7 @@ Venda bloqueada no PDV!`);
       }
       this.renderTabelaProdutos();
       this.atualizarBannerListaCompras();
+      this.atualizarChipsFiltrosAcoes();
     },
     atualizarBannerListaCompras() {
       const banner = document.getElementById("banner-filtro-lista-compras");
@@ -58779,6 +58865,30 @@ ${base}`;
       });
       this.renderSubAbaAtual();
     },
+    resetarFiltrosGerencia() {
+      this.ordenacaoAbc = { coluna: "faturamento", direcao: "desc" };
+      this.filtroContasStatus = "todos";
+      document.querySelectorAll(".gerencia-contas-filtro-btn").forEach((btn) => {
+        btn.classList.toggle("active", (btn.dataset.status || "") === "todos");
+      });
+      this.filtroAuditoria = "todos";
+      this.filtroOperadorAuditoria = "todos";
+      this.filtroDataAuditoria = "";
+      this.filtroDataHistorico = "";
+      const opSel = document.getElementById("gerencia-auditoria-operador-select");
+      if (opSel) opSel.value = "todos";
+      const dataLog = document.getElementById("gerencia-auditoria-filtro-data");
+      if (dataLog) dataLog.value = "";
+      const dataCx = document.getElementById("gerencia-historico-filtro-data");
+      if (dataCx) dataCx.value = "";
+      if (typeof this.atualizarLabelFiltroData === "function") {
+        this.atualizarLabelFiltroData("gerencia-auditoria-filtro-data", "gerencia-auditoria-filtro-data-label", "Filtrar Log");
+        this.atualizarLabelFiltroData("gerencia-historico-filtro-data", "gerencia-historico-filtro-data-label", "Filtrar Caixa");
+      }
+      document.querySelectorAll(".gerencia-audit-filtro-btn").forEach((btn) => {
+        btn.classList.toggle("active", (btn.dataset.tipo || "") === "todos");
+      });
+    },
     renderSubAbaAtual() {
       if (this.subAbaAtiva === "indicadores") {
         this.renderIndicadoresCurvaABC();
@@ -59628,8 +59738,10 @@ ${base}`;
       }
       const logsLocais = AuditModule && typeof AuditModule.getLocalLogs === "function" ? AuditModule.getLocalLogs() : [];
       const logsIniciais = this.logsAuditoriaCache && this.logsAuditoriaCache.length > 0 ? this.logsAuditoriaCache : logsLocais;
-      if (logsIniciais && logsIniciais.length > 0) {
-        this.logsAuditoriaCache = logsIniciais;
+      const exclusaoLocal = AuditModule && typeof AuditModule.lerExclusaoLocal === "function" ? AuditModule.lerExclusaoLocal() : null;
+      const logsVisiveis = exclusaoLocal && AuditModule.logFoiExcluidoNaNuvem ? (logsIniciais || []).filter((l) => !AuditModule.logFoiExcluidoNaNuvem(l, exclusaoLocal)) : logsIniciais;
+      if (logsVisiveis && logsVisiveis.length > 0) {
+        this.logsAuditoriaCache = logsVisiveis;
         this.preencherSelectOperadoresAuditoria();
         this.renderAuditoriaFiltrada();
       } else {
@@ -63833,6 +63945,9 @@ NSU: ${nsuGerado}`
       if (abaAnterior === "estoque" && nomeAba !== "estoque" && window.EstoqueModule && typeof window.EstoqueModule.resetarFiltrosEstoque === "function") {
         window.EstoqueModule.resetarFiltrosEstoque();
       }
+      if (abaAnterior === "gerencia" && nomeAba !== "gerencia" && window.GerenciaModule && typeof window.GerenciaModule.resetarFiltrosGerencia === "function") {
+        window.GerenciaModule.resetarFiltrosGerencia();
+      }
       if (nomeAba === "pdv") {
         setTimeout(() => {
           PdvModule.focarInputLeitor();
@@ -63841,8 +63956,14 @@ NSU: ${nsuGerado}`
           PdvModule.focarInputLeitor();
         }, 200);
       } else if (nomeAba === "estoque") {
-        EstoqueModule.renderBarraCategorias();
-        EstoqueModule.renderTabelaProdutos();
+        const manterValidade = this._manterFiltroValidadeEstoque;
+        this._manterFiltroValidadeEstoque = null;
+        if (window.EstoqueModule && typeof window.EstoqueModule.resetarFiltrosEstoque === "function") {
+          window.EstoqueModule.resetarFiltrosEstoque();
+        }
+        if (manterValidade && manterValidade !== "todos" && typeof EstoqueModule.setFiltroValidade === "function") {
+          EstoqueModule.setFiltroValidade(manterValidade);
+        }
       } else if (nomeAba === "caixa") {
         CaixaModule.renderStatusTurno();
         CaixaModule.renderHistoricoVendasTurno();
@@ -63852,6 +63973,9 @@ NSU: ${nsuGerado}`
       } else if (nomeAba === "comandas") {
         ComandasModule.abrirAba();
       } else if (nomeAba === "gerencia") {
+        if (abaAnterior !== "gerencia" && window.GerenciaModule && typeof window.GerenciaModule.resetarFiltrosGerencia === "function") {
+          window.GerenciaModule.resetarFiltrosGerencia();
+        }
         this.verificarAcessoGerencia();
       } else if (nomeAba === "config") {
         this.verificarAcessoConfiguracoes();
@@ -65322,11 +65446,9 @@ NSU: ${nsuGerado}`
       }, 100);
     },
     irParaEstoqueComFiltro(filtro = "todos") {
+      this._manterFiltroValidadeEstoque = filtro || "todos";
       this.fecharModalAlertaGerencial();
       this.trocarAba("estoque");
-      if (window.EstoqueModule && typeof window.EstoqueModule.setFiltroValidade === "function") {
-        setTimeout(() => window.EstoqueModule.setFiltroValidade(filtro), 150);
-      }
     },
     irParaContasPagar(filtro = "todos") {
       this.fecharModalAlertaGerencial();
