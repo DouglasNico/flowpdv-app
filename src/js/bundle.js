@@ -51266,35 +51266,41 @@ Venda bloqueada no PDV!`);
       }
     },
     resetarFiltrosEstoque() {
-      const inputBusca = document.getElementById("estoque-busca-input");
-      if (inputBusca) inputBusca.value = "";
       this.categoriaFiltro = "todas";
       this.filtroValidade = "todos";
       this.filtroEstoqueBaixo = false;
       this.filtroListaCompras = false;
-      document.querySelectorAll(".estoque-filtro-validade-btn").forEach((b) => {
-        b.classList.toggle("active", (b.getAttribute("data-filtro-val") || "") === "todos");
-      });
-      const btnEstoqueBaixo = document.getElementById("btn-filtro-estoque-baixo");
-      if (btnEstoqueBaixo) {
-        btnEstoqueBaixo.classList.remove("active");
-        btnEstoqueBaixo.style.background = "";
-        btnEstoqueBaixo.style.color = "";
-        btnEstoqueBaixo.style.borderColor = "";
+      this.ordenacaoAtual = { coluna: "", direcao: "asc" };
+      try {
+        const inputBusca = document.getElementById("estoque-busca-input");
+        if (inputBusca) inputBusca.value = "";
+        document.querySelectorAll(".estoque-filtro-validade-btn").forEach((b) => {
+          b.classList.toggle("active", (b.getAttribute("data-filtro-val") || "") === "todos");
+        });
+        const btnEstoqueBaixo = document.getElementById("btn-filtro-estoque-baixo");
+        if (btnEstoqueBaixo) {
+          btnEstoqueBaixo.classList.remove("active");
+          btnEstoqueBaixo.style.background = "";
+          btnEstoqueBaixo.style.color = "";
+          btnEstoqueBaixo.style.borderColor = "";
+        }
+        const btnLista = document.getElementById("btn-lista-compras-excel");
+        if (btnLista) {
+          btnLista.classList.remove("active");
+          btnLista.style.background = "";
+          btnLista.style.color = "";
+          btnLista.style.borderColor = "";
+          btnLista.style.boxShadow = "";
+        }
+        this.fecharMenuAcoesEstoque();
+        this.atualizarBannerListaCompras();
+        this.atualizarChipsFiltrosAcoes();
+        this.renderBarraCategorias();
+        this.atualizarIconesOrdenacao();
+        this.renderTabelaProdutos();
+      } catch (e) {
+        this.atualizarChipsFiltrosAcoes();
       }
-      const btnLista = document.getElementById("btn-lista-compras-excel");
-      if (btnLista) {
-        btnLista.classList.remove("active");
-        btnLista.style.background = "";
-        btnLista.style.color = "";
-        btnLista.style.borderColor = "";
-        btnLista.style.boxShadow = "";
-      }
-      this.fecharMenuAcoesEstoque();
-      this.atualizarBannerListaCompras();
-      this.atualizarChipsFiltrosAcoes();
-      this.renderBarraCategorias();
-      this.renderTabelaProdutos();
     },
     init() {
       this.padronizarProdutosExistentes();
@@ -51311,6 +51317,16 @@ Venda bloqueada no PDV!`);
       this.bindDragDropPlanilha();
       this.adaptarInterfaceSegmento();
       this.verificarAlertasValidade();
+      this.bindResetAoSairDaAba();
+    },
+    bindResetAoSairDaAba() {
+      const panel = document.getElementById("tab-estoque");
+      if (!panel || panel.dataset.resetBound === "1") return;
+      panel.dataset.resetBound = "1";
+      const observer = new MutationObserver(() => {
+        if (!panel.classList.contains("active")) this.resetarFiltrosEstoque();
+      });
+      observer.observe(panel, { attributes: true, attributeFilter: ["class"] });
     },
     adaptarInterfaceSegmento() {
       const isFardosAtivo = StorageService.isModuloAtivo("fardosPacks");
@@ -51407,25 +51423,25 @@ Venda bloqueada no PDV!`);
       this.toggleFiltroListaCompras(false);
     },
     atualizarChipsFiltrosAcoes() {
-      const box = document.getElementById("estoque-chips-filtros-acoes");
-      if (!box) return;
-      let html = "";
-      if (this.filtroEstoqueBaixo) {
-        html += `
-        <div class="cat-filter-btn active estoque-chip-filtro alerta">
-          <span>\u26A0\uFE0F Estoque Baixo</span>
-          <button type="button" class="estoque-chip-x" title="Limpar filtro" onclick="EstoqueModule.limparFiltroEstoqueBaixo()">\u2715</button>
-        </div>`;
+      const btnAcoes = document.getElementById("btn-estoque-acoes");
+      const chip = document.getElementById("estoque-chip-filtro-acoes");
+      if (!chip) return;
+      if (!this.filtroEstoqueBaixo && !this.filtroListaCompras) {
+        chip.style.display = "none";
+        chip.innerHTML = "";
+        if (btnAcoes) btnAcoes.style.display = "";
+        return;
       }
-      if (this.filtroListaCompras) {
-        html += `
-        <div class="cat-filter-btn active estoque-chip-filtro lista">
-          <span>\u{1F4CB} Lista Compras</span>
-          <button type="button" class="estoque-chip-x" title="Limpar filtro" onclick="EstoqueModule.limparFiltroListaCompras()">\u2715</button>
-        </div>`;
-      }
-      box.innerHTML = html;
-      box.style.display = html ? "flex" : "none";
+      const baixo = this.filtroEstoqueBaixo;
+      if (btnAcoes) btnAcoes.style.display = "none";
+      chip.className = `estoque-chip-filtro ${baixo ? "alerta" : "lista"}`;
+      chip.style.display = "inline-flex";
+      chip.innerHTML = `
+      <span onclick="EstoqueModule.toggleMenuAcoesEstoque(event)" style="cursor: pointer; display: flex; align-items: center; gap: 4px;">
+        ${baixo ? "\u26A0\uFE0F Estoque Baixo" : "\u{1F4CB} Lista Compras"} \u25BE
+      </span>
+      <button type="button" class="estoque-chip-x" title="Limpar filtro" onclick="event.stopPropagation(); ${baixo ? "EstoqueModule.limparFiltroEstoqueBaixo()" : "EstoqueModule.limparFiltroListaCompras()"}">\u2715</button>
+    `;
     },
     toggleFiltroListaCompras(forcar = null) {
       if (forcar !== null) {
@@ -63942,7 +63958,7 @@ NSU: ${nsuGerado}`
       document.querySelectorAll(".tab-panel").forEach((panel) => {
         panel.classList.toggle("active", panel.id === `tab-${nomeAba}`);
       });
-      if (abaAnterior === "estoque" && nomeAba !== "estoque" && window.EstoqueModule && typeof window.EstoqueModule.resetarFiltrosEstoque === "function") {
+      if (nomeAba !== "estoque" && window.EstoqueModule && typeof window.EstoqueModule.resetarFiltrosEstoque === "function") {
         window.EstoqueModule.resetarFiltrosEstoque();
       }
       if (abaAnterior === "gerencia" && nomeAba !== "gerencia" && window.GerenciaModule && typeof window.GerenciaModule.resetarFiltrosGerencia === "function") {

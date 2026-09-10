@@ -39,35 +39,41 @@ export const EstoqueModule = {
   },
 
   resetarFiltrosEstoque() {
-    const inputBusca = document.getElementById('estoque-busca-input');
-    if (inputBusca) inputBusca.value = '';
     this.categoriaFiltro = 'todas';
     this.filtroValidade = 'todos';
     this.filtroEstoqueBaixo = false;
     this.filtroListaCompras = false;
-    document.querySelectorAll('.estoque-filtro-validade-btn').forEach(b => {
-      b.classList.toggle('active', (b.getAttribute('data-filtro-val') || '') === 'todos');
-    });
-    const btnEstoqueBaixo = document.getElementById('btn-filtro-estoque-baixo');
-    if (btnEstoqueBaixo) {
-      btnEstoqueBaixo.classList.remove('active');
-      btnEstoqueBaixo.style.background = '';
-      btnEstoqueBaixo.style.color = '';
-      btnEstoqueBaixo.style.borderColor = '';
+    this.ordenacaoAtual = { coluna: '', direcao: 'asc' };
+    try {
+      const inputBusca = document.getElementById('estoque-busca-input');
+      if (inputBusca) inputBusca.value = '';
+      document.querySelectorAll('.estoque-filtro-validade-btn').forEach(b => {
+        b.classList.toggle('active', (b.getAttribute('data-filtro-val') || '') === 'todos');
+      });
+      const btnEstoqueBaixo = document.getElementById('btn-filtro-estoque-baixo');
+      if (btnEstoqueBaixo) {
+        btnEstoqueBaixo.classList.remove('active');
+        btnEstoqueBaixo.style.background = '';
+        btnEstoqueBaixo.style.color = '';
+        btnEstoqueBaixo.style.borderColor = '';
+      }
+      const btnLista = document.getElementById('btn-lista-compras-excel');
+      if (btnLista) {
+        btnLista.classList.remove('active');
+        btnLista.style.background = '';
+        btnLista.style.color = '';
+        btnLista.style.borderColor = '';
+        btnLista.style.boxShadow = '';
+      }
+      this.fecharMenuAcoesEstoque();
+      this.atualizarBannerListaCompras();
+      this.atualizarChipsFiltrosAcoes();
+      this.renderBarraCategorias();
+      this.atualizarIconesOrdenacao();
+      this.renderTabelaProdutos();
+    } catch (e) {
+      this.atualizarChipsFiltrosAcoes();
     }
-    const btnLista = document.getElementById('btn-lista-compras-excel');
-    if (btnLista) {
-      btnLista.classList.remove('active');
-      btnLista.style.background = '';
-      btnLista.style.color = '';
-      btnLista.style.borderColor = '';
-      btnLista.style.boxShadow = '';
-    }
-    this.fecharMenuAcoesEstoque();
-    this.atualizarBannerListaCompras();
-    this.atualizarChipsFiltrosAcoes();
-    this.renderBarraCategorias();
-    this.renderTabelaProdutos();
   },
 
   init() {
@@ -85,6 +91,17 @@ export const EstoqueModule = {
     this.bindDragDropPlanilha();
     this.adaptarInterfaceSegmento();
     this.verificarAlertasValidade();
+    this.bindResetAoSairDaAba();
+  },
+
+  bindResetAoSairDaAba() {
+    const panel = document.getElementById('tab-estoque');
+    if (!panel || panel.dataset.resetBound === '1') return;
+    panel.dataset.resetBound = '1';
+    const observer = new MutationObserver(() => {
+      if (!panel.classList.contains('active')) this.resetarFiltrosEstoque();
+    });
+    observer.observe(panel, { attributes: true, attributeFilter: ['class'] });
   },
 
   adaptarInterfaceSegmento() {
@@ -193,25 +210,27 @@ export const EstoqueModule = {
   },
 
   atualizarChipsFiltrosAcoes() {
-    const box = document.getElementById('estoque-chips-filtros-acoes');
-    if (!box) return;
-    let html = '';
-    if (this.filtroEstoqueBaixo) {
-      html += `
-        <div class="cat-filter-btn active estoque-chip-filtro alerta">
-          <span>⚠️ Estoque Baixo</span>
-          <button type="button" class="estoque-chip-x" title="Limpar filtro" onclick="EstoqueModule.limparFiltroEstoqueBaixo()">✕</button>
-        </div>`;
+    const btnAcoes = document.getElementById('btn-estoque-acoes');
+    const chip = document.getElementById('estoque-chip-filtro-acoes');
+    if (!chip) return;
+
+    if (!this.filtroEstoqueBaixo && !this.filtroListaCompras) {
+      chip.style.display = 'none';
+      chip.innerHTML = '';
+      if (btnAcoes) btnAcoes.style.display = '';
+      return;
     }
-    if (this.filtroListaCompras) {
-      html += `
-        <div class="cat-filter-btn active estoque-chip-filtro lista">
-          <span>📋 Lista Compras</span>
-          <button type="button" class="estoque-chip-x" title="Limpar filtro" onclick="EstoqueModule.limparFiltroListaCompras()">✕</button>
-        </div>`;
-    }
-    box.innerHTML = html;
-    box.style.display = html ? 'flex' : 'none';
+
+    const baixo = this.filtroEstoqueBaixo;
+    if (btnAcoes) btnAcoes.style.display = 'none';
+    chip.className = `estoque-chip-filtro ${baixo ? 'alerta' : 'lista'}`;
+    chip.style.display = 'inline-flex';
+    chip.innerHTML = `
+      <span onclick="EstoqueModule.toggleMenuAcoesEstoque(event)" style="cursor: pointer; display: flex; align-items: center; gap: 4px;">
+        ${baixo ? '⚠️ Estoque Baixo' : '📋 Lista Compras'} ▾
+      </span>
+      <button type="button" class="estoque-chip-x" title="Limpar filtro" onclick="event.stopPropagation(); ${baixo ? 'EstoqueModule.limparFiltroEstoqueBaixo()' : 'EstoqueModule.limparFiltroListaCompras()'}">✕</button>
+    `;
   },
 
   toggleFiltroListaCompras(forcar = null) {

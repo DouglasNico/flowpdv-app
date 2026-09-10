@@ -170,7 +170,7 @@ export const App = {
       panel.classList.toggle('active', panel.id === `tab-${nomeAba}`);
     });
 
-    if (abaAnterior === 'estoque' && nomeAba !== 'estoque' && window.EstoqueModule && typeof window.EstoqueModule.resetarFiltrosEstoque === 'function') {
+    if (nomeAba !== 'estoque' && window.EstoqueModule && typeof window.EstoqueModule.resetarFiltrosEstoque === 'function') {
       window.EstoqueModule.resetarFiltrosEstoque();
     }
     if (abaAnterior === 'gerencia' && nomeAba !== 'gerencia' && window.GerenciaModule && typeof window.GerenciaModule.resetarFiltrosGerencia === 'function') {

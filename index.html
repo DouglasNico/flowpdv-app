@@ -382,6 +382,7 @@
               <button type="button" id="btn-estoque-acoes" class="btn-toolbar-estoque" onclick="EstoqueModule.toggleMenuAcoesEstoque(event)" title="Mais ações do estoque">
                 📂 Ações ▾
               </button>
+              <div id="estoque-chip-filtro-acoes" class="estoque-chip-filtro" style="display: none;"></div>
               <div id="dropdown-estoque-acoes" class="category-dropdown-menu estoque-acoes-menu" style="display: none;" onclick="if (event.target.closest('button')) EstoqueModule.fecharMenuAcoesEstoque()">
                 <button type="button" id="btn-bipar-validade-express" class="btn-toolbar-estoque cyan" onclick="EstoqueModule.abrirModalBipagemValidade()" title="Bipar código de barras e cadastrar/atualizar data de validade expressa em segundos">
                   ⚡ Bipar Validades
@@ -426,7 +427,6 @@
             <div id="estoque-category-bar" style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap; overflow: visible; position: relative;">
               <!-- Categorias Dinâmicas Injetadas por EstoqueModule.renderBarraCategorias() -->
             </div>
-            <div id="estoque-chips-filtros-acoes" class="estoque-chips-filtros" style="display: none;"></div>
           </div>
 
           <!-- Filtros Rápidos de Validade e Alertas -->
