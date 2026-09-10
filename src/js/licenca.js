@@ -7,6 +7,7 @@ import { db, doc, getDoc, onSnapshot, setDoc, updateDoc, buscarLicencaNuvem, des
 
 export const LicencaModule = {
   modalAtivacaoAbertoManualmente: false,
+  encerrandoApp: false,
 
   // Sem essa sessão o Firestore recusa tudo: é ela que prova para as regras
   // que este computador pertence a esta loja.
@@ -208,10 +209,12 @@ export const LicencaModule = {
           const idxTerm = terminais.findIndex(t => t.id === myDevId);
 
           if (idxTerm >= 0) {
+            if (this.encerrandoApp) return isAuth;
             const agora = Date.now();
             const ultimoHb = parseInt(localStorage.getItem('flowpdv_terminal_heartbeat_ms') || '0', 10) || 0;
             const precisaHb = (agora - ultimoHb) > (20 * 1000);
             this.getDadosTerminalAtual().then(infoTerminal => {
+              if (this.encerrandoApp) return;
               const termAtual = terminais[idxTerm];
               const hostnameMudou = !termAtual.hostname || termAtual.hostname !== infoTerminal.hostname;
               if (!hostnameMudou && !precisaHb) return;
@@ -273,24 +276,35 @@ export const LicencaModule = {
       hostname: hostname,
       usuario: username,
       sistema: platform === 'win32' ? 'Windows' : platform,
-      ultimoAcesso: new Date().toISOString()
+      ultimoAcesso: new Date().toISOString(),
+      appAberto: true,
+      offlineEm: null
     };
   },
 
   /** Sobe hostname + ultimoAcesso na hora (abrir/fechar caixa). Sem espera de 2 min. */
   async forcarHeartbeatTerminal() {
+    if (this.encerrandoApp) return;
     try {
       const lic = StorageService.getLicenca() || {};
       const chave = String(lic.chaveLicenca || lic.clienteId || '').trim().toUpperCase();
       if (!chave) return;
       await this.garantirSessaoNuvem(chave);
+      if (this.encerrandoApp) return;
       const myDevId = StorageService.getDeviceId();
       const info = await this.getDadosTerminalAtual();
       const snap = await getDoc(doc(db, 'licencas', chave));
       const atuais = snap.exists() ? (snap.data().terminaisAtivos || []) : [];
       let terminais = this.limparTerminaisDuplicados(atuais);
       const idx = terminais.findIndex(t => t && t.id === myDevId);
-      const registro = { ...(idx >= 0 ? terminais[idx] : {}), ...info, id: myDevId, ultimoAcesso: new Date().toISOString() };
+      const registro = {
+        ...(idx >= 0 ? terminais[idx] : {}),
+        ...info,
+        id: myDevId,
+        ultimoAcesso: new Date().toISOString(),
+        appAberto: true,
+        offlineEm: null
+      };
       if (idx >= 0) terminais[idx] = registro;
       else terminais.push(registro);
       terminais = this.limparTerminaisDuplicados(terminais);
@@ -298,6 +312,30 @@ export const LicencaModule = {
       try { localStorage.setItem('flowpdv_terminal_heartbeat_ms', String(Date.now())); } catch (e) {}
     } catch (e) {
       console.warn('[CloudLic] Heartbeat imediato falhou:', e);
+    }
+  },
+
+  /** Marca este computador como offline na hora de sair do sistema. */
+  async marcarTerminalOffline() {
+    this.encerrandoApp = true;
+    try {
+      const lic = StorageService.getLicenca() || {};
+      const chave = String(lic.chaveLicenca || lic.clienteId || '').trim().toUpperCase();
+      if (!chave) return;
+      await this.garantirSessaoNuvem(chave);
+      const myDevId = StorageService.getDeviceId();
+      const agora = new Date().toISOString();
+      const snap = await getDoc(doc(db, 'licencas', chave));
+      const atuais = snap.exists() ? (snap.data().terminaisAtivos || []) : [];
+      let terminais = this.limparTerminaisDuplicados(atuais);
+      const idx = terminais.findIndex(t => t && t.id === myDevId);
+      const base = idx >= 0 ? terminais[idx] : { id: myDevId };
+      const registro = { ...base, id: myDevId, appAberto: false, offlineEm: agora };
+      if (idx >= 0) terminais[idx] = registro;
+      else terminais.push(registro);
+      await setDoc(doc(db, 'licencas', chave), { terminaisAtivos: terminais }, { merge: true });
+    } catch (e) {
+      console.warn('[CloudLic] Offline ao sair falhou:', e);
     }
   },
 

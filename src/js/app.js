@@ -75,6 +75,16 @@ export const App = {
         this.solicitarFechamentoApp();
       });
     }
+    if (window.electronAPI && typeof window.electronAPI.onForcarOfflineESair === 'function') {
+      window.electronAPI.onForcarOfflineESair(() => {
+        this.confirmarFechamentoApp();
+      });
+    }
+    window.addEventListener('pagehide', () => {
+      if (window.LicencaModule && typeof window.LicencaModule.marcarTerminalOffline === 'function') {
+        window.LicencaModule.marcarTerminalOffline();
+      }
+    });
   },
 
   aplicarLayoutPdv(layout) {
@@ -1362,29 +1372,50 @@ export const App = {
     }
   },
 
-  confirmarFechamentoApp() {
+  async confirmarFechamentoApp() {
     const modal = document.getElementById('modal-confirmar-sair');
     if (modal) {
       modal.classList.remove('active');
       modal.style.display = 'none';
     }
 
+    if (window.LicencaModule) window.LicencaModule.encerrandoApp = true;
+
     // Fechar automaticamente o turno de caixa ativo para manter conformidade contábil
+    let turnoFechadoAoSair = null;
     try {
       const turnoAtual = StorageService.getTurnoAtual();
       if (turnoAtual && turnoAtual.status === 'aberto') {
         const resumo = CaixaModule.calcularResumoFinanceiro(turnoAtual) || {};
-        const turnoFechado = {
+        turnoFechadoAoSair = {
           ...turnoAtual,
           ...resumo,
           dataFechamento: new Date().toISOString(),
           status: 'fechado',
           fechamentoAutomatico: true
         };
-        StorageService.arquivarTurnoFechado(turnoFechado);
+        StorageService.arquivarTurnoFechado(turnoFechadoAoSair);
       }
     } catch(err) {
       console.log('Fechamento de caixa no encerramento:', err);
+    }
+
+    try {
+      const waits = [];
+      if (turnoFechadoAoSair && window.CloudSyncModule && typeof window.CloudSyncModule.atualizarTurnoAtivoDoTerminal === 'function') {
+        const chave = window.CloudSyncModule.getChaveLicenca ? window.CloudSyncModule.getChaveLicenca() : '';
+        waits.push(window.CloudSyncModule.atualizarTurnoAtivoDoTerminal(
+          chave,
+          StorageService.getDeviceId(),
+          turnoFechadoAoSair
+        ));
+      }
+      if (window.LicencaModule && typeof window.LicencaModule.marcarTerminalOffline === 'function') {
+        waits.push(window.LicencaModule.marcarTerminalOffline());
+      }
+      if (waits.length) await Promise.allSettled(waits);
+    } catch (err) {
+      console.log('Offline ao sair:', err);
     }
 
     if (window.electronAPI && typeof window.electronAPI.fecharAppConfirmado === 'function') {

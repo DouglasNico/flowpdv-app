@@ -22,6 +22,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onSolicitarFechamento: (callback) => {
     ipcRenderer.on('solicitar-fechamento-app', () => callback());
   },
+  onForcarOfflineESair: (callback) => {
+    ipcRenderer.on('forcar-offline-e-sair', () => callback());
+  },
   onUpdaterMessage: (callback) => {
     ipcRenderer.on('updater-message', (event, data) => callback(data));
   },

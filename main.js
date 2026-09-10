@@ -192,17 +192,22 @@ if (!gotTheLock) {
 
     let closeClicks = 0;
     let resetCloseTimer = null;
+    let saidaForcadaTimer = null;
     mainWindow.on('close', (e) => {
       if (!isQuiting) {
         closeClicks++;
+        e.preventDefault();
         if (closeClicks >= 2) {
-          // Se o usuário clicar no X 2 vezes, fecha imediatamente
-          isQuiting = true;
-          if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy();
-          app.quit();
+          enviarParaJanela('forcar-offline-e-sair');
+          clearTimeout(saidaForcadaTimer);
+          saidaForcadaTimer = setTimeout(() => {
+            if (isQuiting) return;
+            isQuiting = true;
+            if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy();
+            app.quit();
+          }, 2500);
           return;
         }
-        e.preventDefault();
         enviarParaJanela('solicitar-fechamento-app');
 
         clearTimeout(resetCloseTimer);

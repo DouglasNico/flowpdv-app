@@ -55290,6 +55290,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
   // src/js/licenca.js
   var LicencaModule = {
     modalAtivacaoAbertoManualmente: false,
+    encerrandoApp: false,
     // Sem essa sessão o Firestore recusa tudo: é ela que prova para as regras
     // que este computador pertence a esta loja.
     async garantirSessaoNuvem(chaveOpcional) {
@@ -55457,10 +55458,12 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
             let terminais = this.limparTerminaisDuplicados(cloudData.terminaisAtivos);
             const idxTerm = terminais.findIndex((t) => t.id === myDevId);
             if (idxTerm >= 0) {
+              if (this.encerrandoApp) return isAuth;
               const agora = Date.now();
               const ultimoHb = parseInt(localStorage.getItem("flowpdv_terminal_heartbeat_ms") || "0", 10) || 0;
               const precisaHb = agora - ultimoHb > 20 * 1e3;
               this.getDadosTerminalAtual().then((infoTerminal) => {
+                if (this.encerrandoApp) return;
                 const termAtual = terminais[idxTerm];
                 const hostnameMudou = !termAtual.hostname || termAtual.hostname !== infoTerminal.hostname;
                 if (!hostnameMudou && !precisaHb) return;
@@ -55519,23 +55522,34 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
         hostname,
         usuario: username,
         sistema: platform === "win32" ? "Windows" : platform,
-        ultimoAcesso: (/* @__PURE__ */ new Date()).toISOString()
+        ultimoAcesso: (/* @__PURE__ */ new Date()).toISOString(),
+        appAberto: true,
+        offlineEm: null
       };
     },
     /** Sobe hostname + ultimoAcesso na hora (abrir/fechar caixa). Sem espera de 2 min. */
     async forcarHeartbeatTerminal() {
+      if (this.encerrandoApp) return;
       try {
         const lic = StorageService.getLicenca() || {};
         const chave = String(lic.chaveLicenca || lic.clienteId || "").trim().toUpperCase();
         if (!chave) return;
         await this.garantirSessaoNuvem(chave);
+        if (this.encerrandoApp) return;
         const myDevId = StorageService.getDeviceId();
         const info = await this.getDadosTerminalAtual();
         const snap = await getDoc(doc(db, "licencas", chave));
         const atuais = snap.exists() ? snap.data().terminaisAtivos || [] : [];
         let terminais = this.limparTerminaisDuplicados(atuais);
         const idx = terminais.findIndex((t) => t && t.id === myDevId);
-        const registro = { ...idx >= 0 ? terminais[idx] : {}, ...info, id: myDevId, ultimoAcesso: (/* @__PURE__ */ new Date()).toISOString() };
+        const registro = {
+          ...idx >= 0 ? terminais[idx] : {},
+          ...info,
+          id: myDevId,
+          ultimoAcesso: (/* @__PURE__ */ new Date()).toISOString(),
+          appAberto: true,
+          offlineEm: null
+        };
         if (idx >= 0) terminais[idx] = registro;
         else terminais.push(registro);
         terminais = this.limparTerminaisDuplicados(terminais);
@@ -55546,6 +55560,29 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
         }
       } catch (e) {
         console.warn("[CloudLic] Heartbeat imediato falhou:", e);
+      }
+    },
+    /** Marca este computador como offline na hora de sair do sistema. */
+    async marcarTerminalOffline() {
+      this.encerrandoApp = true;
+      try {
+        const lic = StorageService.getLicenca() || {};
+        const chave = String(lic.chaveLicenca || lic.clienteId || "").trim().toUpperCase();
+        if (!chave) return;
+        await this.garantirSessaoNuvem(chave);
+        const myDevId = StorageService.getDeviceId();
+        const agora = (/* @__PURE__ */ new Date()).toISOString();
+        const snap = await getDoc(doc(db, "licencas", chave));
+        const atuais = snap.exists() ? snap.data().terminaisAtivos || [] : [];
+        let terminais = this.limparTerminaisDuplicados(atuais);
+        const idx = terminais.findIndex((t) => t && t.id === myDevId);
+        const base = idx >= 0 ? terminais[idx] : { id: myDevId };
+        const registro = { ...base, id: myDevId, appAberto: false, offlineEm: agora };
+        if (idx >= 0) terminais[idx] = registro;
+        else terminais.push(registro);
+        await setDoc(doc(db, "licencas", chave), { terminaisAtivos: terminais }, { merge: true });
+      } catch (e) {
+        console.warn("[CloudLic] Offline ao sair falhou:", e);
       }
     },
     async atualizarOperadorTerminalNuvem(nomeOperador) {
@@ -61998,6 +62035,16 @@ NSU: ${nsuGerado}`
           this.solicitarFechamentoApp();
         });
       }
+      if (window.electronAPI && typeof window.electronAPI.onForcarOfflineESair === "function") {
+        window.electronAPI.onForcarOfflineESair(() => {
+          this.confirmarFechamentoApp();
+        });
+      }
+      window.addEventListener("pagehide", () => {
+        if (window.LicencaModule && typeof window.LicencaModule.marcarTerminalOffline === "function") {
+          window.LicencaModule.marcarTerminalOffline();
+        }
+      });
     },
     aplicarLayoutPdv(layout) {
       const tabPdv = document.getElementById("tab-pdv");
@@ -63100,27 +63147,46 @@ NSU: ${nsuGerado}`
         modal.style.display = "none";
       }
     },
-    confirmarFechamentoApp() {
+    async confirmarFechamentoApp() {
       const modal = document.getElementById("modal-confirmar-sair");
       if (modal) {
         modal.classList.remove("active");
         modal.style.display = "none";
       }
+      if (window.LicencaModule) window.LicencaModule.encerrandoApp = true;
+      let turnoFechadoAoSair = null;
       try {
         const turnoAtual = StorageService.getTurnoAtual();
         if (turnoAtual && turnoAtual.status === "aberto") {
           const resumo = CaixaModule.calcularResumoFinanceiro(turnoAtual) || {};
-          const turnoFechado = {
+          turnoFechadoAoSair = {
             ...turnoAtual,
             ...resumo,
             dataFechamento: (/* @__PURE__ */ new Date()).toISOString(),
             status: "fechado",
             fechamentoAutomatico: true
           };
-          StorageService.arquivarTurnoFechado(turnoFechado);
+          StorageService.arquivarTurnoFechado(turnoFechadoAoSair);
         }
       } catch (err) {
         console.log("Fechamento de caixa no encerramento:", err);
+      }
+      try {
+        const waits = [];
+        if (turnoFechadoAoSair && window.CloudSyncModule && typeof window.CloudSyncModule.atualizarTurnoAtivoDoTerminal === "function") {
+          const chave = window.CloudSyncModule.getChaveLicenca ? window.CloudSyncModule.getChaveLicenca() : "";
+          waits.push(window.CloudSyncModule.atualizarTurnoAtivoDoTerminal(
+            chave,
+            StorageService.getDeviceId(),
+            turnoFechadoAoSair
+          ));
+        }
+        if (window.LicencaModule && typeof window.LicencaModule.marcarTerminalOffline === "function") {
+          waits.push(window.LicencaModule.marcarTerminalOffline());
+        }
+        if (waits.length) await Promise.allSettled(waits);
+      } catch (err) {
+        console.log("Offline ao sair:", err);
       }
       if (window.electronAPI && typeof window.electronAPI.fecharAppConfirmado === "function") {
         window.electronAPI.fecharAppConfirmado();
