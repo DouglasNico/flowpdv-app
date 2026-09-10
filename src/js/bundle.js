@@ -31668,6 +31668,11 @@
   function forEach(e, t) {
     for (const n in e) Object.prototype.hasOwnProperty.call(e, n) && t(n, e[n]);
   }
+  function __PRIVATE_mapToArray(e, t) {
+    const n = [];
+    for (const r in e) Object.prototype.hasOwnProperty.call(e, r) && n.push(t(e[r], r, e));
+    return n;
+  }
   function isEmpty2(e) {
     for (const t in e) if (Object.prototype.hasOwnProperty.call(e, t)) return false;
     return true;
@@ -33089,6 +33094,11 @@
     const t = __PRIVATE_debugCast(e);
     return t.Ie || (t.Ie = __PRIVATE__queryToTarget(t, __PRIVATE_queryNormalizedOrderBy(e))), t.Ie;
   }
+  function __PRIVATE_queryToAggregateTarget(e) {
+    const t = __PRIVATE_debugCast(e);
+    return t.de || // Do not include implicit order-bys for aggregate queries.
+    (t.de = __PRIVATE__queryToTarget(t, e.explicitOrderBy)), t.de;
+  }
   function __PRIVATE__queryToTarget(e, t) {
     if ("F" === e.limitType) return __PRIVATE_newTarget(e.path, e.collectionGroup, t, e.filters, e.limit, e.startAt, e.endAt);
     {
@@ -33629,6 +33639,11 @@
       largestBatchId: ${this.largestBatchId},
       mutation: ${this.mutation.toString()}
     }`;
+    }
+  };
+  var __PRIVATE_AggregateImpl = class {
+    constructor(e, t, n) {
+      this.alias = e, this.aggregateType = t, this.fieldPath = n;
     }
   };
   var ExistenceFilter = class {
@@ -34503,6 +34518,37 @@
     })(t.endAt)), {
       Vt: n,
       parent: i
+    };
+  }
+  function __PRIVATE_toRunAggregationQueryRequest(e, t, n, r) {
+    const { Vt: i, parent: s } = __PRIVATE_toQueryTarget(e, t), o = {}, _ = [];
+    let a = 0;
+    return n.forEach(((e2) => {
+      const t2 = r ? e2.alias : "aggregate_" + a++;
+      o[t2] = e2.alias, "count" === e2.aggregateType ? _.push({
+        alias: t2,
+        count: {}
+      }) : "avg" === e2.aggregateType ? _.push({
+        alias: t2,
+        avg: {
+          field: __PRIVATE_toFieldPathReference(e2.fieldPath)
+        }
+      }) : "sum" === e2.aggregateType && _.push({
+        alias: t2,
+        sum: {
+          field: __PRIVATE_toFieldPathReference(e2.fieldPath)
+        }
+      });
+    })), {
+      request: {
+        structuredAggregationQuery: {
+          aggregations: _,
+          structuredQuery: i.structuredQuery
+        },
+        parent: i.parent
+      },
+      ft: o,
+      parent: s
     };
   }
   function __PRIVATE_convertQueryTargetToQuery(e) {
@@ -38748,6 +38794,9 @@ This typically indicates that your device does not have a healthy Internet conne
   function __PRIVATE_getSyncEngine(e) {
     return __PRIVATE_ensureOnlineComponents(e).then(((e2) => e2.syncEngine));
   }
+  function __PRIVATE_getDatastore(e) {
+    return __PRIVATE_ensureOnlineComponents(e).then(((e2) => e2.datastore));
+  }
   async function __PRIVATE_getEventManager(e) {
     const t = await __PRIVATE_ensureOnlineComponents(e), n = t.eventManager;
     return n.onListen = __PRIVATE_syncEngineListen.bind(null, t.syncEngine), n.onUnlisten = __PRIVATE_syncEngineUnlisten.bind(null, t.syncEngine), n.onFirstRemoteStoreListen = __PRIVATE_triggerRemoteStoreListen.bind(null, t.syncEngine), n.onLastRemoteStoreUnlisten = __PRIVATE_triggerRemoteStoreUnlisten.bind(null, t.syncEngine), n;
@@ -38792,6 +38841,32 @@ This typically indicates that your device does not have a healthy Internet conne
       });
       return __PRIVATE_eventManagerListen(e2, o);
     })(await __PRIVATE_getEventManager(e), e.asyncQueue, t, n, r))), r.promise;
+  }
+  function __PRIVATE_firestoreClientRunAggregateQuery(e, t, n) {
+    const r = new __PRIVATE_Deferred();
+    return e.asyncQueue.enqueueAndForget((async () => {
+      try {
+        const i = await __PRIVATE_getDatastore(e);
+        r.resolve((async function __PRIVATE_invokeRunAggregationQueryRpc(e2, t2, n2) {
+          var r2;
+          const i2 = __PRIVATE_debugCast(e2), { request: s, ft: o, parent: _ } = __PRIVATE_toRunAggregationQueryRequest(i2.serializer, __PRIVATE_queryToAggregateTarget(t2), n2);
+          i2.connection.Qo || delete s.parent;
+          const a = (await i2.Jo(
+            "RunAggregationQuery",
+            i2.serializer.databaseId,
+            _,
+            s,
+            /*expectedResponseCount=*/
+            1
+          )).filter(((e3) => !!e3.result));
+          __PRIVATE_hardAssert(1 === a.length, 64727);
+          const u = null === (r2 = a[0].result) || void 0 === r2 ? void 0 : r2.aggregateFields;
+          return Object.keys(u).reduce(((e3, t3) => (e3[o[t3]] = u[t3], e3)), {});
+        })(i, t, n));
+      } catch (e2) {
+        r.reject(e2);
+      }
+    })), r.promise;
   }
   function __PRIVATE_cloneLongPollingOptions(e) {
     const t = {};
@@ -39270,6 +39345,39 @@ This typically indicates that your device does not have a healthy Internet conne
       };
     })(e._componentsProvider));
   }
+  var AggregateField = class {
+    /**
+     * Create a new AggregateField<T>
+     * @param aggregateType Specifies the type of aggregation operation to perform.
+     * @param _internalFieldPath Optionally specifies the field that is aggregated.
+     * @internal
+     */
+    constructor(e = "count", t) {
+      this._internalFieldPath = t, /** A type string to uniquely identify instances of this class. */
+      this.type = "AggregateField", this.aggregateType = e;
+    }
+  };
+  var AggregateQuerySnapshot = class {
+    /** @hideconstructor */
+    constructor(e, t, n) {
+      this._userDataWriter = t, this._data = n, /** A type string to uniquely identify instances of this class. */
+      this.type = "AggregateQuerySnapshot", this.query = e;
+    }
+    /**
+     * Returns the results of the aggregations performed over the underlying
+     * query.
+     *
+     * The keys of the returned object will be the same as those of the
+     * `AggregateSpec` object specified to the aggregation method, and the values
+     * will be the corresponding aggregation result.
+     *
+     * @returns The results of the aggregations performed over the underlying
+     * query.
+     */
+    data() {
+      return this._userDataWriter.convertObjectMap(this._data);
+    }
+  };
   var Bytes = class _Bytes {
     /** @hideconstructor */
     constructor(e) {
@@ -40100,6 +40208,71 @@ This typically indicates that your device does not have a healthy Internet conne
       /* LimitType.First */
     );
   }
+  var QueryStartAtConstraint = class _QueryStartAtConstraint extends QueryConstraint {
+    /**
+     * @internal
+     */
+    constructor(e, t, n) {
+      super(), this.type = e, this._docOrFields = t, this._inclusive = n;
+    }
+    static _create(e, t, n) {
+      return new _QueryStartAtConstraint(e, t, n);
+    }
+    _apply(e) {
+      const t = __PRIVATE_newQueryBoundFromDocOrFields(e, this.type, this._docOrFields, this._inclusive);
+      return new Query(e.firestore, e.converter, (function __PRIVATE_queryWithStartAt(e2, t2) {
+        return new __PRIVATE_QueryImpl(e2.path, e2.collectionGroup, e2.explicitOrderBy.slice(), e2.filters.slice(), e2.limit, e2.limitType, t2, e2.endAt);
+      })(e._query, t));
+    }
+  };
+  function startAfter(...e) {
+    return QueryStartAtConstraint._create(
+      "startAfter",
+      e,
+      /*inclusive=*/
+      false
+    );
+  }
+  function __PRIVATE_newQueryBoundFromDocOrFields(e, t, n, r) {
+    if (n[0] = getModularInstance(n[0]), n[0] instanceof DocumentSnapshot$1) return (function __PRIVATE_newQueryBoundFromDocument(e2, t2, n2, r2, i) {
+      if (!r2) throw new FirestoreError(N.NOT_FOUND, `Can't use a DocumentSnapshot that doesn't exist for ${n2}().`);
+      const s = [];
+      for (const n3 of __PRIVATE_queryNormalizedOrderBy(e2)) if (n3.field.isKeyField()) s.push(__PRIVATE_refValue(t2, r2.key));
+      else {
+        const e3 = r2.data.field(n3.field);
+        if (__PRIVATE_isServerTimestamp(e3)) throw new FirestoreError(N.INVALID_ARGUMENT, 'Invalid query. You are trying to start or end a query using a document for which the field "' + n3.field + '" is an uncommitted server timestamp. (Since the value of this field is unknown, you cannot start/end a query with it.)');
+        if (null === e3) {
+          const e4 = n3.field.canonicalString();
+          throw new FirestoreError(N.INVALID_ARGUMENT, `Invalid query. You are trying to start or end a query using a document for which the field '${e4}' (used as the orderBy) does not exist.`);
+        }
+        s.push(e3);
+      }
+      return new Bound(s, i);
+    })(e._query, e.firestore._databaseId, t, n[0]._document, r);
+    {
+      const i = __PRIVATE_newUserDataReader(e.firestore);
+      return (function __PRIVATE_newQueryBoundFromFields(e2, t2, n2, r2, i2, s) {
+        const o = e2.explicitOrderBy;
+        if (i2.length > o.length) throw new FirestoreError(N.INVALID_ARGUMENT, `Too many arguments provided to ${r2}(). The number of arguments must be less than or equal to the number of orderBy() clauses`);
+        const _ = [];
+        for (let s2 = 0; s2 < i2.length; s2++) {
+          const a = i2[s2];
+          if (o[s2].field.isKeyField()) {
+            if ("string" != typeof a) throw new FirestoreError(N.INVALID_ARGUMENT, `Invalid query. Expected a string for document ID in ${r2}(), but got a ${typeof a}`);
+            if (!__PRIVATE_isCollectionGroupQuery(e2) && -1 !== a.indexOf("/")) throw new FirestoreError(N.INVALID_ARGUMENT, `Invalid query. When querying a collection and ordering by documentId(), the value passed to ${r2}() must be a plain document ID, but '${a}' contains a slash.`);
+            const n3 = e2.path.child(ResourcePath.fromString(a));
+            if (!DocumentKey.isDocumentKey(n3)) throw new FirestoreError(N.INVALID_ARGUMENT, `Invalid query. When querying a collection group and ordering by documentId(), the value passed to ${r2}() must result in a valid document path, but '${n3}' is not because it contains an odd number of segments.`);
+            const i3 = new DocumentKey(n3);
+            _.push(__PRIVATE_refValue(t2, i3));
+          } else {
+            const e3 = __PRIVATE_parseQueryValue(n2, r2, a);
+            _.push(e3);
+          }
+        }
+        return new Bound(_, s);
+      })(e._query, e.firestore._databaseId, i, t, n, r);
+    }
+  }
   function __PRIVATE_parseDocumentIdValue(e, t, n) {
     if ("string" == typeof (n = getModularInstance(n))) {
       if ("" === n) throw new FirestoreError(N.INVALID_ARGUMENT, "Invalid query. When querying with documentId(), you must provide a valid document ID, but it was an empty string.");
@@ -40234,6 +40407,9 @@ This typically indicates that your device does not have a healthy Internet conne
   function __PRIVATE_applyFirestoreDataConverter(e, t, n) {
     let r;
     return r = e ? n && (n.merge || n.mergeFields) ? e.toFirestore(t, n) : e.toFirestore(t) : t, r;
+  }
+  function count() {
+    return new AggregateField("count");
   }
   var SnapshotMetadata = class {
     /** @hideconstructor */
@@ -40562,6 +40738,27 @@ This typically indicates that your device does not have a healthy Internet conne
   function __PRIVATE_convertToDocSnapshot(e, t, n) {
     const r = n.docs.get(t._key), i = new __PRIVATE_ExpUserDataWriter(e);
     return new DocumentSnapshot(e, i, t._key, r, new SnapshotMetadata(n.hasPendingWrites, n.fromCache), t.converter);
+  }
+  function getCountFromServer(e) {
+    return getAggregateFromServer(e, {
+      count: count()
+    });
+  }
+  function getAggregateFromServer(e, t) {
+    const n = __PRIVATE_cast(e.firestore, Firestore), r = ensureFirestoreConfigured(n), i = __PRIVATE_mapToArray(t, ((e2, t2) => new __PRIVATE_AggregateImpl(t2, e2.aggregateType, e2._internalFieldPath)));
+    return __PRIVATE_firestoreClientRunAggregateQuery(r, e._query, i).then(((t2) => (
+      /**
+      * Converts the core aggregation result to an `AggregateQuerySnapshot`
+      * that can be returned to the consumer.
+      * @param query
+      * @param aggregateResult Core aggregation result
+      * @internal
+      */
+      (function __PRIVATE_convertToAggregateQuerySnapshot(e2, t3, n2) {
+        const r2 = new __PRIVATE_ExpUserDataWriter(e2), i2 = new AggregateQuerySnapshot(t3, r2, n2);
+        return i2;
+      })(n, e, t2)
+    )));
   }
   function deleteField() {
     return new __PRIVATE_DeleteFieldValueImpl("deleteField");
@@ -47305,6 +47502,10 @@ This typically indicates that your device does not have a healthy Internet conne
   // src/js/audit.js
   var AuditModule = {
     ultimoErroNuvem: "",
+    ultimoCursorSub: null,
+    temMaisNuvem: false,
+    totalNuvem: 0,
+    TAMANHO_PAGINA: 100,
     getChaveLicencaAtual() {
       const lic = StorageService.getLicenca() || {};
       return (lic.chaveLicenca || lic.clienteId || "LOCAL").trim().toUpperCase();
@@ -47568,104 +47769,228 @@ This typically indicates that your device does not have a healthy Internet conne
         this.enviarLogNuvem(payload, chaveLicenca, myDevId);
       }
     },
-    async consultarSubcolecaoLoja(chave) {
+    async consultarSubcolecaoLoja(chave, { pageSize = 100, cursor = null } = {}) {
       const col = collection(db, "backups_lojas", chave, "auditoria");
       try {
-        return await getDocs(query(col, orderBy("criadoEm", "desc"), limit(150)));
+        const q2 = cursor ? query(col, orderBy("criadoEm", "desc"), startAfter(cursor), limit(pageSize)) : query(col, orderBy("criadoEm", "desc"), limit(pageSize));
+        return await getDocs(q2);
       } catch (err) {
         console.warn("[AuditModule] Consulta da subcole\xE7\xE3o sem orderBy:", err && (err.message || err));
-        return getDocs(query(col, limit(150)));
+        return getDocs(query(col, limit(pageSize)));
       }
     },
-    async consultarNuvemPorChave(chave) {
+    async consultarNuvemPorChave(chave, pageSize = 100) {
       const col = collection(db, "auditoria_lojas");
       try {
         return await getDocs(query(
           col,
           where("chaveLicenca", "==", chave),
           orderBy("criadoEm", "desc"),
-          limit(150)
+          limit(pageSize)
         ));
       } catch (err) {
         console.warn("[AuditModule] Consulta ordenada indispon\xEDvel, tentando sem orderBy:", err && (err.message || err));
         return getDocs(query(
           col,
           where("chaveLicenca", "==", chave),
-          limit(150)
+          limit(pageSize)
         ));
       }
     },
+    async contarLogsNuvem(chave) {
+      let total = 0;
+      try {
+        const sub = await getCountFromServer(collection(db, "backups_lojas", chave, "auditoria"));
+        total = Math.max(total, sub.data() && sub.data().count || 0);
+      } catch (e) {
+      }
+      try {
+        const leg = await getCountFromServer(query(collection(db, "auditoria_lojas"), where("chaveLicenca", "==", chave)));
+        if (!total) total = leg.data() && leg.data().count || 0;
+      } catch (e) {
+      }
+      return total;
+    },
     persistirLogsMesclados(logs) {
       try {
-        localStorage.setItem(this.getStorageKey(), JSON.stringify((logs || []).slice(0, 200)));
+        localStorage.setItem(this.getStorageKey(), JSON.stringify((logs || []).slice(0, 300)));
       } catch (e) {
       }
     },
-    async buscarLogsAuditoria(maxLogs = 150) {
+    mesclarLogsUnicos(listas, chaveLicenca) {
+      const mapaIds = /* @__PURE__ */ new Set();
+      const todos = [];
+      listas.flat().forEach((l) => {
+        if (!l) return;
+        const licLog = String(l.chaveLicenca || "").trim().toUpperCase();
+        if (licLog && chaveLicenca && licLog !== chaveLicenca) return;
+        const key = l.id || l.sessaoKey || `${l.tipo}_${l.criadoEm}_${l.descricao}`;
+        if (!mapaIds.has(key)) {
+          mapaIds.add(key);
+          todos.push(l);
+        }
+      });
+      todos.sort((a, b) => new Date(b.criadoEm || 0) - new Date(a.criadoEm || 0));
+      return todos;
+    },
+    async buscarLogsAuditoria(maxLogs = 100, { cursor = null } = {}) {
+      const pageSize = this.TAMANHO_PAGINA || 100;
       const chaveLicenca = this.getChaveLicencaAtual();
       const logsLocais = this.getLocalLogs();
       this.ultimoErroNuvem = "";
+      if (!cursor) {
+        this.ultimoCursorSub = null;
+        this.temMaisNuvem = false;
+      }
       try {
         if (!chaveLicenca || chaveLicenca === "LOCAL" || typeof navigator !== "undefined" && !navigator.onLine) {
           if (typeof navigator !== "undefined" && !navigator.onLine) {
             this.ultimoErroNuvem = "Este computador est\xE1 offline; mostrando s\xF3 os logs locais.";
           }
-          return logsLocais.slice(0, maxLogs);
+          this.totalNuvem = logsLocais.length;
+          this.temMaisNuvem = false;
+          return logsLocais;
         }
         const autenticou = await garantirSessaoLoja(chaveLicenca, { deviceId: StorageService.getDeviceId() });
         if (!autenticou) {
           this.ultimoErroNuvem = "Este terminal n\xE3o autenticou na nuvem, ent\xE3o s\xF3 v\xEA os logs que ele mesmo gerou.";
-          return logsLocais.slice(0, maxLogs);
+          this.totalNuvem = logsLocais.length;
+          this.temMaisNuvem = false;
+          return logsLocais;
         }
-        await this.descarregarPendentes(chaveLicenca);
+        if (!cursor) await this.descarregarPendentes(chaveLicenca);
         const fetchPromise = (async () => {
           const snapshots2 = [];
           try {
-            snapshots2.push(await this.consultarSubcolecaoLoja(chaveLicenca));
+            snapshots2.push(await this.consultarSubcolecaoLoja(chaveLicenca, { pageSize, cursor }));
           } catch (err) {
             console.warn("[AuditModule] Subcole\xE7\xE3o de auditoria indispon\xEDvel:", err && (err.message || err));
           }
-          for (const chave of this.getChavesConsulta()) {
-            try {
-              snapshots2.push(await this.consultarNuvemPorChave(chave));
-            } catch (err) {
-              console.warn("[AuditModule] Consulta ignorada para chave", chave, err && (err.message || err));
+          if (!cursor) {
+            for (const chave of this.getChavesConsulta()) {
+              try {
+                snapshots2.push(await this.consultarNuvemPorChave(chave, pageSize));
+              } catch (err) {
+                console.warn("[AuditModule] Consulta ignorada para chave", chave, err && (err.message || err));
+              }
             }
           }
           return snapshots2;
         })();
         const timeoutPromise = new Promise(
-          (_, reject) => setTimeout(() => reject(new Error("Timeout de busca auditoria (8s)")), 8e3)
+          (_, reject) => setTimeout(() => reject(new Error("Timeout de busca auditoria (12s)")), 12e3)
         );
         const snapshots = await Promise.race([fetchPromise, timeoutPromise]);
         const logsNuvem = [];
-        (snapshots || []).forEach((snapshot) => {
+        let snapSub = null;
+        (snapshots || []).forEach((snapshot, idx) => {
+          if (idx === 0) snapSub = snapshot;
           snapshot.forEach((d) => {
-            const data = d.data();
-            logsNuvem.push({ id: d.id, ...data });
+            logsNuvem.push({ id: d.id, ...d.data() });
           });
         });
-        const mapaIds = /* @__PURE__ */ new Set();
-        const todos = [];
-        [...logsNuvem, ...logsLocais].forEach((l) => {
-          if (!l) return;
-          const licLog = String(l.chaveLicenca || "").trim().toUpperCase();
-          if (licLog && licLog !== chaveLicenca) return;
-          const key = l.id || l.sessaoKey || `${l.tipo}_${l.criadoEm}_${l.descricao}`;
-          if (!mapaIds.has(key)) {
-            mapaIds.add(key);
-            todos.push(l);
-          }
-        });
-        todos.sort((a, b) => new Date(b.criadoEm || 0) - new Date(a.criadoEm || 0));
-        const resultado = todos.slice(0, maxLogs);
-        this.persistirLogsMesclados(resultado);
-        return resultado;
+        if (snapSub && snapSub.docs && snapSub.docs.length) {
+          this.ultimoCursorSub = snapSub.docs[snapSub.docs.length - 1];
+          this.temMaisNuvem = snapSub.size >= pageSize;
+        } else {
+          this.temMaisNuvem = false;
+        }
+        if (!cursor) {
+          this.contarLogsNuvem(chaveLicenca).then((n) => {
+            this.totalNuvem = Math.max(n || 0, logsNuvem.length, logsLocais.length);
+            if (window.GerenciaModule && window.GerenciaModule.subAbaAtiva === "auditoria") {
+              window.GerenciaModule.renderAuditoriaFiltrada();
+            }
+          }).catch(() => {
+          });
+        }
+        const todos = this.mesclarLogsUnicos(cursor ? [logsNuvem] : [logsNuvem, logsLocais], chaveLicenca);
+        if (!cursor) this.persistirLogsMesclados(todos);
+        if (!this.totalNuvem) this.totalNuvem = Math.max(todos.length, logsNuvem.length);
+        return todos;
       } catch (err) {
         console.warn("[AuditModule] Erro ao buscar logs na nuvem, retornando locais:", err);
         this.ultimoErroNuvem = "N\xE3o foi poss\xEDvel ler os logs da nuvem neste computador.";
+        this.temMaisNuvem = false;
+        this.totalNuvem = logsLocais.length;
         return logsLocais.slice(0, maxLogs);
       }
+    },
+    logEstaNoPeriodo(log, dias) {
+      if (!dias) return true;
+      const ms = new Date(log && (log.criadoEm || log.dataHoraFormatada) || 0).getTime();
+      if (!Number.isFinite(ms) || ms <= 0) return false;
+      const corte = Date.now() - dias * 24 * 60 * 60 * 1e3;
+      return ms >= corte;
+    },
+    async excluirLogsPorPeriodo(dias) {
+      const chave = this.getChaveLicencaAtual();
+      const soPeriodo = (log) => this.logEstaNoPeriodo(log, dias);
+      const locaisAntes = this.getLocalLogs();
+      const locaisNovos = locaisAntes.filter((l) => !soPeriodo(l));
+      const removidosLocal = locaisAntes.length - locaisNovos.length;
+      try {
+        localStorage.setItem(this.getStorageKey(), JSON.stringify(locaisNovos));
+      } catch (e) {
+      }
+      this.salvarPendentes(this.getPendentes().filter((l) => !soPeriodo(l)));
+      let apagadosNuvem = 0;
+      if (!chave || chave === "LOCAL" || typeof navigator !== "undefined" && !navigator.onLine) {
+        return { local: removidosLocal, nuvem: 0 };
+      }
+      try {
+        await garantirSessaoLoja(chave, { deviceId: StorageService.getDeviceId() });
+      } catch (e) {
+      }
+      const col = collection(db, "backups_lojas", chave, "auditoria");
+      let cursor = null;
+      let guard = 0;
+      const corte = dias ? Date.now() - dias * 24 * 60 * 60 * 1e3 : 0;
+      while (guard++ < 80) {
+        let snap;
+        try {
+          snap = cursor ? await getDocs(query(col, orderBy("criadoEm", "desc"), startAfter(cursor), limit(100))) : await getDocs(query(col, orderBy("criadoEm", "desc"), limit(100)));
+        } catch (e) {
+          snap = await getDocs(query(col, limit(200)));
+        }
+        if (!snap || snap.empty) break;
+        const docs = snap.docs || [];
+        for (const d of docs) {
+          if (soPeriodo({ id: d.id, ...d.data() })) {
+            try {
+              await deleteDoc(d.ref);
+              apagadosNuvem++;
+            } catch (err) {
+            }
+          }
+        }
+        const last = docs[docs.length - 1];
+        if (!last) break;
+        const lastMs = new Date(last.data() && last.data().criadoEm || 0).getTime();
+        cursor = last;
+        if (dias && Number.isFinite(lastMs) && lastMs < corte) break;
+        if (docs.length < 100) break;
+      }
+      try {
+        const snapLeg = await getDocs(query(
+          collection(db, "auditoria_lojas"),
+          where("chaveLicenca", "==", chave),
+          limit(400)
+        ));
+        for (const d of snapLeg.docs) {
+          if (soPeriodo({ id: d.id, ...d.data() })) {
+            try {
+              await deleteDoc(d.ref);
+              apagadosNuvem++;
+            } catch (err) {
+            }
+          }
+        }
+      } catch (e) {
+      }
+      this.ultimoCursorSub = null;
+      this.temMaisNuvem = false;
+      return { local: removidosLocal, nuvem: apagadosNuvem };
     }
   };
 
@@ -47673,6 +47998,7 @@ This typically indicates that your device does not have a healthy Internet conne
   var PdvModule = {
     carrinho: [],
     clubePerguntaExibida: false,
+    cpfSugeridoNota: "",
     desconto: 0,
     audioCtx: null,
     init() {
@@ -49189,6 +49515,7 @@ Venda bloqueada no PDV!`);
       this.pagamentosLancados = [];
       this.trocoDinheiroTotal = 0;
       this.cpfNotaFinalizacao = "";
+      this.cpfSugeridoNota = "";
       if (document.activeElement && typeof document.activeElement.blur === "function") {
         document.activeElement.blur();
       }
@@ -49780,9 +50107,10 @@ Venda bloqueada no PDV!`);
         this.executarFinalizacaoVendaCompleta();
         return;
       }
-      if (this.clienteClubeAtivo && this.clienteClubeAtivo.cpfCnpj) {
-        this.cpfNotaFinalizacao = this.clienteClubeAtivo.cpfCnpj;
-        this.executarFinalizacaoVendaCompleta();
+      const cpfClube = this.clienteClubeAtivo && this.clienteClubeAtivo.cpfCnpj ? String(this.clienteClubeAtivo.cpfCnpj).replace(/\D/g, "") : "";
+      this.cpfSugeridoNota = cpfClube.length >= 11 ? cpfClube : "";
+      if (this.cpfSugeridoNota) {
+        this.abrirModalPerguntaCpfNota();
         return;
       }
       const tefConfig = StorageService.getTefConfig();
@@ -49805,9 +50133,18 @@ Venda bloqueada no PDV!`);
       const fasePergunta = document.getElementById("cpf-nota-fase-pergunta");
       const faseDigitacao = document.getElementById("cpf-nota-fase-digitacao");
       const input = document.getElementById("cpf-nota-modal-input");
+      const desc = document.getElementById("cpf-nota-pergunta-desc");
       if (fasePergunta) fasePergunta.style.display = "block";
       if (faseDigitacao) faseDigitacao.style.display = "none";
       if (input) input.value = "";
+      if (desc) {
+        if (this.cpfSugeridoNota) {
+          const cpfFmt = this.formatarCpfCnpj(this.cpfSugeridoNota);
+          desc.innerHTML = `Cliente do clube identificado.<br>Usar o CPF <strong>${cpfFmt}</strong> no cupom fiscal?`;
+        } else {
+          desc.innerHTML = "O cliente deseja informar o <strong>CPF ou CNPJ</strong> no Cupom Fiscal?";
+        }
+      }
       if (modal) {
         modal.classList.add("active");
         const btnSim = document.getElementById("btn-cpf-nota-sim");
@@ -49823,6 +50160,12 @@ Venda bloqueada no PDV!`);
       if (!querCpf) {
         this.fecharModalPerguntaCpfNota();
         this.cpfNotaFinalizacao = "";
+        this.executarFinalizacaoVendaCompleta();
+        return;
+      }
+      if (this.cpfSugeridoNota) {
+        this.cpfNotaFinalizacao = this.cpfSugeridoNota;
+        this.fecharModalPerguntaCpfNota();
         this.executarFinalizacaoVendaCompleta();
         return;
       }
@@ -57558,8 +57901,11 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
     ajusteProdutoSelecionadoId: null,
     filtroContasStatus: "todos",
     logsAuditoriaCache: [],
+    auditoriaExibidos: 100,
+    auditoriaCarregandoMais: false,
     init() {
       this.bindSubNavegacao();
+      this.bindScrollAuditoria();
       this.renderSubAbaAtual();
     },
     bindSubNavegacao() {
@@ -58258,6 +58604,17 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
     },
     filtroAuditoria: "todos",
     filtroOperadorAuditoria: "todos",
+    bindScrollAuditoria() {
+      const area = document.getElementById("gerencia-auditoria-scroll");
+      if (!area || area.dataset.scrollBound === "1") return;
+      area.dataset.scrollBound = "1";
+      area.addEventListener("scroll", () => {
+        if (this.subAbaAtiva !== "auditoria") return;
+        if (this.auditoriaCarregandoMais) return;
+        if (area.scrollTop + area.clientHeight < area.scrollHeight - 90) return;
+        this.carregarMaisAuditoria();
+      });
+    },
     // =========================================================================
     // 4. AUDITORIA EM TEMPO REAL & AJUSTE MANUAL DE ESTOQUE
     // =========================================================================
@@ -58294,11 +58651,14 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
     },
     filtrarAuditoriaOperador(operador) {
       this.filtroOperadorAuditoria = operador || "todos";
+      this.auditoriaExibidos = 100;
       this.renderAuditoriaFiltrada();
     },
     async renderAuditoriaAjustes() {
       const tbody = document.getElementById("gerencia-auditoria-tbody");
       if (!tbody) return;
+      this.bindScrollAuditoria();
+      this.auditoriaExibidos = 100;
       const btnAtualizar = document.getElementById("btn-atualizar-logs-auditoria");
       if (btnAtualizar) {
         btnAtualizar.disabled = true;
@@ -58314,7 +58674,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
         this.renderSkeletonAuditoria(tbody);
       }
       try {
-        const logs = await AuditModule.buscarLogsAuditoria(150);
+        const logs = await AuditModule.buscarLogsAuditoria(100);
         this.logsAuditoriaCache = logs;
         this.preencherSelectOperadoresAuditoria();
         this.renderAuditoriaFiltrada();
@@ -58333,6 +58693,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
     },
     filtrarAuditoria(tipo) {
       this.filtroAuditoria = tipo;
+      this.auditoriaExibidos = 100;
       document.querySelectorAll(".gerencia-audit-filtro-btn").forEach((btn) => {
         btn.classList.toggle("active", btn.getAttribute("data-tipo") === tipo);
       });
@@ -58348,7 +58709,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       if (opFiltro !== "todos") {
         logsFiltrados = logsFiltrados.filter((l) => (l.operador || "").toLowerCase() === opFiltro);
       }
-      const logs = tipo === "todos" ? logsFiltrados : logsFiltrados.filter((l) => {
+      const logsCompletos = tipo === "todos" ? logsFiltrados : logsFiltrados.filter((l) => {
         const t = (l.tipo || "").toLowerCase();
         const desc = (l.descricao || "").toLowerCase();
         if (tipo === "caixas" || tipo === "fechamento_caixa") {
@@ -58380,16 +58741,23 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
         }
         return t === tipo;
       });
+      const PAGE = 100;
+      if (!this.auditoriaExibidos || this.auditoriaExibidos < PAGE) this.auditoriaExibidos = PAGE;
+      const visiveis = logsCompletos.slice(0, this.auditoriaExibidos);
+      const totalNuvem = AuditModule && AuditModule.totalNuvem || 0;
+      const totalRef = Math.max(totalNuvem, todosLogs.length, logsCompletos.length);
+      const temMais = visiveis.length < logsCompletos.length || Boolean(AuditModule && AuditModule.temMaisNuvem);
       const contadorEl = document.getElementById("gerencia-auditoria-contador");
       if (contadorEl) {
-        contadorEl.innerHTML = `\u26A1 Exibindo: <strong>${logs.length} de ${todosLogs.length} registros</strong>`;
+        const dica = temMais ? " \xB7 role para ver os mais antigos" : "";
+        contadorEl.innerHTML = `\u26A1 \xDAltimas <strong>${visiveis.length}</strong> de <strong>${totalRef}</strong> registros${dica}`;
       }
-      if (logs.length === 0) {
+      if (logsCompletos.length === 0) {
         const avisoNuvem = !todosLogs.length && AuditModule.ultimoErroNuvem ? `<div style="margin-top: 8px; font-size: 12px; color: #b45309;">${AuditModule.ultimoErroNuvem}</div>` : "";
         tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 32px; color: var(--text-dim);">Nenhum registro encontrado para este filtro.${avisoNuvem}</td></tr>`;
         return;
       }
-      tbody.innerHTML = logs.map((l) => {
+      tbody.innerHTML = visiveis.map((l) => {
         let badgeTipo = `<span style="background: #f1f5f9; color: #475569; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px;">\u{1F4CC} ${(l.tipo || "Evento").replace(/_/g, " ")}</span>`;
         if (l.tipo === "abertura_caixa") {
           badgeTipo = '<span style="background: #ecfdf5; color: #059669; border: 1px solid #a7f3d0; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 800; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px;">\u{1F7E2} Abertura Caixa</span>';
@@ -58453,6 +58821,87 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
         </tr>
       `;
       }).join("");
+    },
+    async carregarMaisAuditoria() {
+      const filtradosLen = (this.logsAuditoriaCache || []).length;
+      if (this.auditoriaExibidos < filtradosLen) {
+        this.auditoriaExibidos += 100;
+        this.renderAuditoriaFiltrada();
+        return;
+      }
+      if (!AuditModule || !AuditModule.temMaisNuvem || !AuditModule.ultimoCursorSub) return;
+      if (this.auditoriaCarregandoMais) return;
+      this.auditoriaCarregandoMais = true;
+      try {
+        const novos = await AuditModule.buscarLogsAuditoria(100, { cursor: AuditModule.ultimoCursorSub });
+        const ids = new Set((this.logsAuditoriaCache || []).map((l) => l.id));
+        (novos || []).forEach((l) => {
+          if (l && l.id && !ids.has(l.id)) {
+            this.logsAuditoriaCache.push(l);
+            ids.add(l.id);
+          }
+        });
+        this.logsAuditoriaCache.sort((a, b) => new Date(b.criadoEm || 0) - new Date(a.criadoEm || 0));
+        this.auditoriaExibidos += 100;
+        this.renderAuditoriaFiltrada();
+      } catch (e) {
+        console.warn("[GerenciaModule] Falha ao carregar mais logs:", e);
+      } finally {
+        this.auditoriaCarregandoMais = false;
+      }
+    },
+    pedirExclusaoLogsPeriodo() {
+      const select = document.getElementById("gerencia-auditoria-excluir-periodo");
+      const valor = select ? String(select.value || "").trim() : "";
+      if (!valor) {
+        if (window.App) window.App.showToast("Escolha o per\xEDodo que deseja excluir.", "warning");
+        return;
+      }
+      const rotulos = {
+        "7": "os \xFAltimos 7 dias",
+        "15": "os \xFAltimos 15 dias",
+        "30": "os \xFAltimos 30 dias",
+        "60": "os \xFAltimos 60 dias",
+        "90": "os \xFAltimos 90 dias",
+        "all": "TODOS os logs"
+      };
+      const label = rotulos[valor] || valor;
+      const dias = valor === "all" ? 0 : parseInt(valor, 10);
+      const modal = document.getElementById("modal-confirmacao-custom");
+      const icone = document.getElementById("modal-confirm-icone");
+      const titulo = document.getElementById("modal-confirm-titulo");
+      const msg = document.getElementById("modal-confirm-mensagem");
+      const btnAcao = document.getElementById("modal-confirm-btn-acao");
+      if (icone) icone.textContent = "\u{1F5D1}\uFE0F";
+      if (titulo) titulo.textContent = "Excluir logs de auditoria";
+      if (msg) msg.textContent = `Isso apaga ${label} do hist\xF3rico (neste computador e na nuvem). N\xE3o d\xE1 para desfazer.`;
+      if (btnAcao) {
+        btnAcao.textContent = "\u{1F5D1}\uFE0F Sim, excluir";
+        btnAcao.onclick = () => {
+          GerenciaModule.confirmarExclusaoLogsPeriodo(dias);
+        };
+      }
+      if (modal) modal.style.display = "flex";
+    },
+    async confirmarExclusaoLogsPeriodo(dias) {
+      const modal = document.getElementById("modal-confirmacao-custom");
+      if (modal) modal.style.display = "none";
+      const btn = document.getElementById("gerencia-auditoria-excluir-periodo");
+      if (window.App) window.App.showToast("\u{1F5D1}\uFE0F Excluindo logs do per\xEDodo...", "info");
+      try {
+        const res = await AuditModule.excluirLogsPorPeriodo(dias);
+        const total = (res.local || 0) + (res.nuvem || 0);
+        this.logsAuditoriaCache = [];
+        this.auditoriaExibidos = 100;
+        await this.renderAuditoriaAjustes();
+        if (btn) btn.value = "";
+        const sel = document.getElementById("gerencia-auditoria-excluir-periodo");
+        if (sel) sel.value = "";
+        if (window.App) window.App.showToast(`\u{1F5D1}\uFE0F ${total} registro(s) exclu\xEDdo(s).`, "success");
+      } catch (e) {
+        console.warn("[GerenciaModule] Exclus\xE3o por per\xEDodo falhou:", e);
+        if (window.App) window.App.showToast("N\xE3o foi poss\xEDvel excluir os logs agora.", "error");
+      }
     },
     verDetalhesAuditoria(logId) {
       const log = (this.logsAuditoriaCache || []).find((item) => item.id === logId);
@@ -63860,8 +64309,6 @@ exceljs/dist/exceljs.min.js:
 @firebase/firestore/dist/index.esm2017.js:
 @firebase/firestore/dist/index.esm2017.js:
 @firebase/firestore/dist/index.esm2017.js:
-@firebase/firestore/dist/index.esm2017.js:
-@firebase/firestore/dist/index.esm2017.js:
   (**
    * @license
    * Copyright 2017 Google LLC
@@ -63999,7 +64446,6 @@ exceljs/dist/exceljs.min.js:
 
 @firebase/util/dist/index.esm2017.js:
 firebase/app/dist/esm/index.esm.js:
-@firebase/firestore/dist/index.esm2017.js:
 @firebase/firestore/dist/index.esm2017.js:
 @firebase/firestore/dist/index.esm2017.js:
 @firebase/firestore/dist/index.esm2017.js:
@@ -64522,56 +64968,6 @@ firebase/app/dist/esm/index.esm.js:
   (**
    * @license
    * Copyright 2023 Google LLC
-   *
-   * Licensed under the Apache License, Version 2.0 (the "License");
-   * you may not use this file except in compliance with the License.
-   * You may obtain a copy of the License at
-   *
-   *   http://www.apache.org/licenses/LICENSE-2.0
-   *
-   * Unless required by applicable law or agreed to in writing, software
-   * distributed under the License is distributed on an "AS IS" BASIS,
-   * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   * See the License for the specific language governing permissions and
-   * limitations under the License.
-   *)
-
-@firebase/firestore/dist/index.esm2017.js:
-  (**
-   * @license
-   * Copyright 2017 Google LLC
-   *
-   * Licensed under the Apache License, Version 2.0 (the "License");
-   * you may not use this file except in compliance with the License.
-   * You may obtain a copy of the License at
-   *
-   *   http://www.apache.org/licenses/LICENSE-2.0
-   *
-   * Unless required by applicable law or agreed to in writing, software
-   * distributed under the License is distributed on an "AS IS" BASIS,
-   * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   * See the License for the specific language governing permissions and
-   * limitations under the License.
-   *)
-  (**
-   * @license
-   * Copyright 2023 Google LLC
-   *
-   * Licensed under the Apache License, Version 2.0 (the "License");
-   * you may not use this file except in compliance with the License.
-   * You may obtain a copy of the License at
-   *
-   *   http://www.apache.org/licenses/LICENSE-2.0
-   *
-   * Unless required by applicable law or agreed to in writing, software
-   * distributed under the License is distributed on an "AS IS" BASIS,
-   * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   * See the License for the specific language governing permissions and
-   * limitations under the License.
-   *)
-  (**
-   * @license
-   * Copyright 2022 Google LLC
    *
    * Licensed under the Apache License, Version 2.0 (the "License");
    * you may not use this file except in compliance with the License.

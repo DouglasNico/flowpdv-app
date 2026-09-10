@@ -5,10 +5,14 @@
  */
 
 import { StorageService } from './storage.js';
-import { db, doc, collection, addDoc, setDoc, getDocs, query, where, orderBy, limit, garantirSessaoLoja } from './firebase-config.js';
+import { db, doc, collection, addDoc, setDoc, getDocs, query, where, orderBy, limit, startAfter, getCountFromServer, deleteDoc, garantirSessaoLoja } from './firebase-config.js';
 
 export const AuditModule = {
   ultimoErroNuvem: '',
+  ultimoCursorSub: null,
+  temMaisNuvem: false,
+  totalNuvem: 0,
+  TAMANHO_PAGINA: 100,
 
   getChaveLicencaAtual() {
     const lic = StorageService.getLicenca() || {};
@@ -297,113 +301,246 @@ export const AuditModule = {
     }
   },
 
-  async consultarSubcolecaoLoja(chave) {
+  async consultarSubcolecaoLoja(chave, { pageSize = 100, cursor = null } = {}) {
     const col = collection(db, 'backups_lojas', chave, 'auditoria');
     try {
-      return await getDocs(query(col, orderBy('criadoEm', 'desc'), limit(150)));
+      const q = cursor
+        ? query(col, orderBy('criadoEm', 'desc'), startAfter(cursor), limit(pageSize))
+        : query(col, orderBy('criadoEm', 'desc'), limit(pageSize));
+      return await getDocs(q);
     } catch (err) {
       console.warn('[AuditModule] Consulta da subcoleção sem orderBy:', err && (err.message || err));
-      return getDocs(query(col, limit(150)));
+      return getDocs(query(col, limit(pageSize)));
     }
   },
 
-  async consultarNuvemPorChave(chave) {
+  async consultarNuvemPorChave(chave, pageSize = 100) {
     const col = collection(db, "auditoria_lojas");
     try {
       return await getDocs(query(
         col,
         where("chaveLicenca", "==", chave),
         orderBy("criadoEm", "desc"),
-        limit(150)
+        limit(pageSize)
       ));
     } catch (err) {
       console.warn('[AuditModule] Consulta ordenada indisponível, tentando sem orderBy:', err && (err.message || err));
       return getDocs(query(
         col,
         where("chaveLicenca", "==", chave),
-        limit(150)
+        limit(pageSize)
       ));
     }
   },
 
+  async contarLogsNuvem(chave) {
+    let total = 0;
+    try {
+      const sub = await getCountFromServer(collection(db, 'backups_lojas', chave, 'auditoria'));
+      total = Math.max(total, (sub.data() && sub.data().count) || 0);
+    } catch (e) {}
+    try {
+      const leg = await getCountFromServer(query(collection(db, 'auditoria_lojas'), where('chaveLicenca', '==', chave)));
+      if (!total) total = (leg.data() && leg.data().count) || 0;
+    } catch (e) {}
+    return total;
+  },
+
   persistirLogsMesclados(logs) {
     try {
-      localStorage.setItem(this.getStorageKey(), JSON.stringify((logs || []).slice(0, 200)));
+      localStorage.setItem(this.getStorageKey(), JSON.stringify((logs || []).slice(0, 300)));
     } catch (e) {}
   },
 
-  async buscarLogsAuditoria(maxLogs = 150) {
+  mesclarLogsUnicos(listas, chaveLicenca) {
+    const mapaIds = new Set();
+    const todos = [];
+    listas.flat().forEach(l => {
+      if (!l) return;
+      const licLog = String(l.chaveLicenca || '').trim().toUpperCase();
+      if (licLog && chaveLicenca && licLog !== chaveLicenca) return;
+      const key = l.id || l.sessaoKey || `${l.tipo}_${l.criadoEm}_${l.descricao}`;
+      if (!mapaIds.has(key)) {
+        mapaIds.add(key);
+        todos.push(l);
+      }
+    });
+    todos.sort((a, b) => new Date(b.criadoEm || 0) - new Date(a.criadoEm || 0));
+    return todos;
+  },
+
+  async buscarLogsAuditoria(maxLogs = 100, { cursor = null } = {}) {
+    const pageSize = this.TAMANHO_PAGINA || 100;
     const chaveLicenca = this.getChaveLicencaAtual();
     const logsLocais = this.getLocalLogs();
     this.ultimoErroNuvem = '';
+    if (!cursor) {
+      this.ultimoCursorSub = null;
+      this.temMaisNuvem = false;
+    }
+
     try {
       if (!chaveLicenca || chaveLicenca === 'LOCAL' || (typeof navigator !== 'undefined' && !navigator.onLine)) {
         if (typeof navigator !== 'undefined' && !navigator.onLine) {
           this.ultimoErroNuvem = 'Este computador está offline; mostrando só os logs locais.';
         }
-        return logsLocais.slice(0, maxLogs);
+        this.totalNuvem = logsLocais.length;
+        this.temMaisNuvem = false;
+        return logsLocais;
       }
 
       const autenticou = await garantirSessaoLoja(chaveLicenca, { deviceId: StorageService.getDeviceId() });
       if (!autenticou) {
         this.ultimoErroNuvem = 'Este terminal não autenticou na nuvem, então só vê os logs que ele mesmo gerou.';
-        return logsLocais.slice(0, maxLogs);
+        this.totalNuvem = logsLocais.length;
+        this.temMaisNuvem = false;
+        return logsLocais;
       }
 
-      await this.descarregarPendentes(chaveLicenca);
+      if (!cursor) await this.descarregarPendentes(chaveLicenca);
 
       const fetchPromise = (async () => {
         const snapshots = [];
         try {
-          snapshots.push(await this.consultarSubcolecaoLoja(chaveLicenca));
+          snapshots.push(await this.consultarSubcolecaoLoja(chaveLicenca, { pageSize, cursor }));
         } catch (err) {
           console.warn('[AuditModule] Subcoleção de auditoria indisponível:', err && (err.message || err));
         }
-        for (const chave of this.getChavesConsulta()) {
-          try {
-            snapshots.push(await this.consultarNuvemPorChave(chave));
-          } catch (err) {
-            console.warn('[AuditModule] Consulta ignorada para chave', chave, err && (err.message || err));
+        if (!cursor) {
+          for (const chave of this.getChavesConsulta()) {
+            try {
+              snapshots.push(await this.consultarNuvemPorChave(chave, pageSize));
+            } catch (err) {
+              console.warn('[AuditModule] Consulta ignorada para chave', chave, err && (err.message || err));
+            }
           }
         }
         return snapshots;
       })();
 
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Timeout de busca auditoria (8s)')), 8000)
+        setTimeout(() => reject(new Error('Timeout de busca auditoria (12s)')), 12000)
       );
 
       const snapshots = await Promise.race([fetchPromise, timeoutPromise]);
       const logsNuvem = [];
-      (snapshots || []).forEach((snapshot) => {
+      let snapSub = null;
+      (snapshots || []).forEach((snapshot, idx) => {
+        if (idx === 0) snapSub = snapshot;
         snapshot.forEach((d) => {
-          const data = d.data();
-          logsNuvem.push({ id: d.id, ...data });
+          logsNuvem.push({ id: d.id, ...d.data() });
         });
       });
 
-      const mapaIds = new Set();
-      const todos = [];
-      [...logsNuvem, ...logsLocais].forEach(l => {
-        if (!l) return;
-        const licLog = String(l.chaveLicenca || '').trim().toUpperCase();
-        if (licLog && licLog !== chaveLicenca) return;
+      if (snapSub && snapSub.docs && snapSub.docs.length) {
+        this.ultimoCursorSub = snapSub.docs[snapSub.docs.length - 1];
+        this.temMaisNuvem = snapSub.size >= pageSize;
+      } else {
+        this.temMaisNuvem = false;
+      }
 
-        const key = l.id || l.sessaoKey || `${l.tipo}_${l.criadoEm}_${l.descricao}`;
-        if (!mapaIds.has(key)) {
-          mapaIds.add(key);
-          todos.push(l);
-        }
-      });
+      if (!cursor) {
+        this.contarLogsNuvem(chaveLicenca).then((n) => {
+          this.totalNuvem = Math.max(n || 0, logsNuvem.length, logsLocais.length);
+          if (window.GerenciaModule && window.GerenciaModule.subAbaAtiva === 'auditoria') {
+            window.GerenciaModule.renderAuditoriaFiltrada();
+          }
+        }).catch(() => {});
+      }
 
-      todos.sort((a, b) => new Date(b.criadoEm || 0) - new Date(a.criadoEm || 0));
-      const resultado = todos.slice(0, maxLogs);
-      this.persistirLogsMesclados(resultado);
-      return resultado;
-    } catch(err) {
+      const todos = this.mesclarLogsUnicos(cursor ? [logsNuvem] : [logsNuvem, logsLocais], chaveLicenca);
+      if (!cursor) this.persistirLogsMesclados(todos);
+      if (!this.totalNuvem) this.totalNuvem = Math.max(todos.length, logsNuvem.length);
+      return todos;
+    } catch (err) {
       console.warn('[AuditModule] Erro ao buscar logs na nuvem, retornando locais:', err);
       this.ultimoErroNuvem = 'Não foi possível ler os logs da nuvem neste computador.';
+      this.temMaisNuvem = false;
+      this.totalNuvem = logsLocais.length;
       return logsLocais.slice(0, maxLogs);
     }
+  },
+
+  logEstaNoPeriodo(log, dias) {
+    if (!dias) return true;
+    const ms = new Date(log && (log.criadoEm || log.dataHoraFormatada) || 0).getTime();
+    if (!Number.isFinite(ms) || ms <= 0) return false;
+    const corte = Date.now() - (dias * 24 * 60 * 60 * 1000);
+    return ms >= corte;
+  },
+
+  async excluirLogsPorPeriodo(dias) {
+    const chave = this.getChaveLicencaAtual();
+    const soPeriodo = (log) => this.logEstaNoPeriodo(log, dias);
+
+    const locaisAntes = this.getLocalLogs();
+    const locaisNovos = locaisAntes.filter(l => !soPeriodo(l));
+    const removidosLocal = locaisAntes.length - locaisNovos.length;
+    try {
+      localStorage.setItem(this.getStorageKey(), JSON.stringify(locaisNovos));
+    } catch (e) {}
+    this.salvarPendentes(this.getPendentes().filter(l => !soPeriodo(l)));
+
+    let apagadosNuvem = 0;
+    if (!chave || chave === 'LOCAL' || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+      return { local: removidosLocal, nuvem: 0 };
+    }
+
+    try {
+      await garantirSessaoLoja(chave, { deviceId: StorageService.getDeviceId() });
+    } catch (e) {}
+
+    const col = collection(db, 'backups_lojas', chave, 'auditoria');
+    let cursor = null;
+    let guard = 0;
+    const corte = dias ? (Date.now() - dias * 24 * 60 * 60 * 1000) : 0;
+    while (guard++ < 80) {
+      let snap;
+      try {
+        snap = cursor
+          ? await getDocs(query(col, orderBy('criadoEm', 'desc'), startAfter(cursor), limit(100)))
+          : await getDocs(query(col, orderBy('criadoEm', 'desc'), limit(100)));
+      } catch (e) {
+        snap = await getDocs(query(col, limit(200)));
+      }
+      if (!snap || snap.empty) break;
+
+      const docs = snap.docs || [];
+      for (const d of docs) {
+        if (soPeriodo({ id: d.id, ...d.data() })) {
+          try {
+            await deleteDoc(d.ref);
+            apagadosNuvem++;
+          } catch (err) {}
+        }
+      }
+
+      const last = docs[docs.length - 1];
+      if (!last) break;
+      const lastMs = new Date((last.data() && last.data().criadoEm) || 0).getTime();
+      cursor = last;
+      if (dias && Number.isFinite(lastMs) && lastMs < corte) break;
+      if (docs.length < 100) break;
+    }
+
+    try {
+      const snapLeg = await getDocs(query(
+        collection(db, 'auditoria_lojas'),
+        where('chaveLicenca', '==', chave),
+        limit(400)
+      ));
+      for (const d of snapLeg.docs) {
+        if (soPeriodo({ id: d.id, ...d.data() })) {
+          try {
+            await deleteDoc(d.ref);
+            apagadosNuvem++;
+          } catch (err) {}
+        }
+      }
+    } catch (e) {}
+
+    this.ultimoCursorSub = null;
+    this.temMaisNuvem = false;
+    return { local: removidosLocal, nuvem: apagadosNuvem };
   }
 };

@@ -10,6 +10,7 @@ import { AuditModule } from './audit.js';
 export const PdvModule = {
   carrinho: [],
   clubePerguntaExibida: false,
+  cpfSugeridoNota: '',
   desconto: 0,
   audioCtx: null,
 
@@ -1758,6 +1759,7 @@ export const PdvModule = {
     this.pagamentosLancados = [];
     this.trocoDinheiroTotal = 0;
     this.cpfNotaFinalizacao = '';
+    this.cpfSugeridoNota = '';
 
     // Desfocar qualquer elemento anterior
     if (document.activeElement && typeof document.activeElement.blur === 'function') {
@@ -2434,10 +2436,14 @@ export const PdvModule = {
       return;
     }
 
-    // Se o cliente já tiver CPF registrado (ex: Clube Fidelidade previamente identificado):
-    if (this.clienteClubeAtivo && this.clienteClubeAtivo.cpfCnpj) {
-      this.cpfNotaFinalizacao = this.clienteClubeAtivo.cpfCnpj;
-      this.executarFinalizacaoVendaCompleta();
+    const cpfClube = this.clienteClubeAtivo && this.clienteClubeAtivo.cpfCnpj
+      ? String(this.clienteClubeAtivo.cpfCnpj).replace(/\D/g, '')
+      : '';
+    this.cpfSugeridoNota = (cpfClube.length >= 11) ? cpfClube : '';
+
+    // Clube já identificou o CPF: ainda pergunta se vai na nota (Sim usa o mesmo CPF).
+    if (this.cpfSugeridoNota) {
+      this.abrirModalPerguntaCpfNota();
       return;
     }
 
@@ -2466,10 +2472,19 @@ export const PdvModule = {
     const fasePergunta = document.getElementById('cpf-nota-fase-pergunta');
     const faseDigitacao = document.getElementById('cpf-nota-fase-digitacao');
     const input = document.getElementById('cpf-nota-modal-input');
+    const desc = document.getElementById('cpf-nota-pergunta-desc');
 
     if (fasePergunta) fasePergunta.style.display = 'block';
     if (faseDigitacao) faseDigitacao.style.display = 'none';
     if (input) input.value = '';
+    if (desc) {
+      if (this.cpfSugeridoNota) {
+        const cpfFmt = this.formatarCpfCnpj(this.cpfSugeridoNota);
+        desc.innerHTML = `Cliente do clube identificado.<br>Usar o CPF <strong>${cpfFmt}</strong> no cupom fiscal?`;
+      } else {
+        desc.innerHTML = 'O cliente deseja informar o <strong>CPF ou CNPJ</strong> no Cupom Fiscal?';
+      }
+    }
 
     if (modal) {
       modal.classList.add('active');
@@ -2489,6 +2504,14 @@ export const PdvModule = {
       // NÃO [ESC]: Fecha o modal e conclui a venda gerando a NF sem CPF!
       this.fecharModalPerguntaCpfNota();
       this.cpfNotaFinalizacao = '';
+      this.executarFinalizacaoVendaCompleta();
+      return;
+    }
+
+    // SIM [ENTER]: se o clube já tem o CPF, usa na nota sem pedir de novo
+    if (this.cpfSugeridoNota) {
+      this.cpfNotaFinalizacao = this.cpfSugeridoNota;
+      this.fecharModalPerguntaCpfNota();
       this.executarFinalizacaoVendaCompleta();
       return;
     }

@@ -855,13 +855,25 @@
               <select id="gerencia-auditoria-operador-select" class="auditoria-operador-select" onchange="GerenciaModule.filtrarAuditoriaOperador(this.value)" title="Filtrar auditoria por funcionário">
                 <option value="todos">Todos os operadores</option>
               </select>
+              <select id="gerencia-auditoria-excluir-periodo" class="auditoria-operador-select" title="Escolha o período para excluir logs">
+                <option value="">Excluir período...</option>
+                <option value="7">Últimos 7 dias</option>
+                <option value="15">Últimos 15 dias</option>
+                <option value="30">Últimos 30 dias</option>
+                <option value="60">Últimos 60 dias</option>
+                <option value="90">Últimos 90 dias</option>
+                <option value="all">Todos os logs</option>
+              </select>
+              <button type="button" class="btn-action-sm danger" onclick="GerenciaModule.pedirExclusaoLogsPeriodo()" title="Excluir logs do período escolhido" style="height: 32px; padding: 0 12px; font-weight: 700;">
+                🗑️ Excluir
+              </button>
               <button type="button" id="btn-atualizar-logs-auditoria" class="btn-action-sm" onclick="GerenciaModule.renderAuditoriaAjustes()" title="Recarregar logs" style="height: 32px; padding: 0 12px; font-weight: 700;">
                 🔄 Atualizar
               </button>
             </div>
           </div>
           <div class="data-table-card" style="flex: 1; min-height: 0; display: flex; flex-direction: column;">
-            <div class="table-scroll-area" style="flex: 1; min-height: 0; overflow-y: auto;">
+            <div class="table-scroll-area" id="gerencia-auditoria-scroll" style="flex: 1; min-height: 0; overflow-y: auto;">
               <table class="pdv-table">
                 <thead>
                   <tr>
@@ -2658,7 +2670,7 @@
           <h3 style="font-size: 22px; font-weight: 900; color: var(--text-main); margin-bottom: 6px;">
             CPF na Nota?
           </h3>
-          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 24px; line-height: 1.4;">
+          <p id="cpf-nota-pergunta-desc" style="font-size: 13px; color: var(--text-muted); margin-bottom: 24px; line-height: 1.4;">
             O cliente deseja informar o <strong>CPF ou CNPJ</strong> no Cupom Fiscal?
           </p>
 

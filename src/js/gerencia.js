@@ -14,9 +14,12 @@ export const GerenciaModule = {
   ajusteProdutoSelecionadoId: null,
   filtroContasStatus: 'todos',
   logsAuditoriaCache: [],
+  auditoriaExibidos: 100,
+  auditoriaCarregandoMais: false,
 
   init() {
     this.bindSubNavegacao();
+    this.bindScrollAuditoria();
     this.renderSubAbaAtual();
   },
 
@@ -848,6 +851,17 @@ export const GerenciaModule = {
 
   filtroAuditoria: 'todos',
   filtroOperadorAuditoria: 'todos',
+  bindScrollAuditoria() {
+    const area = document.getElementById('gerencia-auditoria-scroll');
+    if (!area || area.dataset.scrollBound === '1') return;
+    area.dataset.scrollBound = '1';
+    area.addEventListener('scroll', () => {
+      if (this.subAbaAtiva !== 'auditoria') return;
+      if (this.auditoriaCarregandoMais) return;
+      if (area.scrollTop + area.clientHeight < area.scrollHeight - 90) return;
+      this.carregarMaisAuditoria();
+    });
+  },
 
   // =========================================================================
   // 4. AUDITORIA EM TEMPO REAL & AJUSTE MANUAL DE ESTOQUE
@@ -892,12 +906,15 @@ export const GerenciaModule = {
 
   filtrarAuditoriaOperador(operador) {
     this.filtroOperadorAuditoria = operador || 'todos';
+    this.auditoriaExibidos = 100;
     this.renderAuditoriaFiltrada();
   },
 
   async renderAuditoriaAjustes() {
     const tbody = document.getElementById('gerencia-auditoria-tbody');
     if (!tbody) return;
+    this.bindScrollAuditoria();
+    this.auditoriaExibidos = 100;
 
     const btnAtualizar = document.getElementById('btn-atualizar-logs-auditoria');
     if (btnAtualizar) {
@@ -923,7 +940,7 @@ export const GerenciaModule = {
 
     // 2. BUSCA ATUALIZAÇÃO NA NUVEM EM BACKGROUND COM TIMEOUT DE 3.5s
     try {
-      const logs = await AuditModule.buscarLogsAuditoria(150);
+      const logs = await AuditModule.buscarLogsAuditoria(100);
       this.logsAuditoriaCache = logs;
       this.preencherSelectOperadoresAuditoria();
       this.renderAuditoriaFiltrada();
@@ -944,6 +961,7 @@ export const GerenciaModule = {
 
   filtrarAuditoria(tipo) {
     this.filtroAuditoria = tipo;
+    this.auditoriaExibidos = 100;
     document.querySelectorAll('.gerencia-audit-filtro-btn').forEach(btn => {
       btn.classList.toggle('active', btn.getAttribute('data-tipo') === tipo);
     });
@@ -962,7 +980,7 @@ export const GerenciaModule = {
       logsFiltrados = logsFiltrados.filter(l => (l.operador || '').toLowerCase() === opFiltro);
     }
 
-    const logs = tipo === 'todos' 
+    const logsCompletos = tipo === 'todos' 
       ? logsFiltrados 
       : logsFiltrados.filter(l => {
           const t = (l.tipo || '').toLowerCase();
@@ -998,12 +1016,20 @@ export const GerenciaModule = {
           return t === tipo;
         });
 
+    const PAGE = 100;
+    if (!this.auditoriaExibidos || this.auditoriaExibidos < PAGE) this.auditoriaExibidos = PAGE;
+    const visiveis = logsCompletos.slice(0, this.auditoriaExibidos);
+    const totalNuvem = (AuditModule && AuditModule.totalNuvem) || 0;
+    const totalRef = Math.max(totalNuvem, todosLogs.length, logsCompletos.length);
+    const temMais = visiveis.length < logsCompletos.length || Boolean(AuditModule && AuditModule.temMaisNuvem);
+
     const contadorEl = document.getElementById('gerencia-auditoria-contador');
     if (contadorEl) {
-      contadorEl.innerHTML = `⚡ Exibindo: <strong>${logs.length} de ${todosLogs.length} registros</strong>`;
+      const dica = temMais ? ' · role para ver os mais antigos' : '';
+      contadorEl.innerHTML = `⚡ Últimas <strong>${visiveis.length}</strong> de <strong>${totalRef}</strong> registros${dica}`;
     }
 
-    if (logs.length === 0) {
+    if (logsCompletos.length === 0) {
       const avisoNuvem = (!todosLogs.length && AuditModule.ultimoErroNuvem)
         ? `<div style="margin-top: 8px; font-size: 12px; color: #b45309;">${AuditModule.ultimoErroNuvem}</div>`
         : '';
@@ -1011,7 +1037,7 @@ export const GerenciaModule = {
       return;
     }
 
-    tbody.innerHTML = logs.map(l => {
+    tbody.innerHTML = visiveis.map(l => {
       let badgeTipo = `<span style="background: #f1f5f9; color: #475569; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px;">📌 ${(l.tipo || 'Evento').replace(/_/g, ' ')}</span>`;
       
       if (l.tipo === 'abertura_caixa') {
@@ -1078,6 +1104,94 @@ export const GerenciaModule = {
         </tr>
       `;
     }).join('');
+  },
+
+  async carregarMaisAuditoria() {
+    const filtradosLen = (this.logsAuditoriaCache || []).length;
+    if (this.auditoriaExibidos < filtradosLen) {
+      this.auditoriaExibidos += 100;
+      this.renderAuditoriaFiltrada();
+      return;
+    }
+    if (!AuditModule || !AuditModule.temMaisNuvem || !AuditModule.ultimoCursorSub) return;
+    if (this.auditoriaCarregandoMais) return;
+    this.auditoriaCarregandoMais = true;
+    try {
+      const novos = await AuditModule.buscarLogsAuditoria(100, { cursor: AuditModule.ultimoCursorSub });
+      const ids = new Set((this.logsAuditoriaCache || []).map(l => l.id));
+      (novos || []).forEach(l => {
+        if (l && l.id && !ids.has(l.id)) {
+          this.logsAuditoriaCache.push(l);
+          ids.add(l.id);
+        }
+      });
+      this.logsAuditoriaCache.sort((a, b) => new Date(b.criadoEm || 0) - new Date(a.criadoEm || 0));
+      this.auditoriaExibidos += 100;
+      this.renderAuditoriaFiltrada();
+    } catch (e) {
+      console.warn('[GerenciaModule] Falha ao carregar mais logs:', e);
+    } finally {
+      this.auditoriaCarregandoMais = false;
+    }
+  },
+
+  pedirExclusaoLogsPeriodo() {
+    const select = document.getElementById('gerencia-auditoria-excluir-periodo');
+    const valor = select ? String(select.value || '').trim() : '';
+    if (!valor) {
+      if (window.App) window.App.showToast('Escolha o período que deseja excluir.', 'warning');
+      return;
+    }
+
+    const rotulos = {
+      '7': 'os últimos 7 dias',
+      '15': 'os últimos 15 dias',
+      '30': 'os últimos 30 dias',
+      '60': 'os últimos 60 dias',
+      '90': 'os últimos 90 dias',
+      'all': 'TODOS os logs'
+    };
+    const label = rotulos[valor] || valor;
+    const dias = valor === 'all' ? 0 : parseInt(valor, 10);
+
+    const modal = document.getElementById('modal-confirmacao-custom');
+    const icone = document.getElementById('modal-confirm-icone');
+    const titulo = document.getElementById('modal-confirm-titulo');
+    const msg = document.getElementById('modal-confirm-mensagem');
+    const btnAcao = document.getElementById('modal-confirm-btn-acao');
+
+    if (icone) icone.textContent = '🗑️';
+    if (titulo) titulo.textContent = 'Excluir logs de auditoria';
+    if (msg) msg.textContent = `Isso apaga ${label} do histórico (neste computador e na nuvem). Não dá para desfazer.`;
+    if (btnAcao) {
+      btnAcao.textContent = '🗑️ Sim, excluir';
+      btnAcao.onclick = () => {
+        GerenciaModule.confirmarExclusaoLogsPeriodo(dias);
+      };
+    }
+    if (modal) modal.style.display = 'flex';
+  },
+
+  async confirmarExclusaoLogsPeriodo(dias) {
+    const modal = document.getElementById('modal-confirmacao-custom');
+    if (modal) modal.style.display = 'none';
+
+    const btn = document.getElementById('gerencia-auditoria-excluir-periodo');
+    if (window.App) window.App.showToast('🗑️ Excluindo logs do período...', 'info');
+    try {
+      const res = await AuditModule.excluirLogsPorPeriodo(dias);
+      const total = (res.local || 0) + (res.nuvem || 0);
+      this.logsAuditoriaCache = [];
+      this.auditoriaExibidos = 100;
+      await this.renderAuditoriaAjustes();
+      if (btn) btn.value = '';
+      const sel = document.getElementById('gerencia-auditoria-excluir-periodo');
+      if (sel) sel.value = '';
+      if (window.App) window.App.showToast(`🗑️ ${total} registro(s) excluído(s).`, 'success');
+    } catch (e) {
+      console.warn('[GerenciaModule] Exclusão por período falhou:', e);
+      if (window.App) window.App.showToast('Não foi possível excluir os logs agora.', 'error');
+    }
   },
 
   verDetalhesAuditoria(logId) {
