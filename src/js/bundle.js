@@ -25100,11 +25100,20 @@
       document.body.classList.remove("tela-login-ativa");
     },
     atualizarNomeLojaLogin() {
-      const el = document.getElementById("login-screen-loja-nome");
-      if (!el) return;
+      const wrap2 = document.getElementById("login-screen-loja-logo-wrap");
+      const img = document.getElementById("login-screen-loja-logo");
+      if (!wrap2 || !img) return;
       const cfg = StorageService.getConfig() || {};
       const lic = StorageService.getLicenca() || {};
-      el.textContent = cfg.nomeLoja || cfg.nomeEmpresa || lic.razaoSocial || "FlowPDV";
+      const logo = lic && lic.logoUrl || cfg.logoUrl || "";
+      if (logo && (String(logo).startsWith("http") || String(logo).startsWith("data:image"))) {
+        img.src = logo;
+        img.alt = cfg.nomeLoja || cfg.nomeEmpresa || lic.razaoSocial || "Logo da loja";
+        wrap2.style.display = "flex";
+      } else {
+        img.removeAttribute("src");
+        wrap2.style.display = "none";
+      }
     },
     renderCardsLogin() {
       const select = document.getElementById("login-operador-select");
@@ -59314,9 +59323,12 @@ ${base}`;
       }
       const contas = StorageService.getContasPagar() || [];
       const contasVencidas = [];
+      const contasPendentes = [];
       let valorVencido = 0;
       contas.forEach((c) => {
-        if (c && c.status !== "pago" && c.vencimento && c.vencimento < hojeStr) {
+        if (!c || c.status === "pago") return;
+        contasPendentes.push(c);
+        if (c.vencimento && c.vencimento < hojeStr) {
           contasVencidas.push(c);
           valorVencido += parseFloat(c.valor) || 0;
         }
@@ -59342,6 +59354,7 @@ ${base}`;
         prodVencidos,
         prodVence15d,
         contasVencidas,
+        contasPendentes,
         valorVencido,
         nomeLoja,
         lojaOffline,
@@ -59421,6 +59434,21 @@ ${base}`;
       }
       const lojaValor = dados.lojaOffline ? "Offline" : dados.lojaSync ? "Sync" : "Online";
       const lojaSub = this._escHtml(dados.nomeLoja);
+      let pagarValor = "Em dia";
+      let pagarSub = "Nenhuma conta atrasada";
+      let pagarClasse = "ok";
+      let pagarCor = "#15803d";
+      if (dados.valorVencido > 0) {
+        pagarValor = `R$ ${fmt(dados.valorVencido)}`;
+        pagarSub = `${dados.contasVencidas.length} vencida(s)`;
+        pagarClasse = "alerta";
+        pagarCor = "#dc2626";
+      } else if ((dados.contasPendentes || []).length) {
+        pagarValor = String(dados.contasPendentes.length);
+        pagarSub = "conta(s) em aberto";
+        pagarClasse = "";
+        pagarCor = "#d97706";
+      }
       cards.innerHTML = `
       <button type="button" class="gerencia-inicio-card ${dados.caixaAberto ? "ok" : ""}" onclick="GerenciaModule.abrirDestinoInicio('caixa')">
         <span class="gerencia-inicio-kicker">Caixa agora</span>
@@ -59437,10 +59465,10 @@ ${base}`;
         <span class="gerencia-inicio-valor" style="color: ${dados.totalAtencao ? "#dc2626" : "#15803d"};">${atencaoValor}</span>
         <span class="gerencia-inicio-sub">${this._escHtml(atencaoSub)}</span>
       </button>
-      <button type="button" class="gerencia-inicio-card" onclick="GerenciaModule.abrirDestinoInicio('loja')">
-        <span class="gerencia-inicio-kicker">Loja</span>
-        <span class="gerencia-inicio-valor" style="color: ${dados.lojaOffline ? "#dc2626" : "#059669"};">${lojaValor}</span>
-        <span class="gerencia-inicio-sub">${lojaSub}</span>
+      <button type="button" class="gerencia-inicio-card ${pagarClasse}" onclick="GerenciaModule.abrirDestinoInicio('pagar')">
+        <span class="gerencia-inicio-kicker">A pagar</span>
+        <span class="gerencia-inicio-valor" style="color: ${pagarCor};">${pagarValor}</span>
+        <span class="gerencia-inicio-sub">${this._escHtml(pagarSub)}</span>
       </button>
     `;
       const itens = this.montarItensInicioHoje(dados);
@@ -59466,11 +59494,13 @@ ${base}`;
         return;
       }
       if (destino === "vendas") {
+        this.trocarSubAba("indicadores");
         return;
       }
-      if (destino === "loja") {
-        if (window.App && typeof window.App.trocarAba === "function") {
-          window.App.trocarAba("config");
+      if (destino === "pagar") {
+        this.trocarSubAba("financeiro");
+        if (typeof this.filtrarContas === "function") {
+          this.filtrarContas(dados.contasVencidas.length ? "vencidas" : "pendentes");
         }
         return;
       }

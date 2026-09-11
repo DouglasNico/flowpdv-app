@@ -193,11 +193,6 @@ body {
   border-color: rgba(0, 0, 0, 0.3);
 }
 
-.btn-voltar-caixa-f1:hover {
-  background: var(--accent-amber-hover) !important;
-  border-color: var(--accent-amber-hover) !important;
-}
-
 
 
 
@@ -3782,94 +3777,83 @@ body.tela-login-ativa #license-warning-banner {
   width: 100%;
   min-height: 100%;
   display: grid;
-  grid-template-columns: minmax(280px, 1.05fr) minmax(340px, 0.95fr);
+  grid-template-columns: minmax(240px, 0.72fr) minmax(420px, 1.28fr);
 }
 
 .login-screen-brand {
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  padding: 48px 56px;
+  padding: 28px 36px 40px;
   background:
     radial-gradient(900px 420px at 10% 10%, rgba(14, 165, 233, 0.22), transparent 55%),
     linear-gradient(160deg, #0f172a 0%, #0b1220 55%, #082f49 100%);
   color: #e2e8f0;
 }
 
+.login-screen-brand-top {
+  flex-shrink: 0;
+}
+
 .login-screen-logo {
-  height: 52px;
+  height: 34px;
   width: auto;
   object-fit: contain;
-  margin-bottom: 28px;
+  margin-bottom: 10px;
 }
 
 .login-screen-kicker {
-  margin: 0 0 8px;
-  font-size: 12px;
+  margin: 0;
+  font-size: 11px;
   font-weight: 800;
-  letter-spacing: 1.4px;
+  letter-spacing: 1.6px;
   text-transform: uppercase;
   color: #7dd3fc;
 }
 
-.login-screen-brand h1 {
-  margin: 0 0 12px;
-  font-size: 34px;
-  line-height: 1.15;
-  font-weight: 800;
-  color: #ffffff;
-}
-
-.login-screen-copy {
-  margin: 0;
-  max-width: 420px;
-  font-size: 15px;
-  line-height: 1.55;
-  color: #cbd5e1;
-}
-
-.login-screen-loja {
-  margin-top: 28px;
-  display: inline-flex;
+.login-screen-loja-logo-wrap {
+  flex: 1;
+  display: none;
   align-items: center;
-  padding: 8px 12px;
-  border: 1px solid rgba(125, 211, 252, 0.35);
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 700;
-  color: #e0f2fe;
-  background: rgba(14, 165, 233, 0.12);
+  justify-content: center;
+  min-height: 0;
+  padding: 24px 8px 8px;
+}
+
+.login-screen-loja-logo {
+  max-width: min(340px, 82%);
+  max-height: min(240px, 46vh);
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  background: #ffffff;
+  padding: 22px 26px;
+  border-radius: 18px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.28);
 }
 
 .login-screen-panel {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 32px 28px;
+  padding: 40px 48px;
   background: #f8fafc;
 }
 
 .login-screen-card {
   width: 100%;
-  max-width: 420px;
+  max-width: 460px;
   background: #ffffff;
   border: 1px solid #e2e8f0;
   border-radius: 16px;
-  padding: 28px 26px;
+  padding: 32px 30px;
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.12);
 }
 
 .login-screen-card h2 {
-  margin: 0 0 4px;
+  margin: 0 0 22px;
   font-size: 22px;
   font-weight: 800;
   color: #0f172a;
-}
-
-.login-screen-lead {
-  margin: 0 0 22px;
-  font-size: 13px;
-  color: #64748b;
 }
 
 .login-field {
@@ -3930,11 +3914,11 @@ body.tela-login-ativa #license-warning-banner {
 
 .login-pin {
   font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-size: 28px;
+  font-size: 26px;
   font-weight: 800;
   text-align: center;
-  letter-spacing: 8px;
-  height: 52px;
+  letter-spacing: 10px;
+  height: 58px;
   background: #ffffff;
   width: 100%;
 }
@@ -3969,15 +3953,22 @@ body.tela-login-ativa #license-warning-banner {
     grid-template-columns: 1fr;
   }
   .login-screen-brand {
-    padding: 28px 24px 18px;
+    padding: 20px 24px 12px;
     min-height: auto;
   }
-  .login-screen-brand h1 {
-    font-size: 26px;
+  .login-screen-loja-logo-wrap {
+    padding: 12px 0 4px;
+  }
+  .login-screen-loja-logo {
+    max-height: 88px;
+    padding: 10px 14px;
   }
   .login-screen-logo {
-    height: 40px;
-    margin-bottom: 16px;
+    height: 28px;
+    margin-bottom: 8px;
+  }
+  .login-screen-panel {
+    padding: 24px 20px 32px;
   }
 }
 
@@ -3986,8 +3977,8 @@ body.tela-login-ativa #license-warning-banner {
     padding: 20px 18px;
   }
   .login-screen-logo {
-    height: 36px;
-    margin-bottom: 12px;
+    height: 28px;
+    margin-bottom: 8px;
   }
   #login-pin-input,
   .login-pin {
@@ -4273,6 +4264,7 @@ body.tela-login-ativa #license-warning-banner {
   gap: 12px;
   flex-shrink: 0;
   width: 100%;
+  padding-top: 8px;
 }
 
 @media (max-width: 1100px) {
@@ -4293,13 +4285,12 @@ body.tela-login-ativa #license-warning-banner {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .gerencia-inicio-card:hover {
   border-color: #94a3b8;
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
-  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
 }
 
 .gerencia-inicio-card.alerta {
@@ -4600,8 +4591,44 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 }
 
 .estoque-acoes-menu {
-  min-width: 220px !important;
-  padding: 6px !important;
+  min-width: 248px !important;
+  max-height: min(70vh, 520px) !important;
+  padding: 8px 6px !important;
+}
+
+.estoque-menu-grupo {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #94a3b8;
+  padding: 10px 10px 4px;
+}
+
+.estoque-menu-grupo:first-child {
+  padding-top: 4px;
+}
+
+.estoque-menu-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  height: 36px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.estoque-menu-item:hover {
+  background: #f1f5f9;
+  color: #0f172a;
 }
 
 .estoque-acoes-menu .btn-toolbar-estoque {
@@ -7142,24 +7169,32 @@ body.pdv-layout-classico #btn-cpf-nota-nao {
   display: flex;
   gap: 8px;
   margin: 6px 0 10px;
+  align-items: stretch;
 }
 
-.inventario-bip-row input[type="text"] {
-  flex: 1;
-  height: 46px;
+.inventario-bip-row #inventario-bipar-codigo {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+  height: 48px;
+  font-size: 16px;
   font-weight: 700;
   text-transform: uppercase;
 }
 
-.inventario-bip-row input[type="number"] {
-  width: 88px;
-  height: 46px;
+.inventario-bip-row #inventario-bipar-qtd {
+  flex: 0 0 72px;
+  width: 72px;
+  max-width: 72px;
+  height: 48px;
   font-weight: 800;
   text-align: center;
+  padding: 0 6px;
 }
 
 .inventario-btn-ok {
-  height: 46px;
+  flex: 0 0 auto;
+  height: 48px;
   padding: 0 18px;
   margin: 0;
   background: #0f766e;

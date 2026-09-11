@@ -171,9 +171,12 @@ export const GerenciaModule = {
 
     const contas = StorageService.getContasPagar() || [];
     const contasVencidas = [];
+    const contasPendentes = [];
     let valorVencido = 0;
     contas.forEach(c => {
-      if (c && c.status !== 'pago' && c.vencimento && c.vencimento < hojeStr) {
+      if (!c || c.status === 'pago') return;
+      contasPendentes.push(c);
+      if (c.vencimento && c.vencimento < hojeStr) {
         contasVencidas.push(c);
         valorVencido += parseFloat(c.valor) || 0;
       }
@@ -202,6 +205,7 @@ export const GerenciaModule = {
       prodVencidos,
       prodVence15d,
       contasVencidas,
+      contasPendentes,
       valorVencido,
       nomeLoja,
       lojaOffline,
@@ -297,6 +301,22 @@ export const GerenciaModule = {
     const lojaValor = dados.lojaOffline ? 'Offline' : (dados.lojaSync ? 'Sync' : 'Online');
     const lojaSub = this._escHtml(dados.nomeLoja);
 
+    let pagarValor = 'Em dia';
+    let pagarSub = 'Nenhuma conta atrasada';
+    let pagarClasse = 'ok';
+    let pagarCor = '#15803d';
+    if (dados.valorVencido > 0) {
+      pagarValor = `R$ ${fmt(dados.valorVencido)}`;
+      pagarSub = `${dados.contasVencidas.length} vencida(s)`;
+      pagarClasse = 'alerta';
+      pagarCor = '#dc2626';
+    } else if ((dados.contasPendentes || []).length) {
+      pagarValor = String(dados.contasPendentes.length);
+      pagarSub = 'conta(s) em aberto';
+      pagarClasse = '';
+      pagarCor = '#d97706';
+    }
+
     cards.innerHTML = `
       <button type="button" class="gerencia-inicio-card ${dados.caixaAberto ? 'ok' : ''}" onclick="GerenciaModule.abrirDestinoInicio('caixa')">
         <span class="gerencia-inicio-kicker">Caixa agora</span>
@@ -313,10 +333,10 @@ export const GerenciaModule = {
         <span class="gerencia-inicio-valor" style="color: ${dados.totalAtencao ? '#dc2626' : '#15803d'};">${atencaoValor}</span>
         <span class="gerencia-inicio-sub">${this._escHtml(atencaoSub)}</span>
       </button>
-      <button type="button" class="gerencia-inicio-card" onclick="GerenciaModule.abrirDestinoInicio('loja')">
-        <span class="gerencia-inicio-kicker">Loja</span>
-        <span class="gerencia-inicio-valor" style="color: ${dados.lojaOffline ? '#dc2626' : '#059669'};">${lojaValor}</span>
-        <span class="gerencia-inicio-sub">${lojaSub}</span>
+      <button type="button" class="gerencia-inicio-card ${pagarClasse}" onclick="GerenciaModule.abrirDestinoInicio('pagar')">
+        <span class="gerencia-inicio-kicker">A pagar</span>
+        <span class="gerencia-inicio-valor" style="color: ${pagarCor};">${pagarValor}</span>
+        <span class="gerencia-inicio-sub">${this._escHtml(pagarSub)}</span>
       </button>
     `;
 
@@ -346,11 +366,13 @@ export const GerenciaModule = {
       return;
     }
     if (destino === 'vendas') {
+      this.trocarSubAba('indicadores');
       return;
     }
-    if (destino === 'loja') {
-      if (window.App && typeof window.App.trocarAba === 'function') {
-        window.App.trocarAba('config');
+    if (destino === 'pagar') {
+      this.trocarSubAba('financeiro');
+      if (typeof this.filtrarContas === 'function') {
+        this.filtrarContas(dados.contasVencidas.length ? 'vencidas' : 'pendentes');
       }
       return;
     }

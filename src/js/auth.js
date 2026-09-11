@@ -182,11 +182,20 @@ export const AuthModule = {
   },
 
   atualizarNomeLojaLogin() {
-    const el = document.getElementById('login-screen-loja-nome');
-    if (!el) return;
+    const wrap = document.getElementById('login-screen-loja-logo-wrap');
+    const img = document.getElementById('login-screen-loja-logo');
+    if (!wrap || !img) return;
     const cfg = StorageService.getConfig() || {};
     const lic = StorageService.getLicenca() || {};
-    el.textContent = cfg.nomeLoja || cfg.nomeEmpresa || lic.razaoSocial || 'FlowPDV';
+    const logo = (lic && lic.logoUrl) || cfg.logoUrl || '';
+    if (logo && (String(logo).startsWith('http') || String(logo).startsWith('data:image'))) {
+      img.src = logo;
+      img.alt = cfg.nomeLoja || cfg.nomeEmpresa || lic.razaoSocial || 'Logo da loja';
+      wrap.style.display = 'flex';
+    } else {
+      img.removeAttribute('src');
+      wrap.style.display = 'none';
+    }
   },
 
   renderCardsLogin() {

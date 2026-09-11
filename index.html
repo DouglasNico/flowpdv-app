@@ -379,39 +379,42 @@
           </div>
           <div class="view-header-actions estoque-header-actions">
             <div id="estoque-acoes-wrap" class="category-dropdown-wrapper">
-              <button type="button" id="btn-estoque-acoes" class="btn-toolbar-estoque" onclick="EstoqueModule.toggleMenuAcoesEstoque(event)" title="Mais ações do estoque">
-                📂 Ações ▾
+              <button type="button" id="btn-estoque-acoes" class="btn-toolbar-estoque" onclick="EstoqueModule.toggleMenuAcoesEstoque(event)" title="Ferramentas do estoque">
+                Ferramentas ▾
               </button>
               <div id="estoque-chip-filtro-acoes" class="estoque-chip-filtro" style="display: none;"></div>
               <div id="dropdown-estoque-acoes" class="category-dropdown-menu estoque-acoes-menu" style="display: none;" onclick="if (event.target.closest('button')) EstoqueModule.fecharMenuAcoesEstoque()">
-                <button type="button" id="btn-inventario-sessao" class="btn-toolbar-estoque cyan" onclick="InventarioModule.abrirModal()" title="Abrir sessao de inventario: bipar, conferir divergencia e processar">
+                <div class="estoque-menu-grupo">Conferência</div>
+                <button type="button" id="btn-inventario-sessao" class="estoque-menu-item" onclick="InventarioModule.abrirModal()">
                   📋 Inventário
                 </button>
-                <button type="button" id="btn-bipar-validade-express" class="btn-toolbar-estoque cyan" onclick="EstoqueModule.abrirModalBipagemValidade()" title="Bipar código de barras e cadastrar/atualizar data de validade expressa em segundos">
-                  ⚡ Bipar Validades
+                <button type="button" id="btn-bipar-validade-express" class="estoque-menu-item" onclick="EstoqueModule.abrirModalBipagemValidade()">
+                  ⚡ Bipar validades
                 </button>
-                <button type="button" id="btn-queima-estoque-promo" class="btn-toolbar-estoque orange" onclick="EstoqueModule.abrirModalQueimaEstoque()" title="Criar promoção relâmpago de queima de estoque para itens próximos ao vencimento e divulgar no WhatsApp">
-                  🔥 Queima Estoque
+                <button type="button" id="btn-queima-estoque-promo" class="estoque-menu-item" onclick="EstoqueModule.abrirModalQueimaEstoque()">
+                  🔥 Queima de estoque
                 </button>
-                <button type="button" id="btn-precos-clube-lote" class="btn-toolbar-estoque orange" onclick="EstoqueModule.abrirModalPrecosClube()" title="Definir preço de clube em vários produtos de uma vez e enviar a oferta pelo WhatsApp" style="display: none;">
-                  🏅 Preços Clube
+                <button type="button" id="btn-precos-clube-lote" class="estoque-menu-item" onclick="EstoqueModule.abrirModalPrecosClube()" style="display: none;">
+                  🏅 Preços clube
                 </button>
-                <button type="button" id="btn-filtro-estoque-baixo" class="btn-toolbar-estoque alert" onclick="EstoqueModule.toggleFiltroEstoqueBaixo()" title="Filtrar produtos com estoque baixo ou zerado">
-                  ⚠️ Estoque Baixo
+                <div class="estoque-menu-grupo">Filtros</div>
+                <button type="button" id="btn-filtro-estoque-baixo" class="estoque-menu-item" onclick="EstoqueModule.toggleFiltroEstoqueBaixo()">
+                  ⚠️ Estoque baixo
                 </button>
-                <button type="button" id="btn-lista-compras-excel" class="btn-toolbar-estoque" onclick="EstoqueModule.toggleFiltroListaCompras()" title="Filtrar lista de compras e reposição de estoque na tela">
-                  📋 Lista Compras
+                <button type="button" id="btn-lista-compras-excel" class="estoque-menu-item" onclick="EstoqueModule.toggleFiltroListaCompras()">
+                  📋 Lista de compras
                 </button>
-                <button type="button" id="btn-importar-xml-nfe" class="btn-toolbar-estoque" onclick="XmlImporterModule.abrirModalImportarXml()" title="Importar produtos e dar entrada de estoque via Nota Fiscal XML">
+                <div class="estoque-menu-grupo">Arquivos</div>
+                <button type="button" id="btn-importar-xml-nfe" class="estoque-menu-item" onclick="XmlImporterModule.abrirModalImportarXml()">
                   📥 Importar XML
                 </button>
-                <button type="button" id="btn-importar-estoque-excel" class="btn-toolbar-estoque" onclick="EstoqueModule.abrirModalImportarProdutos()" title="Importar produtos em massa via planilha Excel (.xlsx)">
+                <button type="button" id="btn-importar-estoque-excel" class="estoque-menu-item" onclick="EstoqueModule.abrirModalImportarProdutos()">
                   📥 Importar Excel
                 </button>
-                <button type="button" id="btn-exportar-estoque-excel" class="btn-toolbar-estoque" onclick="EstoqueModule.exportarEstoqueExcel()" title="Baixar planilha completa do estoque em Excel (.xlsx)">
+                <button type="button" id="btn-exportar-estoque-excel" class="estoque-menu-item" onclick="EstoqueModule.exportarEstoqueExcel()">
                   📊 Exportar Excel
                 </button>
-                <button type="button" id="btn-gerador-etiquetas" class="btn-toolbar-estoque" onclick="EtiquetasModule.abrirModal()" title="Gerar e imprimir etiquetas de gôndola e código de barras">
+                <button type="button" id="btn-gerador-etiquetas" class="estoque-menu-item" onclick="EtiquetasModule.abrirModal()">
                   🏷️ Etiquetas
                 </button>
               </div>
@@ -752,9 +755,6 @@
             <h2 style="margin: 0; font-size: 19px; font-weight: 800; color: var(--text-main); display: flex; align-items: center; gap: 8px;">
               <span>👔 Central do Dono & Gerência</span>
               <span style="background: rgba(124, 58, 237, 0.12); color: #7c3aed; font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 6px; border: 1px solid rgba(124, 58, 237, 0.25);">👑 Modo Gestor</span>
-              <button type="button" class="btn-voltar-caixa-f1" onclick="App.trocarAba('pdv')" title="Retornar à tela de Vendas / Caixa [F1]" style="margin-left: 8px; display: inline-flex; align-items: center; gap: 6px; background: var(--accent-amber); color: #ffffff; border: 1.5px solid var(--accent-amber-hover); border-radius: 7px; padding: 4px 11px; font-size: 11.5px; font-weight: 800; cursor: pointer; box-shadow: 0 2px 6px var(--accent-amber-glow); transition: all 0.2s ease;">
-                🛒 Voltar ao Caixa <kbd style="background: rgba(0,0,0,0.2); color: #ffffff; padding: 1px 5px; border-radius: 4px; font-size: 10px; border: 1px solid rgba(0,0,0,0.25);">F1</kbd>
-              </button>
             </h2>
             <p style="margin: 2px 0 0 0; font-size: 12px; color: var(--text-muted);">Resumo da loja, financeiro, curva ABC e auditoria.</p>
           </div>
@@ -3152,16 +3152,17 @@
     <div class="modal-overlay login-screen-overlay" id="modal-login-operador">
       <div class="login-screen">
         <aside class="login-screen-brand">
-          <img src="src/assets/FlowPDV-Logo.png" alt="FlowPDV" class="login-screen-logo">
-          <p class="login-screen-kicker">Sistema de frente de caixa</p>
-          <h1>Entrar no FlowPDV</h1>
-          <p class="login-screen-copy">Identifique o operador e digite o PIN para liberar este terminal.</p>
-          <div class="login-screen-loja" id="login-screen-loja-nome">Minha Loja</div>
+          <div class="login-screen-brand-top">
+            <img src="src/assets/FlowPDV-Logo.png" alt="FlowPDV" class="login-screen-logo">
+            <p class="login-screen-kicker">Sistema frente de caixa</p>
+          </div>
+          <div class="login-screen-loja-logo-wrap" id="login-screen-loja-logo-wrap">
+            <img id="login-screen-loja-logo" alt="Logo da loja" class="login-screen-loja-logo">
+          </div>
         </aside>
         <section class="login-screen-panel">
           <div class="login-screen-card">
             <h2>Acesso do operador</h2>
-            <p class="login-screen-lead">Selecione seu perfil e informe o PIN.</p>
             <div class="login-field">
               <div class="login-field-head">
                 <label for="login-operador-select">Operador</label>
