@@ -23825,6 +23825,10 @@
       return false;
     })) || null;
   }
+  function totalAuditoriaVisivel(countBruto, { temDocMeta = false } = {}) {
+    const n = Number(countBruto) || 0;
+    return Math.max(0, n - (temDocMeta ? 1 : 0));
+  }
   function ehContaPaga(conta) {
     return String(conta && conta.status || "").toLowerCase() === "pago";
   }
@@ -25786,39 +25790,23 @@
       if (item.permiteFracionado === true) return true;
       return !!(item.unidade && String(item.unidade).toLowerCase() === "kg");
     },
+    papelCupom() {
+      const config = StorageService.getConfig() || {};
+      const is80 = config.impressoraTipo === "80mm";
+      return {
+        config,
+        is80,
+        largura: is80 ? "72mm" : "48mm",
+        pageSize: is80 ? "80mm auto" : "58mm auto",
+        papelMm: is80 ? 80 : 58,
+        fonte: is80 ? "13px" : "11px"
+      };
+    },
     unidadeQtdCupom(item) {
       return this.itemEhPeso(item) ? "KG" : "UN";
     },
-    htmlItensCupom(itens, is80) {
+    htmlItensCupom(itens) {
       const lista = itens || [];
-      if (is80) {
-        return `
-        <table class="table-items">
-          <thead>
-            <tr class="bold">
-              <td class="col-cod">COD</td>
-              <td>DESCR</td>
-              <td class="col-num">QTD</td>
-              <td class="col-num">VL UNIT</td>
-              <td class="col-num">TOTAL</td>
-            </tr>
-          </thead>
-          <tbody>
-            ${lista.map((item) => {
-          const qtd = Number(item.quantidade) || 0;
-          const vu = Number(item.precoUnitario) || 0;
-          return `<tr>
-                <td class="col-cod">${this.escCupom(this.codigoCurtoCupom(item))}</td>
-                <td class="col-desc">${this.escCupom(item.nome)}</td>
-                <td class="col-num">${this.formatarQtdCupom(qtd)} ${this.unidadeQtdCupom(item)}</td>
-                <td class="col-num">${vu.toFixed(2).replace(".", ",")}</td>
-                <td class="col-num">${(vu * qtd).toFixed(2).replace(".", ",")}</td>
-              </tr>`;
-        }).join("")}
-          </tbody>
-        </table>
-      `;
-      }
       return lista.map((item) => {
         const qtd = Number(item.quantidade) || 0;
         const vu = Number(item.precoUnitario) || 0;
@@ -25859,8 +25847,9 @@
     `;
     },
     executarImpressao(html) {
+      const papelMm = this.papelCupom().papelMm;
       if (window.electronAPI && typeof window.electronAPI.printThermalReceipt === "function") {
-        window.electronAPI.printThermalReceipt(html, false).catch((err) => {
+        window.electronAPI.printThermalReceipt(html, false, { papelMm }).catch((err) => {
           console.warn("[ThermalPrint] Falha IPC, usando fallback navegador:", err);
           this.imprimirViaJanelaNavegador(html);
         });
@@ -25894,15 +25883,13 @@
     },
     imprimirCupomVenda(venda) {
       if (!venda) return;
-      const config = StorageService.getConfig();
-      const largura = config.impressoraTipo === "80mm" ? "72mm" : "48mm";
+      const { config, largura, pageSize, fonte } = this.papelCupom();
       const teveDinheiro = venda.formaPagamento === "Dinheiro" || Array.isArray(venda.pagamentos) && venda.pagamentos.some((p) => p && p.forma === "Dinheiro") || venda.pagamentoDividido && (venda.parcela1?.forma === "Dinheiro" || venda.parcela2?.forma === "Dinheiro");
       if (teveDinheiro) {
         this.abrirGavetaDinheiro();
       }
       const isNfce = Boolean(venda.chaveNfe || venda.statusFiscal === "autorizada");
       const chaveFormatada = (venda.chaveNfe || "").replace(/(.{4})/g, "$1 ").trim();
-      const is80 = config.impressoraTipo === "80mm";
       const qtdeItens = (venda.itens || []).reduce((acc, item) => {
         if (this.itemEhPeso(item)) return acc + 1;
         return acc + (Number(item.quantidade) || 0);
@@ -25916,13 +25903,13 @@
       <head>
         <meta charset="utf-8">
         <style>
-          @page { margin: 0; size: auto; }
+          @page { margin: 0; size: ${pageSize}; }
           body {
             font-family: 'Courier New', Courier, monospace;
             width: ${largura};
             margin: 0 auto;
             padding: 6px 3px 10px;
-            font-size: 11px;
+            font-size: ${fonte};
             line-height: 1.28;
             color: #000;
             background: #fff;
@@ -25968,7 +25955,7 @@
         `}
 
         <div class="divider"></div>
-        ${this.htmlItensCupom(venda.itens, is80)}
+        ${this.htmlItensCupom(venda.itens)}
 
         <div class="divider"></div>
         <table class="tot-table">
@@ -26014,8 +26001,7 @@
     },
     imprimirFechamentoCaixa(turno) {
       if (!turno) return;
-      const config = StorageService.getConfig();
-      const largura = config.impressoraTipo === "80mm" ? "72mm" : "48mm";
+      const { config, largura, pageSize, fonte } = this.papelCupom();
       const dataAb = turno.dataAbertura ? new Date(turno.dataAbertura).toLocaleString("pt-BR") : "-";
       const dataFc = turno.dataFechamento ? new Date(turno.dataFechamento).toLocaleString("pt-BR") : "Em Aberto";
       const turnoId = StorageService.formatarNumeroTurno(turno.id);
@@ -26026,13 +26012,13 @@
       <head>
         <meta charset="utf-8">
         <style>
-          @page { margin: 0; size: auto; }
+          @page { margin: 0; size: ${pageSize}; }
           body {
             font-family: 'Courier New', monospace;
             width: ${largura};
             margin: 0 auto;
             padding: 8px 4px;
-            font-size: 11px;
+            font-size: ${fonte};
             line-height: 1.3;
             color: #000;
             background: #fff;
@@ -48336,9 +48322,15 @@ This typically indicates that your device does not have a healthy Internet conne
     },
     async contarLogsNuvem(chave) {
       let total = 0;
+      let temDocMeta = false;
       try {
         const sub = await getCountFromServer(collection(db, "backups_lojas", chave, "auditoria"));
         total = Math.max(total, sub.data() && sub.data().count || 0);
+        try {
+          const meta = await getDoc(doc(db, "backups_lojas", chave, "auditoria", this.DOC_EXCLUSAO));
+          temDocMeta = Boolean(meta && meta.exists());
+        } catch (e) {
+        }
       } catch (e) {
       }
       try {
@@ -48346,7 +48338,7 @@ This typically indicates that your device does not have a healthy Internet conne
         if (!total) total = leg.data() && leg.data().count || 0;
       } catch (e) {
       }
-      return total;
+      return totalAuditoriaVisivel(total, { temDocMeta });
     },
     persistirLogsMesclados(logs) {
       try {
@@ -48713,6 +48705,7 @@ This typically indicates that your device does not have a healthy Internet conne
       const res = await this.apagarRefsEmLote(refs);
       if (res.falhas === 0) {
         await this.registrarExclusaoNuvem(chave, { ids: [id] });
+        if (this.totalNuvem) this.totalNuvem = Math.max(0, this.totalNuvem - 1);
       }
       return {
         ok: res.falhas === 0,
@@ -60791,7 +60784,7 @@ ${base}`;
           return t === "comandas" || desc.includes("mesa") || desc.includes("comanda");
         }
         if (tipo === "estoque" || tipo === "ajuste_estoque") {
-          return t === "ajuste_estoque" || t === "cadastro_produto" || t === "edicao_produto" || t === "exclusao_produto" || t === "importacao_planilha" || t === "importacao_xml";
+          return t === "ajuste_estoque" || t === "inventario" || t === "cadastro_produto" || t === "edicao_produto" || t === "exclusao_produto" || t === "importacao_planilha" || t === "importacao_xml";
         }
         if (tipo === "cortesia") {
           return t === "cortesia";
@@ -60818,8 +60811,8 @@ ${base}`;
       const visiveis = logsCompletos.slice(0, this.auditoriaExibidos);
       const totalNuvem = AuditModule && AuditModule.totalNuvem || 0;
       const filtrandoData = Boolean(this.filtroDataAuditoria);
-      const totalRef = filtrandoData ? logsCompletos.length : Math.max(totalNuvem, todosLogs.length, logsCompletos.length);
       const temMais = visiveis.length < logsCompletos.length || !filtrandoData && Boolean(AuditModule && AuditModule.temMaisNuvem);
+      const totalRef = filtrandoData ? logsCompletos.length : temMais ? Math.max(totalNuvem, todosLogs.length, logsCompletos.length) : Math.max(logsCompletos.length, todosLogs.length);
       const contadorEl = document.getElementById("gerencia-auditoria-contador");
       if (contadorEl) {
         const dica = temMais ? " \xB7 role para ver os mais antigos" : "";
@@ -60848,6 +60841,8 @@ ${base}`;
           badgeTipo = '<span style="background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 800; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px;">\u{1F4DF} Config TEF</span>';
         } else if (l.tipo === "ajuste_estoque") {
           badgeTipo = '<span style="background: #fef3c7; color: #d97706; border: 1px solid #fde68a; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 800; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px;">\u{1F4E6} Ajuste Estoque</span>';
+        } else if (l.tipo === "inventario") {
+          badgeTipo = '<span style="background: #ecfdf5; color: #0f766e; border: 1px solid #99f6e4; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 800; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px;">\u{1F4CB} Invent\xE1rio</span>';
         } else if (l.tipo === "cadastro_produto") {
           badgeTipo = '<span style="background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 800; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px;">\u2795 Novo Produto</span>';
         } else if (l.tipo === "edicao_produto") {
@@ -61000,6 +60995,8 @@ ${base}`;
         badgeTipo = '<span style="background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; padding: 3px 10px; border-radius: 6px; font-size: 12px; font-weight: 800;">\u2699\uFE0F Configura\xE7\xE3o</span>';
       } else if (log.tipo === "ajuste_estoque") {
         badgeTipo = '<span style="background: #fef3c7; color: #d97706; border: 1px solid #fde68a; padding: 3px 10px; border-radius: 6px; font-size: 12px; font-weight: 800;">\u{1F4E6} Ajuste de Estoque</span>';
+      } else if (log.tipo === "inventario") {
+        badgeTipo = '<span style="background: #ecfdf5; color: #0f766e; border: 1px solid #99f6e4; padding: 3px 10px; border-radius: 6px; font-size: 12px; font-weight: 800;">\u{1F4CB} Invent\xE1rio</span>';
       } else if (log.tipo === "cortesia") {
         badgeTipo = '<span style="background: #ede9fe; color: #7c3aed; border: 1px solid #ddd6fe; padding: 3px 10px; border-radius: 6px; font-size: 12px; font-weight: 800;">\u{1F381} Cortesia</span>';
       } else if (log.tipo === "cancelamento_venda") {
@@ -61047,6 +61044,41 @@ ${base}`;
         </div>
       `;
       }
+      if (log.tipo === "inventario" && log.detalhes) {
+        const d = log.detalhes;
+        const linhasInv = Array.isArray(d.linhas) ? d.linhas : [];
+        const ops = Array.isArray(d.operadores) ? d.operadores.filter(Boolean) : [];
+        cardEspecialHtml = `
+        <div style="background: #ffffff; border: 1px solid var(--border-card); border-radius: 8px; padding: 12px; margin-bottom: 12px; box-shadow: var(--shadow-sm);">
+          <strong style="font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 8px;">Confer\xEAncia de invent\xE1rio</strong>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12.5px; margin-bottom: 10px;">
+            <div>Aberto por: <strong>${d.criadoPor || log.operador || "\u2014"}</strong></div>
+            <div>Processado por: <strong>${d.processadoPor || log.operador || "\u2014"}</strong></div>
+            <div>Itens lidos: <strong>${d.itens != null ? d.itens : linhasInv.length}</strong></div>
+            <div>Ajustes: <strong>${d.ajustes != null ? d.ajustes : "\u2014"}</strong></div>
+            ${ops.length ? `<div style="grid-column: 1 / -1;">Quem contou: <strong>${ops.join(", ")}</strong></div>` : ""}
+          </div>
+          ${linhasInv.length ? `
+            <div style="max-height: 220px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px;">
+              ${linhasInv.map((it2) => {
+          const delta = (parseFloat(it2.contado) || 0) - (parseFloat(it2.sistema) || 0);
+          const cor = delta > 0 ? "#0f766e" : delta < 0 ? "#b91c1c" : "#475569";
+          const sinal = delta > 0 ? "+" + delta : String(delta);
+          return `<div style="display:flex; justify-content:space-between; gap:8px; padding:6px 10px; border-bottom:1px solid #f1f5f9; font-size:12px;">
+                  <span style="font-weight:700;">${it2.nome || it2.produtoId || "Item"}</span>
+                  <span style="font-family:'JetBrains Mono'; color:${cor}; font-weight:800;">${it2.sistema} \u2192 ${it2.contado} (${sinal})</span>
+                </div>`;
+        }).join("")}
+            </div>
+          ` : ""}
+          ${d.sessaoId ? `
+            <button type="button" class="btn-primary-action" style="width:100%; justify-content:center; height:38px; font-size:12.5px; font-weight:800; background:#0f766e; color:#ffffff; margin-top:10px;" onclick="InventarioModule.abrirDetalheHistorico('${String(d.sessaoId).replace(/'/g, "\\'")}')">
+              Ver confer\xEAncia completa
+            </button>
+          ` : ""}
+        </div>
+      `;
+      }
       const mapaLabelsChaves = {
         turnoId: "ID do Turno",
         numeroNfce: "N\xFAmero NFC-e",
@@ -61073,6 +61105,7 @@ ${base}`;
         const camposMonetarios = ["valorOriginal", "valor", "total", "saldoInformado", "saldoEsperado", "diferenca", "totalVendas", "precoUnitario", "totalAnterior", "totalConsumo", "taxaServicoValor", "subtotal"];
         const itensHtml = Object.entries(log.detalhes).map(([chave, valor]) => {
           if (log.tipo === "cortesia" && chave.toLowerCase() === "motivo") return "";
+          if (log.tipo === "inventario" && ["linhas", "operadores", "sessaoId", "criadoPor", "processadoPor", "itens", "ajustes", "entrada", "saida"].includes(chave)) return "";
           if ((chave === "itens" || chave === "produtos") && Array.isArray(valor)) {
             return `
             <div style="padding: 10px 0; border-bottom: 1px dashed #e2e8f0;">
@@ -61224,6 +61257,9 @@ ${base}`;
         window.AuditModule.removerLogLocal(logId);
       }
       this.logsAuditoriaCache = (this.logsAuditoriaCache || []).filter((l) => l.id !== logId);
+      if (window.AuditModule && typeof window.AuditModule.totalNuvem === "number" && window.AuditModule.totalNuvem > 0) {
+        window.AuditModule.totalNuvem = Math.max(0, window.AuditModule.totalNuvem - 1);
+      }
       this.renderAuditoriaFiltrada();
       this.logExcluindoId = null;
       if (window.AuditModule && typeof window.AuditModule.excluirLogNuvem === "function") {
@@ -64553,14 +64589,17 @@ NSU: ${nsuGerado}`
       this.salvarComandas(comandas);
       this.renderGridComandas();
       this.renderPainelDetalhes();
-      const config = StorageService.getConfig() || {};
+      const papel = ThermalPrintModule.papelCupom();
+      const config = papel.config || StorageService.getConfig() || {};
+      const largura = papel.largura;
+      const pageSize = papel.pageSize;
+      const fonte = papel.fonte;
       const nomeLoja = config.nomeEmpresa || config.nomeLoja || "FlowPDV";
       const totalConsumo = parseFloat(c.total || 0);
       const taxaServicoOpcional = c.taxaServico ? totalConsumo * 0.1 : 0;
       const totalComServico = totalConsumo + taxaServicoOpcional;
       const qtdPessoas = this.numPessoasDivisao || 1;
       const valorPorPessoa = totalComServico / qtdPessoas;
-      const largura = config.impressoraTipo === "80mm" ? "72mm" : "48mm";
       const html = `
       <!DOCTYPE html>
       <html>
@@ -64568,13 +64607,13 @@ NSU: ${nsuGerado}`
         <meta charset="utf-8">
         <title>Pr\xE9-Conta ${c.nome}</title>
         <style>
-          @page { margin: 0; size: auto; }
+          @page { margin: 0; size: ${pageSize}; }
           body {
             font-family: 'Courier New', Courier, monospace;
             width: ${largura};
             margin: 0 auto;
             padding: 8px 4px;
-            font-size: 11px;
+            font-size: ${fonte};
             line-height: 1.25;
             color: #000;
             background: #fff;
@@ -64715,6 +64754,7 @@ NSU: ${nsuGerado}`
   // src/js/inventario.js
   var InventarioModule = {
     sessaoAtivaId: null,
+    historicoDetalheId: null,
     init() {
       const aberta = this.getSessoes().find((s) => s.status === "em_andamento" || s.status === "concluido");
       if (aberta) this.sessaoAtivaId = aberta.id;
@@ -64862,7 +64902,9 @@ NSU: ${nsuGerado}`
       });
       sessao.status = "processado";
       sessao.processadoEm = (/* @__PURE__ */ new Date()).toISOString();
+      sessao.processadoPor = this.nomeOperador();
       this.persistir(sessao);
+      this.registrarLogProcessamento(sessao, deltas);
       if (window.EstoqueModule && typeof window.EstoqueModule.renderTabelaProdutos === "function") {
         window.EstoqueModule.renderTabelaProdutos();
       }
@@ -65007,6 +65049,8 @@ NSU: ${nsuGerado}`
       const boxModal = modal.querySelector(".inventario-modal") || modal;
       boxModal.classList.toggle("is-processado", processado);
       if (statusEl) statusEl.textContent = rotulo;
+      const metaEl = document.getElementById("inventario-meta");
+      if (metaEl) metaEl.innerHTML = this.htmlMetaSessao(sessao);
       const hintEl = modal.querySelector(".inventario-hint");
       if (hintEl) {
         hintEl.style.display = processado ? "none" : "";
@@ -65088,6 +65132,196 @@ NSU: ${nsuGerado}`
       </div>`;
       }).join("");
       listaEl.innerHTML = linhasHtml;
+    },
+    nomeOperador() {
+      if (window.AuthModule && typeof window.AuthModule.getNomeOperador === "function") {
+        return window.AuthModule.getNomeOperador() || "";
+      }
+      const u = window.AuthModule && typeof window.AuthModule.getUsuario === "function" ? window.AuthModule.getUsuario() : null;
+      return u && u.nome || "";
+    },
+    resumoSessao(sessao) {
+      const linhas = Object.values(sessao && sessao.linhas || {});
+      const operadores = /* @__PURE__ */ new Set();
+      if (sessao && sessao.criadoPor) operadores.add(sessao.criadoPor);
+      linhas.forEach((l) => {
+        (l.leituras || []).forEach((r) => {
+          if (r && r.operador) operadores.add(r.operador);
+        });
+      });
+      const divergentes = linhas.filter((l) => Math.abs((parseFloat(l.contado) || 0) - (parseFloat(l.saldoDe) || 0)) > 1e-4);
+      let entrada = 0;
+      let saida = 0;
+      linhas.forEach((l) => {
+        const d = (parseFloat(l.contado) || 0) - (parseFloat(l.saldoDe) || 0);
+        if (d > 0) entrada += d;
+        else if (d < 0) saida += d;
+      });
+      return { linhas, operadores: Array.from(operadores), divergentes, entrada, saida };
+    },
+    _fmtData(iso) {
+      if (!iso) return "\u2014";
+      const d = new Date(iso);
+      if (!Number.isFinite(d.getTime())) return "\u2014";
+      return d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+    },
+    htmlMetaSessao(sessao) {
+      if (!sessao) return "";
+      const r = this.resumoSessao(sessao);
+      const partes = [];
+      if (sessao.criadoPor) partes.push("Aberto por <b>" + this._esc(sessao.criadoPor) + "</b>");
+      if (sessao.criadoEm) partes.push(this._esc(this._fmtData(sessao.criadoEm)));
+      if (r.operadores.length) partes.push("Contagem: <b>" + r.operadores.map((o) => this._esc(o)).join(", ") + "</b>");
+      if (sessao.processadoPor) partes.push("Processado por <b>" + this._esc(sessao.processadoPor) + "</b>");
+      if (sessao.processadoEm) partes.push(this._esc(this._fmtData(sessao.processadoEm)));
+      return partes.join(" \xB7 ");
+    },
+    registrarLogProcessamento(sessao, deltas) {
+      const r = this.resumoSessao(sessao);
+      const linhas = r.linhas.slice(0, 250).map((l) => ({
+        produtoId: l.produtoId,
+        nome: l.nome,
+        sistema: parseFloat(l.saldoDe) || 0,
+        contado: parseFloat(l.contado) || 0,
+        atualizado: l.saldoPara != null ? parseFloat(l.saldoPara) || 0 : parseFloat(l.contado) || 0
+      }));
+      AuditModule.registrarLog(
+        "inventario",
+        "Invent\xE1rio processado: " + r.linhas.length + " item(ns), " + (deltas || []).length + " ajuste(s)",
+        {
+          sessaoId: sessao.id,
+          criadoPor: sessao.criadoPor || "",
+          processadoPor: sessao.processadoPor || this.nomeOperador(),
+          operadores: r.operadores,
+          itens: r.linhas.length,
+          ajustes: (deltas || []).length,
+          entrada: r.entrada,
+          saida: r.saida,
+          linhas
+        }
+      );
+    },
+    abrirHistorico() {
+      const modal = document.getElementById("modal-inventario-historico");
+      if (!modal) return;
+      modal.classList.add("active");
+      this.renderHistorico();
+    },
+    fecharHistorico() {
+      const modal = document.getElementById("modal-inventario-historico");
+      if (modal) modal.classList.remove("active");
+      this.historicoDetalheId = null;
+    },
+    abrirDetalheHistorico(id) {
+      const auditModal = document.getElementById("modal-detalhes-auditoria");
+      if (auditModal) auditModal.classList.remove("active");
+      const sessao = this.getSessoes().find((s) => s && s.id === id);
+      if (!sessao) {
+        if (window.App && typeof window.App.showToast === "function") {
+          window.App.showToast("Essa confer\xEAncia ainda n\xE3o chegou neste terminal. Espere o sync.", "warning");
+        }
+        return;
+      }
+      if (sessao.status === "em_andamento" || sessao.status === "concluido") {
+        this.fecharHistorico();
+        this.sessaoAtivaId = sessao.id;
+        this.abrirModal();
+        return;
+      }
+      this.historicoDetalheId = id;
+      const modal = document.getElementById("modal-inventario-historico");
+      if (modal) modal.classList.add("active");
+      this.renderHistorico();
+    },
+    voltarListaHistorico() {
+      this.historicoDetalheId = null;
+      this.renderHistorico();
+    },
+    rotuloStatus(status) {
+      return {
+        em_andamento: "Contando",
+        concluido: "Pausado",
+        processado: "Processado"
+      }[status] || status || "\u2014";
+    },
+    renderHistorico() {
+      const listaEl = document.getElementById("inventario-hist-lista");
+      const detalheEl = document.getElementById("inventario-hist-detalhe");
+      const tituloEl = document.getElementById("inventario-hist-title");
+      const btnVoltar = document.getElementById("btn-inventario-hist-voltar");
+      if (!listaEl || !detalheEl) return;
+      const sessoes = this.getSessoes().slice().sort((a, b) => {
+        const ta = new Date(b.processadoEm || b.atualizadoEm || b.criadoEm || 0).getTime();
+        const tb = new Date(a.processadoEm || a.atualizadoEm || a.criadoEm || 0).getTime();
+        return ta - tb;
+      });
+      const detalhe = this.historicoDetalheId ? sessoes.find((s) => s && s.id === this.historicoDetalheId) : null;
+      if (btnVoltar) btnVoltar.style.display = detalhe ? "inline-flex" : "none";
+      if (tituloEl) tituloEl.textContent = detalhe ? "Detalhes do invent\xE1rio" : "Hist\xF3rico de invent\xE1rio";
+      if (detalhe) {
+        listaEl.style.display = "none";
+        detalheEl.style.display = "flex";
+        detalheEl.innerHTML = this.htmlDetalheHistorico(detalhe);
+        return;
+      }
+      detalheEl.style.display = "none";
+      detalheEl.innerHTML = "";
+      listaEl.style.display = "flex";
+      if (!sessoes.length) {
+        listaEl.innerHTML = '<div class="inventario-vazio">Nenhuma confer\xEAncia ainda. Abra o Invent\xE1rio para come\xE7ar a contar.</div>';
+        return;
+      }
+      listaEl.innerHTML = sessoes.map((s) => {
+        const r = this.resumoSessao(s);
+        const quando = this._fmtData(s.processadoEm || s.criadoEm);
+        const quem = s.processadoPor || s.criadoPor || (r.operadores[0] || "\u2014");
+        const idEsc = String(s.id || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+        return `<button type="button" class="inventario-hist-card" onclick="InventarioModule.abrirDetalheHistorico('${idEsc}')">
+        <div class="inventario-hist-card-top">
+          <strong>${this._esc(this.rotuloStatus(s.status))}</strong>
+          <span>${this._esc(quando)}</span>
+        </div>
+        <div class="inventario-hist-card-meta">
+          ${this._esc(quem)} \xB7 ${r.linhas.length} item(ns) \xB7 ${r.divergentes.length} ajuste(s)
+        </div>
+      </button>`;
+      }).join("");
+    },
+    htmlDetalheHistorico(sessao) {
+      const r = this.resumoSessao(sessao);
+      const linhas = r.linhas.slice().sort((a, b) => String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR"));
+      const lista = linhas.length ? linhas.map((l) => {
+        const contado = parseFloat(l.contado) || 0;
+        const saldo = parseFloat(l.saldoDe) || 0;
+        const delta = contado - saldo;
+        const classe = delta === 0 ? "ok" : delta > 0 ? "div mais" : "div menos";
+        const sinal = delta > 0 ? "+" + delta : String(delta);
+        const novo = l.saldoPara != null ? parseFloat(l.saldoPara) || 0 : Math.max(0, contado);
+        const quemLinha = [...new Set((l.leituras || []).map((x2) => x2.operador).filter(Boolean))].join(", ");
+        return `<div class="inventario-linha ${classe}">
+          <div class="inventario-linha-prod">
+            <strong>${this._esc(l.nome || l.produtoId)}</strong>
+            <span>${this._esc(l.codigoBarras || "")}${quemLinha ? " \xB7 " + this._esc(quemLinha) : ""}</span>
+          </div>
+          <div class="inventario-num sistema"><small>Sistema</small><b>${saldo}</b></div>
+          <div class="inventario-num contado"><small>Contado</small><b>${contado}</b></div>
+          <div class="inventario-num dif"><small>Diferen\xE7a</small><b>${sinal}</b></div>
+          <div class="inventario-num atualizado"><small>Atualizado</small><b>${novo}</b></div>
+        </div>`;
+      }).join("") : '<div class="inventario-vazio">Nenhum produto lido nesta confer\xEAncia.</div>';
+      return `<div class="inventario-hist-detalhe-meta">${this.htmlMetaSessao(sessao)}</div>
+      <div class="inventario-lista-head">
+        <span>Comprovante</span>
+        <span>${r.linhas.length} item(ns) \xB7 ${r.divergentes.length} ajuste(s)</span>
+      </div>
+      <div class="inventario-cols inventario-cols-hist" aria-hidden="true">
+        <span>Produto</span>
+        <span>Sistema</span>
+        <span>Contado</span>
+        <span>Diferen\xE7a</span>
+        <span>Atualizado</span>
+      </div>
+      <div class="inventario-lista">${lista}</div>`;
     },
     _esc(txt) {
       return String(txt || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");

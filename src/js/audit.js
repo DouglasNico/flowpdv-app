@@ -5,7 +5,7 @@
  */
 
 import { StorageService } from './storage.js';
-import { logCaiuNaExclusao } from './merge-core.js';
+import { logCaiuNaExclusao, totalAuditoriaVisivel } from './merge-core.js';
 import { db, doc, collection, addDoc, setDoc, getDoc, getDocs, query, where, orderBy, limit, startAfter, getCountFromServer, deleteDoc, writeBatch, garantirSessaoLoja } from './firebase-config.js';
 
 export const AuditModule = {
@@ -351,15 +351,20 @@ export const AuditModule = {
 
   async contarLogsNuvem(chave) {
     let total = 0;
+    let temDocMeta = false;
     try {
       const sub = await getCountFromServer(collection(db, 'backups_lojas', chave, 'auditoria'));
       total = Math.max(total, (sub.data() && sub.data().count) || 0);
+      try {
+        const meta = await getDoc(doc(db, 'backups_lojas', chave, 'auditoria', this.DOC_EXCLUSAO));
+        temDocMeta = Boolean(meta && meta.exists());
+      } catch (e) {}
     } catch (e) {}
     try {
       const leg = await getCountFromServer(query(collection(db, 'auditoria_lojas'), where('chaveLicenca', '==', chave)));
       if (!total) total = (leg.data() && leg.data().count) || 0;
     } catch (e) {}
-    return total;
+    return totalAuditoriaVisivel(total, { temDocMeta });
   },
 
   persistirLogsMesclados(logs) {
@@ -755,6 +760,7 @@ export const AuditModule = {
     const res = await this.apagarRefsEmLote(refs);
     if (res.falhas === 0) {
       await this.registrarExclusaoNuvem(chave, { ids: [id] });
+      if (this.totalNuvem) this.totalNuvem = Math.max(0, this.totalNuvem - 1);
     }
     return {
       ok: res.falhas === 0,

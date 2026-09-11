@@ -1576,7 +1576,7 @@ export const GerenciaModule = {
             return t === 'comandas' || desc.includes('mesa') || desc.includes('comanda');
           }
           if (tipo === 'estoque' || tipo === 'ajuste_estoque') {
-            return t === 'ajuste_estoque' || t === 'cadastro_produto' || t === 'edicao_produto' || t === 'exclusao_produto' || t === 'importacao_planilha' || t === 'importacao_xml';
+            return t === 'ajuste_estoque' || t === 'inventario' || t === 'cadastro_produto' || t === 'edicao_produto' || t === 'exclusao_produto' || t === 'importacao_planilha' || t === 'importacao_xml';
           }
           if (tipo === 'cortesia') {
             return t === 'cortesia';
@@ -1604,10 +1604,12 @@ export const GerenciaModule = {
     const visiveis = logsCompletos.slice(0, this.auditoriaExibidos);
     const totalNuvem = (AuditModule && AuditModule.totalNuvem) || 0;
     const filtrandoData = Boolean(this.filtroDataAuditoria);
+    const temMais = visiveis.length < logsCompletos.length || (!filtrandoData && Boolean(AuditModule && AuditModule.temMaisNuvem));
     const totalRef = filtrandoData
       ? logsCompletos.length
-      : Math.max(totalNuvem, todosLogs.length, logsCompletos.length);
-    const temMais = visiveis.length < logsCompletos.length || (!filtrandoData && Boolean(AuditModule && AuditModule.temMaisNuvem));
+      : (temMais
+        ? Math.max(totalNuvem, todosLogs.length, logsCompletos.length)
+        : Math.max(logsCompletos.length, todosLogs.length));
 
     const contadorEl = document.getElementById('gerencia-auditoria-contador');
     if (contadorEl) {
@@ -1642,6 +1644,8 @@ export const GerenciaModule = {
         badgeTipo = '<span style="background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 800; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px;">📟 Config TEF</span>';
       } else if (l.tipo === 'ajuste_estoque') {
         badgeTipo = '<span style="background: #fef3c7; color: #d97706; border: 1px solid #fde68a; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 800; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px;">📦 Ajuste Estoque</span>';
+      } else if (l.tipo === 'inventario') {
+        badgeTipo = '<span style="background: #ecfdf5; color: #0f766e; border: 1px solid #99f6e4; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 800; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px;">📋 Inventário</span>';
       } else if (l.tipo === 'cadastro_produto') {
         badgeTipo = '<span style="background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 800; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px;">➕ Novo Produto</span>';
       } else if (l.tipo === 'edicao_produto') {
@@ -1809,6 +1813,8 @@ export const GerenciaModule = {
       badgeTipo = '<span style="background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; padding: 3px 10px; border-radius: 6px; font-size: 12px; font-weight: 800;">⚙️ Configuração</span>';
     } else if (log.tipo === 'ajuste_estoque') {
       badgeTipo = '<span style="background: #fef3c7; color: #d97706; border: 1px solid #fde68a; padding: 3px 10px; border-radius: 6px; font-size: 12px; font-weight: 800;">📦 Ajuste de Estoque</span>';
+    } else if (log.tipo === 'inventario') {
+      badgeTipo = '<span style="background: #ecfdf5; color: #0f766e; border: 1px solid #99f6e4; padding: 3px 10px; border-radius: 6px; font-size: 12px; font-weight: 800;">📋 Inventário</span>';
     } else if (log.tipo === 'cortesia') {
       badgeTipo = '<span style="background: #ede9fe; color: #7c3aed; border: 1px solid #ddd6fe; padding: 3px 10px; border-radius: 6px; font-size: 12px; font-weight: 800;">🎁 Cortesia</span>';
     } else if (log.tipo === 'cancelamento_venda') {
@@ -1861,6 +1867,42 @@ export const GerenciaModule = {
       `;
     }
 
+    if (log.tipo === 'inventario' && log.detalhes) {
+      const d = log.detalhes;
+      const linhasInv = Array.isArray(d.linhas) ? d.linhas : [];
+      const ops = Array.isArray(d.operadores) ? d.operadores.filter(Boolean) : [];
+      cardEspecialHtml = `
+        <div style="background: #ffffff; border: 1px solid var(--border-card); border-radius: 8px; padding: 12px; margin-bottom: 12px; box-shadow: var(--shadow-sm);">
+          <strong style="font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 8px;">Conferência de inventário</strong>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12.5px; margin-bottom: 10px;">
+            <div>Aberto por: <strong>${d.criadoPor || log.operador || '—'}</strong></div>
+            <div>Processado por: <strong>${d.processadoPor || log.operador || '—'}</strong></div>
+            <div>Itens lidos: <strong>${d.itens != null ? d.itens : linhasInv.length}</strong></div>
+            <div>Ajustes: <strong>${d.ajustes != null ? d.ajustes : '—'}</strong></div>
+            ${ops.length ? `<div style="grid-column: 1 / -1;">Quem contou: <strong>${ops.join(', ')}</strong></div>` : ''}
+          </div>
+          ${linhasInv.length ? `
+            <div style="max-height: 220px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px;">
+              ${linhasInv.map(it => {
+                const delta = (parseFloat(it.contado) || 0) - (parseFloat(it.sistema) || 0);
+                const cor = delta > 0 ? '#0f766e' : (delta < 0 ? '#b91c1c' : '#475569');
+                const sinal = delta > 0 ? '+' + delta : String(delta);
+                return `<div style="display:flex; justify-content:space-between; gap:8px; padding:6px 10px; border-bottom:1px solid #f1f5f9; font-size:12px;">
+                  <span style="font-weight:700;">${it.nome || it.produtoId || 'Item'}</span>
+                  <span style="font-family:'JetBrains Mono'; color:${cor}; font-weight:800;">${it.sistema} → ${it.contado} (${sinal})</span>
+                </div>`;
+              }).join('')}
+            </div>
+          ` : ''}
+          ${d.sessaoId ? `
+            <button type="button" class="btn-primary-action" style="width:100%; justify-content:center; height:38px; font-size:12.5px; font-weight:800; background:#0f766e; color:#ffffff; margin-top:10px;" onclick="InventarioModule.abrirDetalheHistorico('${String(d.sessaoId).replace(/'/g, "\\'")}')">
+              Ver conferência completa
+            </button>
+          ` : ''}
+        </div>
+      `;
+    }
+
     const mapaLabelsChaves = {
       turnoId: 'ID do Turno',
       numeroNfce: 'Número NFC-e',
@@ -1890,6 +1932,7 @@ export const GerenciaModule = {
       const itensHtml = Object.entries(log.detalhes).map(([chave, valor]) => {
         // Se for cortesia e a chave for motivo, já está em destaque no card principal
         if (log.tipo === 'cortesia' && chave.toLowerCase() === 'motivo') return '';
+        if (log.tipo === 'inventario' && ['linhas', 'operadores', 'sessaoId', 'criadoPor', 'processadoPor', 'itens', 'ajustes', 'entrada', 'saida'].includes(chave)) return '';
 
         // Se for a lista de itens/produtos
         if ((chave === 'itens' || chave === 'produtos') && Array.isArray(valor)) {
@@ -2069,6 +2112,9 @@ export const GerenciaModule = {
       window.AuditModule.removerLogLocal(logId);
     }
     this.logsAuditoriaCache = (this.logsAuditoriaCache || []).filter(l => l.id !== logId);
+    if (window.AuditModule && typeof window.AuditModule.totalNuvem === 'number' && window.AuditModule.totalNuvem > 0) {
+      window.AuditModule.totalNuvem = Math.max(0, window.AuditModule.totalNuvem - 1);
+    }
     this.renderAuditoriaFiltrada();
     this.logExcluindoId = null;
 

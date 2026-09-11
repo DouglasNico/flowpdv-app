@@ -147,6 +147,15 @@ export function encontrarClientePorDocumento(clientes, documento) {
   })) || null;
 }
 
+/**
+ * O total do Firestore conta o documento __exclusao (recado entre caixas).
+ * A tela não mostra esse doc — sem esse ajuste aparece "19 de 20".
+ */
+export function totalAuditoriaVisivel(countBruto, { temDocMeta = false } = {}) {
+  const n = Number(countBruto) || 0;
+  return Math.max(0, n - (temDocMeta ? 1 : 0));
+}
+
 function ehContaPaga(conta) {
   return String(conta && conta.status || '').toLowerCase() === 'pago';
 }

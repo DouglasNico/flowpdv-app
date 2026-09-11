@@ -5,9 +5,11 @@
 
 import { StorageService } from './storage.js';
 import { calcularDeltasInventario } from './merge-core.js';
+import { AuditModule } from './audit.js';
 
 export const InventarioModule = {
   sessaoAtivaId: null,
+  historicoDetalheId: null,
 
   init() {
     const aberta = this.getSessoes().find(s => s.status === 'em_andamento' || s.status === 'concluido');
@@ -176,7 +178,9 @@ export const InventarioModule = {
     });
     sessao.status = 'processado';
     sessao.processadoEm = new Date().toISOString();
+    sessao.processadoPor = this.nomeOperador();
     this.persistir(sessao);
+    this.registrarLogProcessamento(sessao, deltas);
     if (window.EstoqueModule && typeof window.EstoqueModule.renderTabelaProdutos === 'function') {
       window.EstoqueModule.renderTabelaProdutos();
     }
@@ -337,6 +341,8 @@ export const InventarioModule = {
     boxModal.classList.toggle('is-processado', processado);
 
     if (statusEl) statusEl.textContent = rotulo;
+    const metaEl = document.getElementById('inventario-meta');
+    if (metaEl) metaEl.innerHTML = this.htmlMetaSessao(sessao);
     const hintEl = modal.querySelector('.inventario-hint');
     if (hintEl) {
       hintEl.style.display = processado ? 'none' : '';
@@ -434,6 +440,222 @@ export const InventarioModule = {
       </div>`;
     }).join('');
     listaEl.innerHTML = linhasHtml;
+  },
+
+  nomeOperador() {
+    if (window.AuthModule && typeof window.AuthModule.getNomeOperador === 'function') {
+      return window.AuthModule.getNomeOperador() || '';
+    }
+    const u = window.AuthModule && typeof window.AuthModule.getUsuario === 'function'
+      ? window.AuthModule.getUsuario()
+      : null;
+    return (u && u.nome) || '';
+  },
+
+  resumoSessao(sessao) {
+    const linhas = Object.values((sessao && sessao.linhas) || {});
+    const operadores = new Set();
+    if (sessao && sessao.criadoPor) operadores.add(sessao.criadoPor);
+    linhas.forEach(l => {
+      (l.leituras || []).forEach(r => {
+        if (r && r.operador) operadores.add(r.operador);
+      });
+    });
+    const divergentes = linhas.filter(l => Math.abs((parseFloat(l.contado) || 0) - (parseFloat(l.saldoDe) || 0)) > 0.0001);
+    let entrada = 0;
+    let saida = 0;
+    linhas.forEach(l => {
+      const d = (parseFloat(l.contado) || 0) - (parseFloat(l.saldoDe) || 0);
+      if (d > 0) entrada += d;
+      else if (d < 0) saida += d;
+    });
+    return { linhas, operadores: Array.from(operadores), divergentes, entrada, saida };
+  },
+
+  _fmtData(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    if (!Number.isFinite(d.getTime())) return '—';
+    return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  },
+
+  htmlMetaSessao(sessao) {
+    if (!sessao) return '';
+    const r = this.resumoSessao(sessao);
+    const partes = [];
+    if (sessao.criadoPor) partes.push('Aberto por <b>' + this._esc(sessao.criadoPor) + '</b>');
+    if (sessao.criadoEm) partes.push(this._esc(this._fmtData(sessao.criadoEm)));
+    if (r.operadores.length) partes.push('Contagem: <b>' + r.operadores.map(o => this._esc(o)).join(', ') + '</b>');
+    if (sessao.processadoPor) partes.push('Processado por <b>' + this._esc(sessao.processadoPor) + '</b>');
+    if (sessao.processadoEm) partes.push(this._esc(this._fmtData(sessao.processadoEm)));
+    return partes.join(' · ');
+  },
+
+  registrarLogProcessamento(sessao, deltas) {
+    const r = this.resumoSessao(sessao);
+    const linhas = r.linhas.slice(0, 250).map(l => ({
+      produtoId: l.produtoId,
+      nome: l.nome,
+      sistema: parseFloat(l.saldoDe) || 0,
+      contado: parseFloat(l.contado) || 0,
+      atualizado: l.saldoPara != null ? (parseFloat(l.saldoPara) || 0) : parseFloat(l.contado) || 0
+    }));
+    AuditModule.registrarLog(
+      'inventario',
+      'Inventário processado: ' + r.linhas.length + ' item(ns), ' + (deltas || []).length + ' ajuste(s)',
+      {
+        sessaoId: sessao.id,
+        criadoPor: sessao.criadoPor || '',
+        processadoPor: sessao.processadoPor || this.nomeOperador(),
+        operadores: r.operadores,
+        itens: r.linhas.length,
+        ajustes: (deltas || []).length,
+        entrada: r.entrada,
+        saida: r.saida,
+        linhas
+      }
+    );
+  },
+
+  abrirHistorico() {
+    const modal = document.getElementById('modal-inventario-historico');
+    if (!modal) return;
+    modal.classList.add('active');
+    this.renderHistorico();
+  },
+
+  fecharHistorico() {
+    const modal = document.getElementById('modal-inventario-historico');
+    if (modal) modal.classList.remove('active');
+    this.historicoDetalheId = null;
+  },
+
+  abrirDetalheHistorico(id) {
+    const auditModal = document.getElementById('modal-detalhes-auditoria');
+    if (auditModal) auditModal.classList.remove('active');
+    const sessao = this.getSessoes().find(s => s && s.id === id);
+    if (!sessao) {
+      if (window.App && typeof window.App.showToast === 'function') {
+        window.App.showToast('Essa conferência ainda não chegou neste terminal. Espere o sync.', 'warning');
+      }
+      return;
+    }
+    if (sessao.status === 'em_andamento' || sessao.status === 'concluido') {
+      this.fecharHistorico();
+      this.sessaoAtivaId = sessao.id;
+      this.abrirModal();
+      return;
+    }
+    this.historicoDetalheId = id;
+    const modal = document.getElementById('modal-inventario-historico');
+    if (modal) modal.classList.add('active');
+    this.renderHistorico();
+  },
+
+  voltarListaHistorico() {
+    this.historicoDetalheId = null;
+    this.renderHistorico();
+  },
+
+  rotuloStatus(status) {
+    return {
+      em_andamento: 'Contando',
+      concluido: 'Pausado',
+      processado: 'Processado'
+    }[status] || status || '—';
+  },
+
+  renderHistorico() {
+    const listaEl = document.getElementById('inventario-hist-lista');
+    const detalheEl = document.getElementById('inventario-hist-detalhe');
+    const tituloEl = document.getElementById('inventario-hist-title');
+    const btnVoltar = document.getElementById('btn-inventario-hist-voltar');
+    if (!listaEl || !detalheEl) return;
+
+    const sessoes = this.getSessoes().slice().sort((a, b) => {
+      const ta = new Date(b.processadoEm || b.atualizadoEm || b.criadoEm || 0).getTime();
+      const tb = new Date(a.processadoEm || a.atualizadoEm || a.criadoEm || 0).getTime();
+      return ta - tb;
+    });
+
+    const detalhe = this.historicoDetalheId
+      ? sessoes.find(s => s && s.id === this.historicoDetalheId)
+      : null;
+
+    if (btnVoltar) btnVoltar.style.display = detalhe ? 'inline-flex' : 'none';
+    if (tituloEl) tituloEl.textContent = detalhe ? 'Detalhes do inventário' : 'Histórico de inventário';
+
+    if (detalhe) {
+      listaEl.style.display = 'none';
+      detalheEl.style.display = 'flex';
+      detalheEl.innerHTML = this.htmlDetalheHistorico(detalhe);
+      return;
+    }
+
+    detalheEl.style.display = 'none';
+    detalheEl.innerHTML = '';
+    listaEl.style.display = 'flex';
+
+    if (!sessoes.length) {
+      listaEl.innerHTML = '<div class="inventario-vazio">Nenhuma conferência ainda. Abra o Inventário para começar a contar.</div>';
+      return;
+    }
+
+    listaEl.innerHTML = sessoes.map(s => {
+      const r = this.resumoSessao(s);
+      const quando = this._fmtData(s.processadoEm || s.criadoEm);
+      const quem = s.processadoPor || s.criadoPor || (r.operadores[0] || '—');
+      const idEsc = String(s.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      return `<button type="button" class="inventario-hist-card" onclick="InventarioModule.abrirDetalheHistorico('${idEsc}')">
+        <div class="inventario-hist-card-top">
+          <strong>${this._esc(this.rotuloStatus(s.status))}</strong>
+          <span>${this._esc(quando)}</span>
+        </div>
+        <div class="inventario-hist-card-meta">
+          ${this._esc(quem)} · ${r.linhas.length} item(ns) · ${r.divergentes.length} ajuste(s)
+        </div>
+      </button>`;
+    }).join('');
+  },
+
+  htmlDetalheHistorico(sessao) {
+    const r = this.resumoSessao(sessao);
+    const linhas = r.linhas.slice().sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'));
+    const lista = linhas.length
+      ? linhas.map(l => {
+        const contado = parseFloat(l.contado) || 0;
+        const saldo = parseFloat(l.saldoDe) || 0;
+        const delta = contado - saldo;
+        const classe = delta === 0 ? 'ok' : (delta > 0 ? 'div mais' : 'div menos');
+        const sinal = delta > 0 ? '+' + delta : String(delta);
+        const novo = l.saldoPara != null ? (parseFloat(l.saldoPara) || 0) : Math.max(0, contado);
+        const quemLinha = [...new Set((l.leituras || []).map(x => x.operador).filter(Boolean))].join(', ');
+        return `<div class="inventario-linha ${classe}">
+          <div class="inventario-linha-prod">
+            <strong>${this._esc(l.nome || l.produtoId)}</strong>
+            <span>${this._esc(l.codigoBarras || '')}${quemLinha ? ' · ' + this._esc(quemLinha) : ''}</span>
+          </div>
+          <div class="inventario-num sistema"><small>Sistema</small><b>${saldo}</b></div>
+          <div class="inventario-num contado"><small>Contado</small><b>${contado}</b></div>
+          <div class="inventario-num dif"><small>Diferença</small><b>${sinal}</b></div>
+          <div class="inventario-num atualizado"><small>Atualizado</small><b>${novo}</b></div>
+        </div>`;
+      }).join('')
+      : '<div class="inventario-vazio">Nenhum produto lido nesta conferência.</div>';
+
+    return `<div class="inventario-hist-detalhe-meta">${this.htmlMetaSessao(sessao)}</div>
+      <div class="inventario-lista-head">
+        <span>Comprovante</span>
+        <span>${r.linhas.length} item(ns) · ${r.divergentes.length} ajuste(s)</span>
+      </div>
+      <div class="inventario-cols inventario-cols-hist" aria-hidden="true">
+        <span>Produto</span>
+        <span>Sistema</span>
+        <span>Contado</span>
+        <span>Diferença</span>
+        <span>Atualizado</span>
+      </div>
+      <div class="inventario-lista">${lista}</div>`;
   },
 
   _esc(txt) {

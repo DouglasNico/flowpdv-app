@@ -1047,15 +1047,17 @@ export const ComandasModule = {
     this.renderGridComandas();
     this.renderPainelDetalhes();
 
-    const config = StorageService.getConfig() || {};
+    const papel = ThermalPrintModule.papelCupom();
+    const config = papel.config || StorageService.getConfig() || {};
+    const largura = papel.largura;
+    const pageSize = papel.pageSize;
+    const fonte = papel.fonte;
     const nomeLoja = config.nomeEmpresa || config.nomeLoja || 'FlowPDV';
     const totalConsumo = parseFloat(c.total || 0);
     const taxaServicoOpcional = c.taxaServico ? (totalConsumo * 0.10) : 0;
     const totalComServico = totalConsumo + taxaServicoOpcional;
     const qtdPessoas = this.numPessoasDivisao || 1;
     const valorPorPessoa = totalComServico / qtdPessoas;
-
-    const largura = config.impressoraTipo === '80mm' ? '72mm' : '48mm';
 
     const html = `
       <!DOCTYPE html>
@@ -1064,13 +1066,13 @@ export const ComandasModule = {
         <meta charset="utf-8">
         <title>Pré-Conta ${c.nome}</title>
         <style>
-          @page { margin: 0; size: auto; }
+          @page { margin: 0; size: ${pageSize}; }
           body {
             font-family: 'Courier New', Courier, monospace;
             width: ${largura};
             margin: 0 auto;
             padding: 8px 4px;
-            font-size: 11px;
+            font-size: ${fonte};
             line-height: 1.25;
             color: #000;
             background: #fff;

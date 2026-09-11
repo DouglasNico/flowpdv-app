@@ -45,40 +45,25 @@ export const ThermalPrintModule = {
     return !!(item.unidade && String(item.unidade).toLowerCase() === 'kg');
   },
 
+  papelCupom() {
+    const config = StorageService.getConfig() || {};
+    const is80 = config.impressoraTipo === '80mm';
+    return {
+      config,
+      is80,
+      largura: is80 ? '72mm' : '48mm',
+      pageSize: is80 ? '80mm auto' : '58mm auto',
+      papelMm: is80 ? 80 : 58,
+      fonte: is80 ? '13px' : '11px'
+    };
+  },
+
   unidadeQtdCupom(item) {
     return this.itemEhPeso(item) ? 'KG' : 'UN';
   },
 
-  htmlItensCupom(itens, is80) {
+  htmlItensCupom(itens) {
     const lista = itens || [];
-    if (is80) {
-      return `
-        <table class="table-items">
-          <thead>
-            <tr class="bold">
-              <td class="col-cod">COD</td>
-              <td>DESCR</td>
-              <td class="col-num">QTD</td>
-              <td class="col-num">VL UNIT</td>
-              <td class="col-num">TOTAL</td>
-            </tr>
-          </thead>
-          <tbody>
-            ${lista.map((item) => {
-              const qtd = Number(item.quantidade) || 0;
-              const vu = Number(item.precoUnitario) || 0;
-              return `<tr>
-                <td class="col-cod">${this.escCupom(this.codigoCurtoCupom(item))}</td>
-                <td class="col-desc">${this.escCupom(item.nome)}</td>
-                <td class="col-num">${this.formatarQtdCupom(qtd)} ${this.unidadeQtdCupom(item)}</td>
-                <td class="col-num">${vu.toFixed(2).replace('.', ',')}</td>
-                <td class="col-num">${(vu * qtd).toFixed(2).replace('.', ',')}</td>
-              </tr>`;
-            }).join('')}
-          </tbody>
-        </table>
-      `;
-    }
     return lista.map((item) => {
       const qtd = Number(item.quantidade) || 0;
       const vu = Number(item.precoUnitario) || 0;
@@ -126,8 +111,9 @@ export const ThermalPrintModule = {
   },
 
   executarImpressao(html) {
+    const papelMm = this.papelCupom().papelMm;
     if (window.electronAPI && typeof window.electronAPI.printThermalReceipt === 'function') {
-      window.electronAPI.printThermalReceipt(html, false).catch((err) => {
+      window.electronAPI.printThermalReceipt(html, false, { papelMm }).catch((err) => {
         console.warn('[ThermalPrint] Falha IPC, usando fallback navegador:', err);
         this.imprimirViaJanelaNavegador(html);
       });
@@ -163,8 +149,7 @@ export const ThermalPrintModule = {
 
   imprimirCupomVenda(venda) {
     if (!venda) return;
-    const config = StorageService.getConfig();
-    const largura = config.impressoraTipo === '80mm' ? '72mm' : '48mm';
+    const { config, largura, pageSize, fonte } = this.papelCupom();
 
     // Se a venda teve pagamento em dinheiro, envia pulso para abrir gaveta
     const teveDinheiro = venda.formaPagamento === 'Dinheiro' ||
@@ -176,7 +161,6 @@ export const ThermalPrintModule = {
 
     const isNfce = Boolean(venda.chaveNfe || venda.statusFiscal === 'autorizada');
     const chaveFormatada = (venda.chaveNfe || '').replace(/(.{4})/g, '$1 ').trim();
-    const is80 = config.impressoraTipo === '80mm';
     const qtdeItens = (venda.itens || []).reduce((acc, item) => {
       if (this.itemEhPeso(item)) return acc + 1;
       return acc + (Number(item.quantidade) || 0);
@@ -191,13 +175,13 @@ export const ThermalPrintModule = {
       <head>
         <meta charset="utf-8">
         <style>
-          @page { margin: 0; size: auto; }
+          @page { margin: 0; size: ${pageSize}; }
           body {
             font-family: 'Courier New', Courier, monospace;
             width: ${largura};
             margin: 0 auto;
             padding: 6px 3px 10px;
-            font-size: 11px;
+            font-size: ${fonte};
             line-height: 1.28;
             color: #000;
             background: #fff;
@@ -243,7 +227,7 @@ export const ThermalPrintModule = {
         `}
 
         <div class="divider"></div>
-        ${this.htmlItensCupom(venda.itens, is80)}
+        ${this.htmlItensCupom(venda.itens)}
 
         <div class="divider"></div>
         <table class="tot-table">
@@ -291,8 +275,7 @@ export const ThermalPrintModule = {
 
   imprimirFechamentoCaixa(turno) {
     if (!turno) return;
-    const config = StorageService.getConfig();
-    const largura = config.impressoraTipo === '80mm' ? '72mm' : '48mm';
+    const { config, largura, pageSize, fonte } = this.papelCupom();
 
     const dataAb = turno.dataAbertura ? new Date(turno.dataAbertura).toLocaleString('pt-BR') : '-';
     const dataFc = turno.dataFechamento ? new Date(turno.dataFechamento).toLocaleString('pt-BR') : 'Em Aberto';
@@ -306,13 +289,13 @@ export const ThermalPrintModule = {
       <head>
         <meta charset="utf-8">
         <style>
-          @page { margin: 0; size: auto; }
+          @page { margin: 0; size: ${pageSize}; }
           body {
             font-family: 'Courier New', monospace;
             width: ${largura};
             margin: 0 auto;
             padding: 8px 4px;
-            font-size: 11px;
+            font-size: ${fonte};
             line-height: 1.3;
             color: #000;
             background: #fff;

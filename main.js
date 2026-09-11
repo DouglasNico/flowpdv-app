@@ -509,7 +509,7 @@ if (!gotTheLock) {
   });
 
   // IPC Handler: Impressão Térmica Direta (Silenciosa ou com diálogo)
-  ipcMain.handle('print-thermal-receipt', async (event, htmlContent, silent = false) => {
+  ipcMain.handle('print-thermal-receipt', async (event, htmlContent, silent = false, opts = {}) => {
     let printWindow = null;
     try {
       printWindow = new BrowserWindow({
@@ -535,16 +535,20 @@ if (!gotTheLock) {
           resolve(res);
         };
 
-        // Timeout de segurança (90s para dar tempo ao operador)
         const timer = setTimeout(() => {
           finalizar({ success: false, error: 'Timeout de impressão' });
         }, 90000);
 
+        const mm = Number(opts && opts.papelMm) === 80 ? 80 : 58;
         printWindow.webContents.print(
           {
             silent: silent,
             printBackground: true,
-            margins: { marginType: 'none' }
+            margins: { marginType: 'none' },
+            pageSize: {
+              width: mm * 1000,
+              height: 2000000
+            }
           },
           (success, failureReason) => {
             clearTimeout(timer);

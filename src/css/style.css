@@ -7243,6 +7243,21 @@ body.pdv-layout-classico #btn-cpf-nota-nao {
   opacity: 0.9;
 }
 
+.inventario-meta {
+  margin-top: 6px;
+  font-size: 12px;
+  opacity: 0.92;
+  line-height: 1.4;
+}
+
+.inventario-meta b {
+  font-weight: 800;
+}
+
+.inventario-meta:empty {
+  display: none;
+}
+
 .inventario-body {
   padding: 16px 24px 12px;
   flex: 1;
@@ -7606,6 +7621,80 @@ body.pdv-layout-classico #btn-cpf-nota-nao {
   .inventario-num b {
     font-size: 14px;
   }
+}
+
+.inventario-hist-lista {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1;
+}
+
+.inventario-hist-card {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 12px 14px;
+  cursor: pointer;
+}
+
+.inventario-hist-card:hover {
+  border-color: #99f6e4;
+  background: #f0fdfa;
+}
+
+.inventario-hist-card-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13.5px;
+}
+
+.inventario-hist-card-top span {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.inventario-hist-card-meta {
+  margin-top: 4px;
+  font-size: 12.5px;
+  color: #475569;
+}
+
+.inventario-hist-detalhe {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.inventario-hist-detalhe-meta {
+  margin-bottom: 12px;
+  font-size: 12.5px;
+  color: #334155;
+  line-height: 1.45;
+}
+
+.inventario-hist-detalhe .inventario-lista {
+  flex: 1;
+  min-height: 0;
+}
+
+.inventario-cols-hist,
+.inventario-hist-detalhe .inventario-linha {
+  grid-template-columns: minmax(0, 1fr) 80px 80px 92px 118px;
+}
+
+.inventario-hist-detalhe .inventario-col-atualizado,
+.inventario-cols-hist span:last-child {
+  display: block;
 }
 
 /* Cadastro / edição de produto */

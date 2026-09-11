@@ -388,6 +388,9 @@
                 <button type="button" id="btn-inventario-sessao" class="estoque-menu-item" onclick="InventarioModule.abrirModal()">
                   📋 Inventário
                 </button>
+                <button type="button" id="btn-inventario-historico" class="estoque-menu-item" onclick="InventarioModule.abrirHistorico()">
+                  📜 Histórico de inventário
+                </button>
                 <button type="button" id="btn-bipar-validade-express" class="estoque-menu-item" onclick="EstoqueModule.abrirModalBipagemValidade()">
                   ⚡ Bipar validades
                 </button>
@@ -2414,6 +2417,7 @@
           <div>
             <h3>Inventário de conferência</h3>
             <span id="inventario-status-label">Contando</span>
+            <div id="inventario-meta" class="inventario-meta"></div>
           </div>
           <button type="button" class="btn-close-modal" onclick="InventarioModule.fecharModal()">✕</button>
         </div>
@@ -2446,10 +2450,31 @@
         </div>
         <div class="modal-footer-bar inventario-footer">
           <button type="button" class="btn-toolbar-estoque" onclick="InventarioModule.fecharModal()">Fechar</button>
+          <button type="button" class="btn-toolbar-estoque" onclick="InventarioModule.abrirHistorico()">Histórico</button>
           <button type="button" id="btn-inventario-reabrir" class="btn-toolbar-estoque" style="display:none;" onclick="InventarioModule.confirmarReabrir()">Reabrir contagem</button>
           <button type="button" id="btn-inventario-concluir" class="btn-toolbar-estoque" onclick="InventarioModule.confirmarConcluir()">Pausar contagem</button>
           <button type="button" id="btn-inventario-processar" class="btn-toolbar-estoque primary" onclick="InventarioModule.confirmarProcessar()">Processar (gerente)</button>
           <button type="button" id="btn-inventario-nova" class="btn-toolbar-estoque primary" style="display:none;" onclick="InventarioModule.novaContagem()">Nova contagem</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="modal-inventario-historico" style="z-index: 10510;">
+      <div class="modal-content-box inventario-modal inventario-hist-modal">
+        <div class="modal-header-bar inventario-header">
+          <div>
+            <h3 id="inventario-hist-title">Histórico de inventário</h3>
+            <span>Quem contou, quando processou e o que mudou no estoque</span>
+          </div>
+          <button type="button" class="btn-close-modal" onclick="InventarioModule.fecharHistorico()">✕</button>
+        </div>
+        <div class="modal-body-content inventario-body">
+          <div id="inventario-hist-lista" class="inventario-hist-lista"></div>
+          <div id="inventario-hist-detalhe" class="inventario-hist-detalhe" style="display:none;"></div>
+        </div>
+        <div class="modal-footer-bar inventario-footer">
+          <button type="button" id="btn-inventario-hist-voltar" class="btn-toolbar-estoque" style="display:none;" onclick="InventarioModule.voltarListaHistorico()">Voltar</button>
+          <button type="button" class="btn-toolbar-estoque" onclick="InventarioModule.fecharHistorico()">Fechar</button>
         </div>
       </div>
     </div>

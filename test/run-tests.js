@@ -54,6 +54,7 @@ const {
   mesclarClientes,
   clientesPrecisamReenviar,
   encontrarClientePorDocumento,
+  totalAuditoriaVisivel,
   mesclarContasPagar,
   contasPagarPrecisamReenviar,
   mesclarComandas,
@@ -116,6 +117,12 @@ teste('cliente com CPF recuperado precisa voltar para a nuvem', () => {
   const local = [{ id: 'CLI-1', nome: 'Maria', cpfCnpj: '123.456.789-09' }];
   assert.strictEqual(clientesPrecisamReenviar(local, nuvem), true);
   assert.strictEqual(clientesPrecisamReenviar(nuvem, nuvem), false);
+});
+
+teste('contador de auditoria ignora o documento fantasma de exclusao', () => {
+  assert.strictEqual(totalAuditoriaVisivel(20, { temDocMeta: true }), 19);
+  assert.strictEqual(totalAuditoriaVisivel(19, { temDocMeta: false }), 19);
+  assert.strictEqual(totalAuditoriaVisivel(0, { temDocMeta: true }), 0);
 });
 
 teste('conta paga na nuvem não volta a vencida no outro caixa', () => {

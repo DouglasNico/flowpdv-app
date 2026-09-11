@@ -10,7 +10,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   iniciarDownloadAtualizacao: () => ipcRenderer.invoke('iniciar-download-atualizacao'),
   aplicarAtualizacaoAgora: () => ipcRenderer.invoke('aplicar-atualizacao-agora'),
   quitAndInstallUpdate: () => ipcRenderer.invoke('quit-and-install-update'),
-  printThermalReceipt: (htmlContent, silent) => ipcRenderer.invoke('print-thermal-receipt', htmlContent, silent),
+  printThermalReceipt: (htmlContent, silent, opts) => ipcRenderer.invoke('print-thermal-receipt', htmlContent, silent, opts || {}),
   fecharAppConfirmado: () => ipcRenderer.invoke('fechar-app-confirmado'),
   definirTelaCheiaOperador: (ativa) => ipcRenderer.invoke('definir-tela-cheia-operador', Boolean(ativa)),
   manterTelaAcordada: (ativa) => ipcRenderer.invoke('manter-tela-acordada', Boolean(ativa)),
