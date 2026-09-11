@@ -138,8 +138,8 @@ export const App = {
   bindNavegacao() {
     document.querySelectorAll('.nav-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        const targetTab = btn.dataset.tab;
-        this.trocarAba(targetTab);
+        const targetTab = btn.getAttribute('data-tab') || btn.dataset.tab;
+        if (targetTab) this.trocarAba(targetTab);
       });
     });
   },
@@ -170,8 +170,8 @@ export const App = {
       panel.classList.toggle('active', panel.id === `tab-${nomeAba}`);
     });
 
-    if (nomeAba !== 'estoque' && window.EstoqueModule && typeof window.EstoqueModule.resetarFiltrosEstoque === 'function') {
-      window.EstoqueModule.resetarFiltrosEstoque();
+    if (nomeAba !== 'estoque') {
+      EstoqueModule.resetarFiltrosEstoque();
     }
     if (abaAnterior === 'gerencia' && nomeAba !== 'gerencia' && window.GerenciaModule && typeof window.GerenciaModule.resetarFiltrosGerencia === 'function') {
       window.GerenciaModule.resetarFiltrosGerencia();
@@ -187,13 +187,19 @@ export const App = {
       }, 200);
     } else if (nomeAba === 'estoque') {
       const manterValidade = this._manterFiltroValidadeEstoque;
+      const manterBaixo = this._manterFiltroEstoqueBaixo;
       this._manterFiltroValidadeEstoque = null;
-      if (window.EstoqueModule && typeof window.EstoqueModule.resetarFiltrosEstoque === 'function') {
-        window.EstoqueModule.resetarFiltrosEstoque();
-      }
-      if (manterValidade && manterValidade !== 'todos' && typeof EstoqueModule.setFiltroValidade === 'function') {
-        EstoqueModule.setFiltroValidade(manterValidade);
-      }
+      this._manterFiltroEstoqueBaixo = null;
+      EstoqueModule.resetarFiltrosEstoque();
+      requestAnimationFrame(() => {
+        if (manterValidade && manterValidade !== 'todos') {
+          EstoqueModule.setFiltroValidade(manterValidade);
+        } else if (manterBaixo) {
+          EstoqueModule.toggleFiltroEstoqueBaixo(true);
+        } else {
+          EstoqueModule.renderTabelaProdutos(true);
+        }
+      });
     } else if (nomeAba === 'caixa') {
       CaixaModule.renderStatusTurno();
       CaixaModule.renderHistoricoVendasTurno();
@@ -203,8 +209,14 @@ export const App = {
     } else if (nomeAba === 'comandas') {
       ComandasModule.abrirAba();
     } else if (nomeAba === 'gerencia') {
-      if (abaAnterior !== 'gerencia' && window.GerenciaModule && typeof window.GerenciaModule.resetarFiltrosGerencia === 'function') {
-        window.GerenciaModule.resetarFiltrosGerencia();
+      if (abaAnterior !== 'gerencia' && window.GerenciaModule) {
+        if (typeof window.GerenciaModule.resetarFiltrosGerencia === 'function') {
+          window.GerenciaModule.resetarFiltrosGerencia();
+        }
+        if (!this._manterSubAbaGerencia && typeof window.GerenciaModule.trocarSubAba === 'function') {
+          window.GerenciaModule.trocarSubAba('inicio');
+        }
+        this._manterSubAbaGerencia = null;
       }
       this.verificarAcessoGerencia();
     } else if (nomeAba === 'config') {
@@ -1932,8 +1944,15 @@ export const App = {
     this.trocarAba('estoque');
   },
 
+  irParaEstoqueBaixo() {
+    this._manterFiltroEstoqueBaixo = true;
+    this.fecharModalAlertaGerencial();
+    this.trocarAba('estoque');
+  },
+
   irParaContasPagar(filtro = 'todos') {
     this.fecharModalAlertaGerencial();
+    this._manterSubAbaGerencia = 'financeiro';
     this.trocarAba('gerencia');
     if (window.GerenciaModule) {
       if (typeof window.GerenciaModule.trocarSubAba === 'function') {

@@ -753,12 +753,13 @@
                 🛒 Voltar ao Caixa <kbd style="background: rgba(0,0,0,0.2); color: #ffffff; padding: 1px 5px; border-radius: 4px; font-size: 10px; border: 1px solid rgba(0,0,0,0.25);">F1</kbd>
               </button>
             </h2>
-            <p style="margin: 2px 0 0 0; font-size: 12px; color: var(--text-muted);">Painel financeiro, curva ABC, categorias autônomas e auditoria em tempo real.</p>
+            <p style="margin: 2px 0 0 0; font-size: 12px; color: var(--text-muted);">Resumo da loja, financeiro, curva ABC e auditoria.</p>
           </div>
 
           <!-- Sub-Navegação da Gerência -->
           <div style="display: flex; align-items: center; gap: 6px; background: #f1f5f9; padding: 4px; border-radius: 10px; border: 1px solid #cbd5e1; flex-wrap: wrap;">
-            <button type="button" class="gerencia-subnav-btn active" data-subtab="indicadores">📊 Curva ABC</button>
+            <button type="button" class="gerencia-subnav-btn active" data-subtab="inicio">🏠 Início</button>
+            <button type="button" class="gerencia-subnav-btn" data-subtab="indicadores">📊 Curva ABC</button>
             <button type="button" class="gerencia-subnav-btn" data-subtab="financeiro">💸 Contas a Pagar</button>
             <button type="button" class="gerencia-subnav-btn" data-subtab="categorias">🏷️ Categorias</button>
             <button type="button" class="gerencia-subnav-btn" data-subtab="auditoria">🛡️ Auditoria & Logs</button>
@@ -767,8 +768,20 @@
           </div>
         </div>
 
+        <!-- PAINEL 0: INÍCIO / DASHBOARD DO DONO -->
+        <div class="gerencia-subpanel active" id="gerencia-subpanel-inicio">
+          <div id="gerencia-inicio-cards" class="gerencia-inicio-grid"></div>
+          <div class="gerencia-inicio-hoje-card">
+            <div class="gerencia-inicio-hoje-head">
+              <strong>Precisa ver hoje</strong>
+              <span>Só o que pede ação agora. Relatórios ficam nas outras abas.</span>
+            </div>
+            <div id="gerencia-inicio-hoje-lista" class="gerencia-inicio-hoje-lista"></div>
+          </div>
+        </div>
+
         <!-- PAINEL 1: CURVA ABC & INDICADORES -->
-        <div class="gerencia-subpanel active" id="gerencia-subpanel-indicadores">
+        <div class="gerencia-subpanel" id="gerencia-subpanel-indicadores">
           <div id="gerencia-abc-metrics" class="clientes-metrics-grid">
             <!-- Preenchido via JS -->
           </div>

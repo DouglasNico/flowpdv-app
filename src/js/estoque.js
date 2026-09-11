@@ -18,9 +18,10 @@ export const EstoqueModule = {
   historicoValidadesBipadas: [],
   produtosParaImportar: [],
   ordenacaoAtual: {
-    coluna: '', // '', 'codigo', 'nome', 'categoria', 'precoCusto', 'precoVenda', 'estoque'
+    coluna: '', // '', 'codigo', 'nome', 'categoria', 'precoCusto', 'precoVenda', 'precoPromocional', 'estoque'
     direcao: 'asc'
   },
+  _resetandoFiltros: false,
   
   padronizarProdutosExistentes() {
     try {
@@ -39,11 +40,14 @@ export const EstoqueModule = {
   },
 
   resetarFiltrosEstoque() {
+    if (this._resetandoFiltros) return;
+    this._resetandoFiltros = true;
     this.categoriaFiltro = 'todas';
     this.filtroValidade = 'todos';
     this.filtroEstoqueBaixo = false;
     this.filtroListaCompras = false;
     this.ordenacaoAtual = { coluna: '', direcao: 'asc' };
+    this.limiteExibicaoAtual = 80;
     try {
       const inputBusca = document.getElementById('estoque-busca-input');
       if (inputBusca) inputBusca.value = '';
@@ -65,14 +69,18 @@ export const EstoqueModule = {
         btnLista.style.borderColor = '';
         btnLista.style.boxShadow = '';
       }
-      this.fecharMenuAcoesEstoque();
-      this.atualizarBannerListaCompras();
-      this.atualizarChipsFiltrosAcoes();
-      this.renderBarraCategorias();
-      this.atualizarIconesOrdenacao();
-      this.renderTabelaProdutos();
+      try { this.fecharMenuAcoesEstoque(); } catch (e) {}
+      try { this.atualizarBannerListaCompras(); } catch (e) {}
+      try { this.atualizarChipsFiltrosAcoes(); } catch (e) {}
+      try { this.renderBarraCategorias(); } catch (e) {}
+      try { this.atualizarIconesOrdenacao(); } catch (e) {}
+      this.renderTabelaProdutos(true);
+      const area = document.querySelector('#tab-estoque .table-scroll-area');
+      if (area) area.scrollTop = 0;
     } catch (e) {
-      this.atualizarChipsFiltrosAcoes();
+      try { this.renderTabelaProdutos(true); } catch (e2) {}
+    } finally {
+      this._resetandoFiltros = false;
     }
   },
 
@@ -98,10 +106,10 @@ export const EstoqueModule = {
     const panel = document.getElementById('tab-estoque');
     if (!panel || panel.dataset.resetBound === '1') return;
     panel.dataset.resetBound = '1';
-    const observer = new MutationObserver(() => {
+    const mo = new MutationObserver(() => {
       if (!panel.classList.contains('active')) this.resetarFiltrosEstoque();
     });
-    observer.observe(panel, { attributes: true, attributeFilter: ['class'] });
+    mo.observe(panel, { attributes: true, attributeFilter: ['class'] });
   },
 
   adaptarInterfaceSegmento() {
@@ -178,8 +186,12 @@ export const EstoqueModule = {
     if (boxPrecoClube) boxPrecoClube.style.display = isClubeAtivo ? 'block' : 'none';
   },
 
-  toggleFiltroEstoqueBaixo() {
-    this.filtroEstoqueBaixo = !this.filtroEstoqueBaixo;
+  toggleFiltroEstoqueBaixo(forcar = null) {
+    if (forcar !== null) {
+      this.filtroEstoqueBaixo = !!forcar;
+    } else {
+      this.filtroEstoqueBaixo = !this.filtroEstoqueBaixo;
+    }
     if (this.filtroEstoqueBaixo && this.filtroListaCompras) {
       this.toggleFiltroListaCompras(false);
     }
@@ -976,14 +988,14 @@ export const EstoqueModule = {
     } else {
       this.ordenacaoAtual.coluna = coluna;
       // Para preços e estoque, o primeiro clique geralmente prefere maior -> menor
-      this.ordenacaoAtual.direcao = (coluna === 'precoVenda' || coluna === 'precoCusto' || coluna === 'estoque') ? 'desc' : 'asc';
+      this.ordenacaoAtual.direcao = (coluna === 'precoVenda' || coluna === 'precoCusto' || coluna === 'precoPromocional' || coluna === 'estoque') ? 'desc' : 'asc';
     }
     this.atualizarIconesOrdenacao();
     this.renderTabelaProdutos();
   },
 
   atualizarIconesOrdenacao() {
-    const colunas = ['codigo', 'nome', 'categoria', 'precoCusto', 'precoVenda', 'estoque'];
+    const colunas = ['codigo', 'nome', 'categoria', 'precoCusto', 'precoVenda', 'precoPromocional', 'estoque'];
     colunas.forEach(col => {
       const iconEl = document.getElementById(`sort-icon-${col}`);
       const thEl = iconEl?.closest('th');
@@ -1025,7 +1037,7 @@ export const EstoqueModule = {
     const busca = document.getElementById('estoque-busca-input')?.value.toLowerCase().trim() || '';
     if (!tbody) return;
 
-    let produtos = StorageService.getProdutos();
+    let produtos = (StorageService.getProdutos() || []).slice();
 
     if (this.categoriaFiltro !== 'todas') {
       produtos = produtos.filter(p => p.categoria.toLowerCase() === this.categoriaFiltro.toLowerCase());

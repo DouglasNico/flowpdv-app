@@ -8,7 +8,8 @@ import { AuditModule } from './audit.js';
 import { ThermalPrintModule } from './thermal-print.js';
 
 export const GerenciaModule = {
-  subAbaAtiva: 'indicadores',
+  subAbaAtiva: 'inicio',
+  _inicioItensHoje: [],
   contaEditandoId: null,
   contaBaixandoId: null,
   ajusteProdutoSelecionadoId: null,
@@ -81,7 +82,9 @@ export const GerenciaModule = {
   },
 
   renderSubAbaAtual() {
-    if (this.subAbaAtiva === 'indicadores') {
+    if (this.subAbaAtiva === 'inicio') {
+      this.renderDashboardInicio();
+    } else if (this.subAbaAtiva === 'indicadores') {
       this.renderIndicadoresCurvaABC();
     } else if (this.subAbaAtiva === 'financeiro') {
       this.renderContasPagar();
@@ -94,6 +97,297 @@ export const GerenciaModule = {
     } else if (this.subAbaAtiva === 'auditoria') {
       this.renderAuditoriaAjustes();
       this.layoutFiltrosAuditoria();
+    }
+  },
+
+  _escHtml(valor) {
+    return String(valor == null ? '' : valor)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  },
+
+  _dataLocalISO(valor) {
+    const d = valor instanceof Date ? valor : new Date(valor);
+    if (isNaN(d.getTime())) return '';
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  },
+
+  _formatarDataBR(dataStr) {
+    if (!dataStr) return '';
+    const [ano, mes, dia] = String(dataStr).split('-');
+    if (!dia) return dataStr;
+    return `${dia}/${mes}/${ano}`;
+  },
+
+  coletarDadosInicio() {
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+    const hojeStr = this._dataLocalISO(hoje);
+
+    const turno = StorageService.getTurnoAtual();
+    let caixaAberto = false;
+    let caixaFaturado = 0;
+    let caixaVendas = 0;
+    let caixaOperador = '';
+    if (turno) {
+      caixaAberto = true;
+      caixaOperador = turno.operador || '';
+      if (window.CaixaModule && typeof window.CaixaModule.calcularResumoFinanceiro === 'function') {
+        const r = window.CaixaModule.calcularResumoFinanceiro(turno);
+        caixaFaturado = r.totalVendas || 0;
+        caixaVendas = r.vendasCount || 0;
+      }
+    }
+
+    const vendas = StorageService.getVendas() || [];
+    const vendasHoje = vendas.filter(v => v && v.data && this._dataLocalISO(v.data) === hojeStr);
+    let faturamentoDia = 0;
+    vendasHoje.forEach(v => { faturamentoDia += parseFloat(v.total) || 0; });
+    const ticketDia = vendasHoje.length > 0 ? (faturamentoDia / vendasHoje.length) : 0;
+
+    const produtos = StorageService.getProdutos() || [];
+    const estoqueBaixo = produtos.filter(p => {
+      if (!p || p.controlarEstoque === false) return false;
+      return (parseFloat(p.estoque) || 0) <= (parseFloat(p.estoqueMinimo) || 5);
+    });
+    const estoqueZerado = estoqueBaixo.filter(p => (parseFloat(p.estoque) || 0) <= 0);
+
+    const prodVencidos = [];
+    const prodVence15d = [];
+    if (StorageService.isModuloAtivo('validadeLotes')) {
+      produtos.forEach(p => {
+        if (!p || !p.dataValidade) return;
+        const dVal = new Date(p.dataValidade + 'T00:00:00');
+        const diffDias = Math.ceil((dVal - hoje) / (1000 * 60 * 60 * 24));
+        if (diffDias < 0) prodVencidos.push({ ...p, diffDias });
+        else if (diffDias <= 15) prodVence15d.push({ ...p, diffDias });
+      });
+    }
+
+    const contas = StorageService.getContasPagar() || [];
+    const contasVencidas = [];
+    let valorVencido = 0;
+    contas.forEach(c => {
+      if (c && c.status !== 'pago' && c.vencimento && c.vencimento < hojeStr) {
+        contasVencidas.push(c);
+        valorVencido += parseFloat(c.valor) || 0;
+      }
+    });
+
+    const lic = StorageService.getLicenca() || {};
+    const cfg = StorageService.getConfig() || {};
+    const nomeLoja = lic.razaoSocial || cfg.nomeEmpresa || cfg.nomeLoja || 'Minha Loja';
+    const statusEl = document.getElementById('header-status-conexao');
+    const statusTxt = (statusEl && statusEl.textContent) ? statusEl.textContent.trim() : '';
+    const lojaOffline = /offline/i.test(statusTxt);
+    const lojaSync = /sincroniz/i.test(statusTxt);
+
+    const totalAtencao = contasVencidas.length + estoqueBaixo.length + prodVencidos.length + prodVence15d.length;
+
+    return {
+      caixaAberto,
+      caixaFaturado,
+      caixaVendas,
+      caixaOperador,
+      faturamentoDia,
+      ticketDia,
+      vendasHojeCount: vendasHoje.length,
+      estoqueBaixo,
+      estoqueZerado,
+      prodVencidos,
+      prodVence15d,
+      contasVencidas,
+      valorVencido,
+      nomeLoja,
+      lojaOffline,
+      lojaSync,
+      totalAtencao
+    };
+  },
+
+  montarItensInicioHoje(dados) {
+    const itens = [];
+    const fmt = (v) => StorageService.formatarMoeda(v);
+
+    [...dados.contasVencidas]
+      .sort((a, b) => String(a.vencimento || '').localeCompare(String(b.vencimento || '')))
+      .forEach(c => {
+        itens.push({
+          tipo: 'conta',
+          ico: '💸',
+          titulo: c.descricao || c.fornecedor || 'Conta a pagar',
+          detalhe: `Venceu em ${this._formatarDataBR(c.vencimento)} · R$ ${fmt(c.valor)}`
+        });
+      });
+
+    dados.prodVencidos.forEach(p => {
+      itens.push({
+        tipo: 'validade',
+        filtro: 'vencidos',
+        ico: '🚨',
+        titulo: p.nome || 'Produto',
+        detalhe: `Venceu em ${this._formatarDataBR(p.dataValidade)} · saldo ${parseFloat(p.estoque) || 0}`
+      });
+    });
+
+    dados.prodVence15d.forEach(p => {
+      itens.push({
+        tipo: 'validade',
+        filtro: 'vence15d',
+        ico: '⏳',
+        titulo: p.nome || 'Produto',
+        detalhe: `Vence em ${this._formatarDataBR(p.dataValidade)} · ${p.diffDias} dia(s)`
+      });
+    });
+
+    dados.estoqueZerado.forEach(p => {
+      itens.push({
+        tipo: 'estoque',
+        ico: '📦',
+        titulo: p.nome || 'Produto',
+        detalhe: 'Estoque zerado'
+      });
+    });
+
+    dados.estoqueBaixo.forEach(p => {
+      if ((parseFloat(p.estoque) || 0) <= 0) return;
+      itens.push({
+        tipo: 'estoque',
+        ico: '⚠️',
+        titulo: p.nome || 'Produto',
+        detalhe: `Saldo ${parseFloat(p.estoque) || 0} · mínimo ${parseFloat(p.estoqueMinimo) || 5}`
+      });
+    });
+
+    return itens.slice(0, 5);
+  },
+
+  renderDashboardInicio() {
+    const dados = this.coletarDadosInicio();
+    const cards = document.getElementById('gerencia-inicio-cards');
+    const lista = document.getElementById('gerencia-inicio-hoje-lista');
+    if (!cards || !lista) return;
+
+    const fmt = (v) => StorageService.formatarMoeda(v);
+    const caixaValor = dados.caixaAberto ? `R$ ${fmt(dados.caixaFaturado)}` : 'Fechado';
+    const caixaSub = dados.caixaAberto
+      ? `${dados.caixaVendas} venda(s)${dados.caixaOperador ? ' · ' + dados.caixaOperador : ''}`
+      : 'Nenhum turno aberto neste terminal';
+
+    let atencaoValor = 'Tudo em dia';
+    let atencaoSub = 'Sem contas vencidas, validade crítica ou estoque baixo';
+    let atencaoClasse = 'ok';
+    if (dados.totalAtencao > 0) {
+      atencaoValor = String(dados.totalAtencao);
+      const partes = [];
+      if (dados.contasVencidas.length) partes.push(`${dados.contasVencidas.length} conta(s)`);
+      if (dados.estoqueBaixo.length) partes.push(`${dados.estoqueBaixo.length} estoque baixo`);
+      if (dados.prodVencidos.length + dados.prodVence15d.length) {
+        partes.push(`${dados.prodVencidos.length + dados.prodVence15d.length} validade`);
+      }
+      atencaoSub = partes.join(' · ');
+      atencaoClasse = 'alerta';
+    }
+
+    const lojaValor = dados.lojaOffline ? 'Offline' : (dados.lojaSync ? 'Sync' : 'Online');
+    const lojaSub = this._escHtml(dados.nomeLoja);
+
+    cards.innerHTML = `
+      <button type="button" class="gerencia-inicio-card ${dados.caixaAberto ? 'ok' : ''}" onclick="GerenciaModule.abrirDestinoInicio('caixa')">
+        <span class="gerencia-inicio-kicker">Caixa agora</span>
+        <span class="gerencia-inicio-valor" style="color: ${dados.caixaAberto ? '#059669' : '#dc2626'};">${caixaValor}</span>
+        <span class="gerencia-inicio-sub">${this._escHtml(caixaSub)}</span>
+      </button>
+      <button type="button" class="gerencia-inicio-card" onclick="GerenciaModule.abrirDestinoInicio('vendas')">
+        <span class="gerencia-inicio-kicker">Vendas do dia</span>
+        <span class="gerencia-inicio-valor" style="color: #2563eb;">R$ ${fmt(dados.faturamentoDia)}</span>
+        <span class="gerencia-inicio-sub">${dados.vendasHojeCount} venda(s) · ticket R$ ${fmt(dados.ticketDia)}</span>
+      </button>
+      <button type="button" class="gerencia-inicio-card ${atencaoClasse}" onclick="GerenciaModule.abrirDestinoInicio('atencao')">
+        <span class="gerencia-inicio-kicker">Atenção</span>
+        <span class="gerencia-inicio-valor" style="color: ${dados.totalAtencao ? '#dc2626' : '#15803d'};">${atencaoValor}</span>
+        <span class="gerencia-inicio-sub">${this._escHtml(atencaoSub)}</span>
+      </button>
+      <button type="button" class="gerencia-inicio-card" onclick="GerenciaModule.abrirDestinoInicio('loja')">
+        <span class="gerencia-inicio-kicker">Loja</span>
+        <span class="gerencia-inicio-valor" style="color: ${dados.lojaOffline ? '#dc2626' : '#059669'};">${lojaValor}</span>
+        <span class="gerencia-inicio-sub">${lojaSub}</span>
+      </button>
+    `;
+
+    const itens = this.montarItensInicioHoje(dados);
+    this._inicioItensHoje = itens;
+
+    if (!itens.length) {
+      lista.innerHTML = `<div class="gerencia-inicio-vazio">Nada urgente hoje.</div>`;
+      return;
+    }
+
+    lista.innerHTML = itens.map((it, i) => `
+      <button type="button" class="gerencia-inicio-item" onclick="GerenciaModule.abrirItemInicio(${i})">
+        <span class="gerencia-inicio-item-ico">${it.ico}</span>
+        <span class="gerencia-inicio-item-txt">
+          <strong>${this._escHtml(it.titulo)}</strong>
+          <span>${this._escHtml(it.detalhe)}</span>
+        </span>
+      </button>
+    `).join('');
+  },
+
+  abrirDestinoInicio(destino) {
+    const dados = this.coletarDadosInicio();
+    if (destino === 'caixa') {
+      this.trocarSubAba('historico-caixas');
+      return;
+    }
+    if (destino === 'vendas') {
+      this.trocarSubAba('indicadores');
+      return;
+    }
+    if (destino === 'loja') {
+      this.trocarSubAba('auditoria');
+      return;
+    }
+    if (destino === 'atencao') {
+      if (dados.contasVencidas.length) {
+        this.trocarSubAba('financeiro');
+        if (typeof this.filtrarContas === 'function') this.filtrarContas('vencidas');
+        return;
+      }
+      if (dados.prodVencidos.length && window.App) {
+        window.App.irParaEstoqueComFiltro('vencidos');
+        return;
+      }
+      if (dados.prodVence15d.length && window.App) {
+        window.App.irParaEstoqueComFiltro('vence15d');
+        return;
+      }
+      if (dados.estoqueBaixo.length && window.App) {
+        window.App.irParaEstoqueBaixo();
+        return;
+      }
+    }
+  },
+
+  abrirItemInicio(indice) {
+    const item = (this._inicioItensHoje || [])[indice];
+    if (!item) return;
+    if (item.tipo === 'conta') {
+      this.trocarSubAba('financeiro');
+      if (typeof this.filtrarContas === 'function') this.filtrarContas('vencidas');
+      return;
+    }
+    if (item.tipo === 'validade' && window.App) {
+      window.App.irParaEstoqueComFiltro(item.filtro || 'vencidos');
+      return;
+    }
+    if (item.tipo === 'estoque' && window.App) {
+      window.App.irParaEstoqueBaixo();
     }
   },
 
