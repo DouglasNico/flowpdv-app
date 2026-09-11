@@ -55,6 +55,10 @@ const {
   contasPagarPrecisamReenviar,
   mesclarComandas,
   consolidarProdutosComMovimentos,
+  mesclarConfigLoja,
+  montarCheckpointEstoque,
+  calcularDeltasInventario,
+  mesclarSessaoInventario,
   dividirEmLotes,
   carimbarAlterados,
   logCaiuNaExclusao,
@@ -146,6 +150,140 @@ teste('estoque nunca fica negativo', () => {
     produtosNuvem, produtosLocais, movimentosNuvem: [movimento], movimentosLocais: []
   });
   assert.strictEqual(produtos[0].estoque, 0);
+});
+
+function coca(estoque, extra = {}) {
+  return [{ id: 'COCA', nome: extra.nome || 'Coca', preco: extra.preco || 8, estoque, controlarEstoque: true, atualizadoEm: extra.atualizadoEm || emMinutos(0) }];
+}
+
+teste('3 PDVs Coca 10 cada um vende 1 ficam 7', () => {
+  const movA = { id: 'MA', produtoId: 'COCA', delta: -1, at: emMinutos(1), terminalId: 'A' };
+  const movB = { id: 'MB', produtoId: 'COCA', delta: -1, at: emMinutos(2), terminalId: 'B' };
+  const movC = { id: 'MC', produtoId: 'COCA', delta: -1, at: emMinutos(3), terminalId: 'C' };
+
+  const a = consolidarProdutosComMovimentos({
+    produtosNuvem: coca(9),
+    produtosLocais: coca(9),
+    movimentosNuvem: [movB, movC],
+    movimentosLocais: [movA]
+  });
+  const b = consolidarProdutosComMovimentos({
+    produtosNuvem: coca(9),
+    produtosLocais: coca(9),
+    movimentosNuvem: [movA, movC],
+    movimentosLocais: [movB]
+  });
+  const c = consolidarProdutosComMovimentos({
+    produtosNuvem: coca(9),
+    produtosLocais: coca(9),
+    movimentosNuvem: [movA, movB],
+    movimentosLocais: [movC]
+  });
+  assert.strictEqual(a.produtos[0].estoque, 7);
+  assert.strictEqual(b.produtos[0].estoque, 7);
+  assert.strictEqual(c.produtos[0].estoque, 7);
+});
+
+teste('3 PDVs Coca offline depois trocam movimentos ficam 7', () => {
+  const movA = { id: 'MA', produtoId: 'COCA', delta: -1, at: emMinutos(1), terminalId: 'A' };
+  const movB = { id: 'MB', produtoId: 'COCA', delta: -1, at: emMinutos(2), terminalId: 'B' };
+  const movC = { id: 'MC', produtoId: 'COCA', delta: -1, at: emMinutos(3), terminalId: 'C' };
+
+  const a = consolidarProdutosComMovimentos({
+    produtosNuvem: coca(99, { atualizadoEm: emMinutos(10) }),
+    produtosLocais: coca(9),
+    movimentosNuvem: [movB, movC],
+    movimentosLocais: [movA]
+  });
+  assert.strictEqual(a.produtos[0].estoque, 7);
+});
+
+teste('catalogo mais novo da nuvem nao leva estoque junto', () => {
+  const r = consolidarProdutosComMovimentos({
+    produtosNuvem: coca(99, { nome: 'Coca 2L', preco: 9, atualizadoEm: emMinutos(10) }),
+    produtosLocais: coca(10, { nome: 'Coca', preco: 8, atualizadoEm: emMinutos(0) }),
+    movimentosNuvem: [],
+    movimentosLocais: []
+  });
+  assert.strictEqual(r.produtos[0].estoque, 10);
+  assert.strictEqual(r.produtos[0].nome, 'Coca 2L');
+  assert.strictEqual(r.produtos[0].preco, 9);
+});
+
+teste('PC novo usa checkpoint e aplica so movimentos posteriores', () => {
+  const checkpoint = montarCheckpointEstoque(coca(10), [{ id: 'OLD', at: emMinutos(1) }], emMinutos(1));
+  const r = consolidarProdutosComMovimentos({
+    produtosNuvem: coca(50, { atualizadoEm: emMinutos(0) }),
+    produtosLocais: [],
+    movimentosNuvem: [
+      { id: 'OLD', produtoId: 'COCA', delta: -3, at: emMinutos(1) },
+      { id: 'M1', produtoId: 'COCA', delta: -1, at: emMinutos(2) },
+      { id: 'M2', produtoId: 'COCA', delta: -1, at: emMinutos(3) },
+      { id: 'M3', produtoId: 'COCA', delta: -1, at: emMinutos(4) }
+    ],
+    movimentosLocais: [],
+    checkpoint
+  });
+  assert.strictEqual(r.produtos[0].estoque, 7);
+});
+
+teste('config da loja o mais recente vence', () => {
+  const r = mesclarConfigLoja(
+    { nomeLoja: 'A', atualizadoEm: emMinutos(0) },
+    { nomeLoja: 'B', atualizadoEm: emMinutos(5) }
+  );
+  assert.strictEqual(r.nomeLoja, 'B');
+});
+
+teste('inventario so ajusta produto lido', () => {
+  const sessao = {
+    tipo: 'somente_lidos',
+    linhas: {
+      COCA: { produtoId: 'COCA', nome: 'Coca', saldoDe: 10, contado: 7, leituras: [{ id: 'L1', qtd: 7 }] }
+    }
+  };
+  const produtos = [
+    { id: 'COCA', nome: 'Coca', estoque: 10, controlarEstoque: true },
+    { id: 'FANTA', nome: 'Fanta', estoque: 5, controlarEstoque: true }
+  ];
+  const { deltas, avisos } = calcularDeltasInventario(sessao, produtos);
+  assert.strictEqual(avisos.length, 0);
+  assert.strictEqual(deltas.length, 1);
+  assert.strictEqual(deltas[0].produtoId, 'COCA');
+  assert.strictEqual(deltas[0].delta, -3);
+});
+
+teste('inventario avisa venda no meio', () => {
+  const sessao = {
+    linhas: {
+      COCA: { produtoId: 'COCA', nome: 'Coca', saldoDe: 10, contado: 9, leituras: [{ id: 'L1', qtd: 9 }] }
+    }
+  };
+  const { avisos } = calcularDeltasInventario(sessao, [{ id: 'COCA', estoque: 8, controlarEstoque: true }]);
+  assert.strictEqual(avisos.length, 1);
+  assert.strictEqual(avisos[0].motivo, 'venda_no_meio');
+});
+
+teste('dois PDVs somam leituras do mesmo SKU no inventario', () => {
+  const a = {
+    id: 'INV-1',
+    status: 'em_andamento',
+    atualizadoEm: emMinutos(1),
+    linhas: {
+      COCA: { produtoId: 'COCA', saldoDe: 10, leituras: [{ id: 'L-A', qtd: 3 }] }
+    }
+  };
+  const b = {
+    id: 'INV-1',
+    status: 'em_andamento',
+    atualizadoEm: emMinutos(2),
+    linhas: {
+      COCA: { produtoId: 'COCA', saldoDe: 10, leituras: [{ id: 'L-B', qtd: 4 }] }
+    }
+  };
+  const m = mesclarSessaoInventario(a, b);
+  assert.strictEqual(m.linhas.COCA.contado, 7);
+  assert.strictEqual(m.linhas.COCA.leituras.length, 2);
 });
 
 // ---------------------------------------------------------------------------

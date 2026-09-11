@@ -16,6 +16,7 @@ import { BalancaModule } from './balanca.js';
 import { TefModule } from './tef.js';
 import { EtiquetasModule } from './etiquetas.js';
 import { ComandasModule } from './comandas.js';
+import { InventarioModule } from './inventario.js';
 
 export const App = {
   abaAtiva: 'pdv',
@@ -39,6 +40,7 @@ export const App = {
     window.TefModule = TefModule;
     window.EtiquetasModule = EtiquetasModule;
     window.ComandasModule = ComandasModule;
+    window.InventarioModule = InventarioModule;
     window.App = this;
 
     StorageService.init();
@@ -54,6 +56,7 @@ export const App = {
     TefModule.init();
     EtiquetasModule.init();
     ComandasModule.init();
+    InventarioModule.init();
     LicencaModule.init();
     this.aplicarLayoutPdv(StorageService.getLicenca()?.layoutPdv);
     BackupModule.init();
@@ -122,11 +125,11 @@ export const App = {
     }
     document.body.classList.toggle('pdv-operador-restrito', !ehGerente);
 
-    // No modo Clássico: Gerente abre na Gerência ('gerencia') e Operador abre no PDV ('pdv')
-    // No modo Moderno: Tanto Gerente quanto Operador abrem no Frente de Caixa F1 ('pdv')
-    const isClassico = (licenca.layoutPdv === 'classico');
-    const abaDestino = (isClassico && ehGerente) ? 'gerencia' : 'pdv';
+    const abaDestino = ehGerente ? 'gerencia' : 'pdv';
     this.trocarAba(abaDestino);
+    if (ehGerente && window.GerenciaModule && typeof window.GerenciaModule.trocarSubAba === 'function') {
+      window.GerenciaModule.trocarSubAba('inicio');
+    }
   },
 
   verificarValidadesAoIniciar() {
@@ -1713,245 +1716,17 @@ export const App = {
     this.showToast('💾 Dados da empresa atualizados com sucesso!', 'success');
   },
 
-  // ==========================================
-  // CENTRAL DE NOTIFICAÇÕES & ALERTAS DO GERENTE
-  // ==========================================
-  verificarAlertasGerenteLogin() {
-    // Apenas se o usuário logado for Gerente ou Administrador
-    if (!window.AuthModule || !window.AuthModule.isGerente()) return;
-
-    // Se o modal de login ainda estiver visível, aguarda
-    const modalLogin = document.getElementById('modal-login-operador');
-    if (modalLogin && modalLogin.classList.contains('active')) return;
-
-    const produtos = StorageService.getProdutos() || [];
-    const hoje = new Date();
-    hoje.setHours(0, 0, 0, 0);
-    const hojeStr = hoje.toISOString().split('T')[0];
-
-    const prodVencidos = [];
-    const prodVence15d = [];
-    const prodVence30d = [];
-
-    const isValidadeAtivo = StorageService.isModuloAtivo('validadeLotes');
-    if (isValidadeAtivo) {
-      produtos.forEach(p => {
-        if (p && p.dataValidade) {
-          const dVal = new Date(p.dataValidade + 'T00:00:00');
-          const diffDias = Math.ceil((dVal - hoje) / (1000 * 60 * 60 * 24));
-          if (diffDias < 0) {
-            prodVencidos.push({ ...p, diffDias });
-          } else if (diffDias <= 15) {
-            prodVence15d.push({ ...p, diffDias });
-          } else if (diffDias <= 30) {
-            prodVence30d.push({ ...p, diffDias });
-          }
-        }
-      });
-    }
-
-    const contas = StorageService.getContasPagar() || [];
-    const contasVencidas = [];
-    const contasVenceProximo = [];
-    let totalValorVencido = 0;
-    let totalValorProximo = 0;
-
-    contas.forEach(c => {
-      if (c && c.status !== 'pago' && c.vencimento) {
-        const val = parseFloat(c.valor) || 0;
-        if (c.vencimento < hojeStr) {
-          contasVencidas.push(c);
-          totalValorVencido += val;
-        } else {
-          const dVenc = new Date(c.vencimento + 'T00:00:00');
-          const diffDias = Math.ceil((dVenc - hoje) / (1000 * 60 * 60 * 24));
-          if (diffDias <= 15) {
-            contasVenceProximo.push({ ...c, diffDias });
-            totalValorProximo += val;
-          }
-        }
-      }
-    });
-
-    const totalAlertas = prodVencidos.length + prodVence15d.length + prodVence30d.length + contasVencidas.length + contasVenceProximo.length;
-
-    // Se tudo estiver em dia, não interrompe o gerente
-    if (totalAlertas === 0) return;
-
-    this.renderModalAlertaGerencial({
-      prodVencidos,
-      prodVence15d,
-      prodVence30d,
-      contasVencidas,
-      contasVenceProximo,
-      totalValorVencido,
-      totalValorProximo
-    });
-  },
-
-  renderModalAlertaGerencial(dados) {
-    const modal = document.getElementById('modal-alerta-gerencial-login');
-    const container = document.getElementById('alerta-gerencial-conteudo');
-    if (!modal || !container) return;
-
-    const formatarMoeda = (val) => {
-      return (parseFloat(val) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    };
-
-    const formatarData = (dataStr) => {
-      if (!dataStr) return '';
-      const [ano, mes, dia] = dataStr.split('-');
-      return dia + '/' + mes + '/' + ano;
-    };
-
-    let html = '';
-
-    // 1. SEÇÃO ESTOQUE & VALIDADES
-    const totalEstoque = dados.prodVencidos.length + dados.prodVence15d.length + dados.prodVence30d.length;
-    if (totalEstoque > 0) {
-      html += `
-        <div style="background: #ffffff; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); display: flex; flex-direction: column; gap: 10px;">
-          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 2px; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px;">
-            <span style="font-size: 18px;">📦</span>
-            <strong style="font-size: 14.5px; font-weight: 800; color: var(--text-main);">Validade de Produtos no Estoque</strong>
-          </div>
-      `;
-
-      if (dados.prodVencidos.length > 0) {
-        html += `
-          <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;">
-            <div style="color: #b91c1c; font-weight: 800; font-size: 13px; display: flex; align-items: center; gap: 6px;">
-              🚨 <span>${dados.prodVencidos.length} produto(s) JÁ VENCIDO(S)!</span>
-            </div>
-            <div style="font-size: 12px; color: #991b1b; margin-top: 4px; line-height: 1.4;">
-              ${dados.prodVencidos.slice(0, 3).map(p => '• <strong>' + p.nome + '</strong> (Venceu em ' + formatarData(p.dataValidade) + ' - Saldo: ' + (p.estoque || 0) + ')').join('<br>')}
-              ${dados.prodVencidos.length > 3 ? '<span style="font-weight: 700; color: #7f1d1d; display: block; margin-top: 2px;">+ mais ' + (dados.prodVencidos.length - 3) + ' produto(s) vencido(s)</span>' : ''}
-            </div>
-          </div>
-        `;
-      }
-
-      if (dados.prodVence15d.length > 0) {
-        html += `
-          <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;">
-            <div style="color: #b45309; font-weight: 800; font-size: 13px; display: flex; align-items: center; gap: 6px;">
-              ⏳ <span>${dados.prodVence15d.length} produto(s) vencem nos próximos 15 dias!</span>
-            </div>
-            <div style="font-size: 12px; color: #92400e; margin-top: 4px; line-height: 1.4;">
-              ${dados.prodVence15d.slice(0, 3).map(p => '• <strong>' + p.nome + '</strong> (Vence em ' + formatarData(p.dataValidade) + ' - em ' + p.diffDias + ' dia(s))').join('<br>')}
-              ${dados.prodVence15d.length > 3 ? '<span style="font-weight: 700; color: #78350f; display: block; margin-top: 2px;">+ mais ' + (dados.prodVence15d.length - 3) + ' produto(s)</span>' : ''}
-            </div>
-          </div>
-        `;
-      }
-
-      if (dados.prodVence30d.length > 0) {
-        html += `
-          <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 8px 12px;">
-            <div style="color: #1d4ed8; font-weight: 700; font-size: 12px; display: flex; align-items: center; gap: 6px;">
-              📅 <span>${dados.prodVence30d.length} produto(s) vencem entre 16 e 30 dias.</span>
-            </div>
-          </div>
-        `;
-      }
-
-      html += `
-          <div style="margin-top: auto; padding-top: 6px;">
-            <button type="button" class="btn-secondary-action" style="width: 100%; justify-content: center; height: 36px; font-size: 12px; font-weight: 700; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px;" onclick="App.irParaEstoqueComFiltro('${dados.prodVencidos.length > 0 ? 'vencidos' : 'vence15d'}')">
-              📦 Ver Produtos no Estoque [F3] →
-            </button>
-          </div>
-        </div>`;
-    }
-
-    // 2. SEÇÃO CONTAS A PAGAR
-    const totalContas = dados.contasVencidas.length + dados.contasVenceProximo.length;
-    if (totalContas > 0) {
-      html += `
-        <div style="background: #ffffff; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); display: flex; flex-direction: column; gap: 10px;">
-          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 2px; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px;">
-            <span style="font-size: 18px;">💳</span>
-            <strong style="font-size: 14.5px; font-weight: 800; color: var(--text-main);">Contas a Pagar & Despesas</strong>
-          </div>
-      `;
-
-      if (dados.contasVencidas.length > 0) {
-        html += `
-          <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;">
-            <div style="color: #b91c1c; font-weight: 800; font-size: 13px; display: flex; align-items: center; justify-content: space-between;">
-              <span>🚨 ${dados.contasVencidas.length} conta(s) VENCIDA(S) em atraso!</span>
-              <span style="font-family: 'JetBrains Mono'; font-weight: 900;">R$ ${formatarMoeda(dados.totalValorVencido)}</span>
-            </div>
-            <div style="font-size: 12px; color: #991b1b; margin-top: 4px; line-height: 1.4;">
-              ${dados.contasVencidas.slice(0, 3).map(c => '• <strong>' + (c.descricao || 'Despesa') + '</strong> (R$ ' + formatarMoeda(c.valor) + ' - Venceu em ' + formatarData(c.vencimento) + ')').join('<br>')}
-              ${dados.contasVencidas.length > 3 ? '<span style="font-weight: 700; color: #7f1d1d; display: block; margin-top: 2px;">+ mais ' + (dados.contasVencidas.length - 3) + ' conta(s)</span>' : ''}
-            </div>
-          </div>
-        `;
-      }
-
-      if (dados.contasVenceProximo.length > 0) {
-        html += `
-          <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 10px 12px;">
-            <div style="color: #b45309; font-weight: 800; font-size: 13px; display: flex; align-items: center; justify-content: space-between;">
-              <span>⏳ ${dados.contasVenceProximo.length} conta(s) a vencer nos próximos 15 dias</span>
-              <span style="font-family: 'JetBrains Mono'; font-weight: 900;">R$ ${formatarMoeda(dados.totalValorProximo)}</span>
-            </div>
-            <div style="font-size: 12px; color: #92400e; margin-top: 4px; line-height: 1.4;">
-              ${dados.contasVenceProximo.slice(0, 3).map(c => '• <strong>' + (c.descricao || 'Despesa') + '</strong> (R$ ' + formatarMoeda(c.valor) + ' - Vence em ' + formatarData(c.vencimento) + ')').join('<br>')}
-              ${dados.contasVenceProximo.length > 3 ? '<span style="font-weight: 700; color: #78350f; display: block; margin-top: 2px;">+ mais ' + (dados.contasVenceProximo.length - 3) + ' conta(s)</span>' : ''}
-            </div>
-          </div>
-        `;
-      }
-
-      html += `
-          <div style="margin-top: auto; padding-top: 6px;">
-            <button type="button" class="btn-secondary-action" style="width: 100%; justify-content: center; height: 36px; font-size: 12px; font-weight: 700; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px;" onclick="App.irParaContasPagar('${dados.contasVencidas.length > 0 ? 'vencidas' : 'pendentes'}')">
-              💳 Ver Painel de Contas a Pagar →
-            </button>
-          </div>
-        </div>`;
-    }
-
-    container.className = (totalEstoque > 0 && totalContas > 0) ? 'alerta-gerencial-grid' : 'alerta-gerencial-grid single-column';
-    container.innerHTML = html;
-    modal.classList.add('active');
-
-    const listenerTeclado = (e) => {
-      if (modal.classList.contains('active') && (e.key === 'Enter' || e.key === 'Escape')) {
-        e.preventDefault();
-        App.fecharModalAlertaGerencial();
-        window.removeEventListener('keydown', listenerTeclado);
-      }
-    };
-    window.addEventListener('keydown', listenerTeclado);
-  },
-
-  fecharModalAlertaGerencial() {
-    const modal = document.getElementById('modal-alerta-gerencial-login');
-    if (modal) modal.classList.remove('active');
-
-    setTimeout(() => {
-      const barcodeInput = document.getElementById('pdv-barcode-input');
-      if (barcodeInput) barcodeInput.focus();
-    }, 100);
-  },
-
   irParaEstoqueComFiltro(filtro = 'todos') {
     this._manterFiltroValidadeEstoque = filtro || 'todos';
-    this.fecharModalAlertaGerencial();
     this.trocarAba('estoque');
   },
 
   irParaEstoqueBaixo() {
     this._manterFiltroEstoqueBaixo = true;
-    this.fecharModalAlertaGerencial();
     this.trocarAba('estoque');
   },
 
   irParaContasPagar(filtro = 'todos') {
-    this.fecharModalAlertaGerencial();
     this._manterSubAbaGerencia = 'financeiro';
     this.trocarAba('gerencia');
     if (window.GerenciaModule) {

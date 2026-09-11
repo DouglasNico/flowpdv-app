@@ -328,7 +328,6 @@ export const StorageService = {
         const fator = item.isFardo ? (prod.fatorConversao || 1) : 1;
         const delta = -((parseFloat(item.quantidade) || 0) * fator);
         prod.estoque = Math.max(0, (parseFloat(prod.estoque) || 0) + delta);
-        prod.atualizadoEm = new Date().toISOString();
         this.registrarMovimentoEstoque({
           produtoId: prod.id,
           delta,
@@ -562,11 +561,15 @@ export const StorageService = {
     return defaults;
   },
 
-  saveConfig(config) {
-    if (config && config.habilitarModuloFiado === undefined) {
-      config.habilitarModuloFiado = true;
+  saveConfig(config, opts = {}) {
+    const atual = { ...(config || {}) };
+    if (atual.habilitarModuloFiado === undefined) {
+      atual.habilitarModuloFiado = true;
     }
-    localStorage.setItem('adega_config', JSON.stringify(config));
+    if (opts.carimbar !== false) {
+      atual.atualizadoEm = new Date().toISOString();
+    }
+    localStorage.setItem('adega_config', JSON.stringify(atual));
   },
 
   // Balança de Checkout (USB / Serial RS-232)
@@ -778,7 +781,12 @@ export const StorageService = {
   },
 
   saveUsuarios(usuarios) {
-    localStorage.setItem('flowpdv_usuarios', JSON.stringify(usuarios));
+    const agora = new Date().toISOString();
+    const lista = (Array.isArray(usuarios) ? usuarios : []).map(u => {
+      if (!u || u.atualizadoEm) return u;
+      return { ...u, atualizadoEm: u.criadoEm || agora };
+    });
+    localStorage.setItem('flowpdv_usuarios', JSON.stringify(lista));
   },
 
   getMovimentosEstoque() {
@@ -793,7 +801,7 @@ export const StorageService = {
   },
 
   saveMovimentosEstoque(movimentos) {
-    const lista = Array.isArray(movimentos) ? movimentos.slice(-2500) : [];
+    const lista = Array.isArray(movimentos) ? movimentos.slice(-8000) : [];
     try {
       localStorage.setItem('flowpdv_estoque_movimentos', JSON.stringify(lista));
     } catch (e) {
@@ -821,6 +829,34 @@ export const StorageService = {
     lista.push(mov);
     this.saveMovimentosEstoque(lista);
     return mov;
+  },
+
+  getCheckpointEstoque() {
+    try {
+      const raw = localStorage.getItem('flowpdv_checkpoint_estoque');
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      return null;
+    }
+  },
+
+  saveCheckpointEstoque(checkpoint) {
+    if (!checkpoint || typeof checkpoint !== 'object') return;
+    localStorage.setItem('flowpdv_checkpoint_estoque', JSON.stringify(checkpoint));
+  },
+
+  getInventarios() {
+    try {
+      const raw = localStorage.getItem('flowpdv_inventarios');
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      return [];
+    }
+  },
+
+  saveInventarios(lista) {
+    localStorage.setItem('flowpdv_inventarios', JSON.stringify(Array.isArray(lista) ? lista : []));
   },
 
   // Mesas e Comandas
@@ -916,6 +952,10 @@ export const StorageService = {
     'flowpdv_partes_hash',
     'flowpdv_movimentos_enviados',
     'flowpdv_ultimo_mov_sync',
+    'flowpdv_checkpoint_estoque',
+    'flowpdv_checkpoint_enviado_em',
+    'flowpdv_inventarios',
+    'flowpdv_inventarios_enviados',
     'adega_licenca_backup',
     'flowpdv_terminal_heartbeat_ms'
   ],

@@ -384,6 +384,9 @@
               </button>
               <div id="estoque-chip-filtro-acoes" class="estoque-chip-filtro" style="display: none;"></div>
               <div id="dropdown-estoque-acoes" class="category-dropdown-menu estoque-acoes-menu" style="display: none;" onclick="if (event.target.closest('button')) EstoqueModule.fecharMenuAcoesEstoque()">
+                <button type="button" id="btn-inventario-sessao" class="btn-toolbar-estoque cyan" onclick="InventarioModule.abrirModal()" title="Abrir sessao de inventario: bipar, conferir divergencia e processar">
+                  📋 Inventário
+                </button>
                 <button type="button" id="btn-bipar-validade-express" class="btn-toolbar-estoque cyan" onclick="EstoqueModule.abrirModalBipagemValidade()" title="Bipar código de barras e cadastrar/atualizar data de validade expressa em segundos">
                   ⚡ Bipar Validades
                 </button>
@@ -2417,6 +2420,43 @@
     </div>
 
     <!-- ========================================== -->
+    <!-- MODAL: INVENTÁRIO DE CONFERÊNCIA           -->
+    <!-- ========================================== -->
+    <div class="modal-overlay" id="modal-inventario-sessao" style="z-index: 10500;">
+      <div class="modal-content-box inventario-modal">
+        <div class="modal-header-bar inventario-header">
+          <div>
+            <h3>Inventário de conferência</h3>
+            <span id="inventario-status-label">Contando</span>
+          </div>
+          <button type="button" class="btn-close-modal" onclick="InventarioModule.fecharModal()">✕</button>
+        </div>
+        <div class="modal-body-content inventario-body">
+          <p class="inventario-hint">Bipar não mexe no saldo. Só produtos lidos entram. O que ninguém bipar não zera. Os 3 PDVs podem contar a mesma sessão.</p>
+          <div id="inventario-aviso-venda" class="inventario-aviso" style="display:none;"></div>
+          <div id="inventario-bipagem-box">
+            <label class="form-label-custom">Bipar código de barras</label>
+            <div class="inventario-bip-row">
+              <input type="text" id="inventario-bipar-codigo" class="form-input-custom" placeholder="Bipe ou digite o código..." onkeydown="if(event.key==='Enter'){event.preventDefault();InventarioModule.confirmarBipagem();}">
+              <input type="number" id="inventario-bipar-qtd" class="form-input-custom" value="1" min="1" step="1">
+              <button type="button" class="chip-btn inventario-btn-ok" onclick="InventarioModule.confirmarBipagem()">Bipar</button>
+            </div>
+            <div id="inventario-erro-msg" class="login-erro" style="display:none;"></div>
+          </div>
+          <div class="inventario-lista-head">
+            <span>Produtos lidos nesta sessão</span>
+            <span id="inventario-count-lidos">0 lido(s)</span>
+          </div>
+          <div id="inventario-lista-lidos" class="inventario-lista"></div>
+        </div>
+        <div class="modal-footer-bar inventario-footer">
+          <button type="button" class="btn-toolbar-estoque" onclick="InventarioModule.fecharModal()">Fechar</button>
+          <button type="button" id="btn-inventario-reabrir" class="btn-toolbar-estoque" style="display:none;" onclick="InventarioModule.confirmarReabrir()">Reabrir contagem</button>
+          <button type="button" id="btn-inventario-concluir" class="btn-toolbar-estoque" onclick="InventarioModule.confirmarConcluir()">Concluir</button>
+          <button type="button" id="btn-inventario-processar" class="btn-toolbar-estoque primary" onclick="InventarioModule.confirmarProcessar()">Processar (gerente)</button>
+        </div>
+      </div>
+    </div>
     <!-- MODAL: QUEIMA DE ESTOQUE & WHATSAPP        -->
     <!-- ========================================== -->
     <div class="modal-overlay" id="modal-queima-estoque" style="z-index: 10500;">
@@ -3107,58 +3147,41 @@
     <!-- ========================================== -->
     <!-- MODAL: LOGIN / SELEÇÃO DE OPERADOR         -->
     <!-- ========================================== -->
-    <div class="modal-overlay" id="modal-login-operador">
-      <div class="modal-content-box" style="max-width: 500px; padding: 28px 24px;">
-        <div style="text-align: center; margin-bottom: 20px;">
-          <img src="src/assets/FlowPDV-Logo.png" alt="FlowPDV" style="height: 52px; max-height: 52px; width: auto; object-fit: contain; margin: 0 auto 10px auto; display: block;">
-          <h3 style="font-size: 16px; color: var(--text-main); font-weight: 800; margin: 0;">Identificação do Operador</h3>
-          <p style="font-size: 12px; color: var(--text-muted); margin: 4px 0 0 0;">Selecione seu perfil e digite seu PIN para liberar o terminal.</p>
-        </div>
-
-        <div class="modal-body-content" style="padding: 0;">
-          <!-- Seleção de Operador via Lista/Select -->
-          <div style="background: #ffffff; border: 1.5px solid var(--border-card); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; text-align: left; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
-            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-              <label for="login-operador-select" style="font-size: 11px; font-weight: 800; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; margin: 0;">
-                👤 Operador do Sistema
-              </label>
-              <span id="login-operador-badge-preview"></span>
-            </div>
-            <div style="position: relative;">
-              <select id="login-operador-select" class="form-input-custom" 
-                      style="width: 100%; height: 48px; font-size: 15px; font-weight: 700; color: var(--text-main); background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 8px; padding: 0 38px 0 14px; cursor: pointer; appearance: none; -webkit-appearance: none;"
-                      onchange="AuthModule.selecionarUsuarioLogin(this.value)">
-                <!-- Preenchido dinamicamente via AuthModule.renderCardsLogin -->
-              </select>
-              <div style="position: absolute; right: 14px; top: 50%; transform: translateY(-50%); pointer-events: none; color: #0284c7; font-size: 13px; font-weight: 900;">
-                ▼
+    <!-- TELA DE LOGIN (PAGINA CHEIA)               -->
+    <!-- ========================================== -->
+    <div class="modal-overlay login-screen-overlay" id="modal-login-operador">
+      <div class="login-screen">
+        <aside class="login-screen-brand">
+          <img src="src/assets/FlowPDV-Logo.png" alt="FlowPDV" class="login-screen-logo">
+          <p class="login-screen-kicker">Sistema de frente de caixa</p>
+          <h1>Entrar no FlowPDV</h1>
+          <p class="login-screen-copy">Identifique o operador e digite o PIN para liberar este terminal.</p>
+          <div class="login-screen-loja" id="login-screen-loja-nome">Minha Loja</div>
+        </aside>
+        <section class="login-screen-panel">
+          <div class="login-screen-card">
+            <h2>Acesso do operador</h2>
+            <p class="login-screen-lead">Selecione seu perfil e informe o PIN.</p>
+            <div class="login-field">
+              <div class="login-field-head">
+                <label for="login-operador-select">Operador</label>
+                <span id="login-operador-badge-preview"></span>
+              </div>
+              <div class="login-select-wrap">
+                <select id="login-operador-select" class="form-input-custom login-select" onchange="AuthModule.selecionarUsuarioLogin(this.value)"></select>
               </div>
             </div>
-          </div>
-
-          <!-- Container legado mantido oculto para compatibilidade -->
-          <div id="login-operadores-grid" style="display: none;"></div>
-
-          <!-- Campo de Senha / PIN -->
-          <div style="background: #f8fafc; border: 1px solid var(--border-card); border-radius: 10px; padding: 16px; margin-bottom: 16px; text-align: center;">
-            <label style="font-size: 11px; font-weight: 800; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 8px;">
-              Senha / PIN de Acesso
-            </label>
-            <input type="password" id="login-pin-input" class="form-input-custom" placeholder="••••" maxlength="8" 
-                   style="font-family: 'JetBrains Mono'; font-size: 28px; font-weight: 800; text-align: center; letter-spacing: 8px; height: 52px; background: #ffffff; width: 100%; max-width: 260px; margin: 0 auto; display: block;"
-                   onkeydown="if(event.key === 'Enter') AuthModule.executarLogin()">
-            <div id="login-erro-msg" style="display: none; color: #dc2626; font-size: 12px; font-weight: 700; margin-top: 8px;">
-              Senha ou PIN incorreto!
+            <div id="login-operadores-grid" style="display: none;"></div>
+            <div class="login-field">
+              <label for="login-pin-input">PIN de acesso</label>
+              <input type="password" id="login-pin-input" class="form-input-custom login-pin" placeholder="••••" maxlength="8" onkeydown="if(event.key === 'Enter') AuthModule.executarLogin()">
+              <div id="login-erro-msg" class="login-erro">Senha ou PIN incorreto!</div>
             </div>
+            <button type="button" class="login-submit" onclick="AuthModule.executarLogin()">Entrar no sistema</button>
           </div>
-
-          <button type="button" class="btn-primary-action" style="width: 100%; justify-content: center; height: 48px; font-size: 14px; font-weight: 800; background: #0284c7; box-shadow: 0 4px 14px rgba(2, 132, 199, 0.35);" onclick="AuthModule.executarLogin()">
-            🔓 Entrar no Caixa
-          </button>
-        </div>
+        </section>
       </div>
     </div>
-
     <!-- ========================================== -->
     <!-- MODAL: CADASTRAR / EDITAR FUNCIONÁRIO      -->
     <!-- ========================================== -->
@@ -4310,40 +4333,6 @@
     </div>
   </div>
 
-  <!-- ========================================== -->
-  <!-- MODAL: ALERTA GERENCIAL NO LOGIN DO DONO   -->
-  <!-- ========================================== -->
-  <div class="modal-overlay" id="modal-alerta-gerencial-login" style="z-index: 10900;">
-    <div class="modal-content-box" style="max-width: 860px; width: 92vw; padding: 22px 24px; border-radius: 14px; text-align: left;">
-      <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-card); padding-bottom: 14px; margin-bottom: 16px;">
-        <div style="display: flex; align-items: center; gap: 12px;">
-          <div style="width: 44px; height: 44px; border-radius: 12px; background: #fff7ed; color: #ea580c; display: flex; align-items: center; justify-content: center; font-size: 22px; border: 1px solid #fed7aa; flex-shrink: 0;">
-            🔔
-          </div>
-          <div>
-            <h3 style="font-size: 17px; font-weight: 800; color: var(--text-main); margin: 0;">Central de Notificações</h3>
-            <p style="font-size: 12px; color: var(--text-muted); margin: 2px 0 0 0;" id="alerta-gerencial-subtitulo">
-              Avisos prioritários de estoque e contas para a gerência hoje.
-            </p>
-          </div>
-        </div>
-        <button type="button" class="btn-close-modal" onclick="App.fecharModalAlertaGerencial()" title="Fechar">✕</button>
-      </div>
-
-      <div id="alerta-gerencial-conteudo" class="alerta-gerencial-grid" style="margin-bottom: 16px;">
-        <!-- Inserido dinamicamente via JS -->
-      </div>
-
-      <div style="display: flex; gap: 10px; border-top: 1px solid var(--border-card); padding-top: 14px;">
-        <button type="button" class="btn-primary-action" style="width: 100%; justify-content: center; height: 44px; font-weight: 800; font-size: 14px; background: #0284c7; color: #ffffff; border-radius: 8px;" onclick="App.fecharModalAlertaGerencial()">
-          ✓ Entendido / Continuar para o Sistema [ENTER]
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Bundle Final JS -->
-  
   <!-- ========================================== -->
   <!-- MODAL CLUBE FIDELIDADE (F6)                -->
   <!-- ========================================== -->

@@ -66,6 +66,14 @@ service cloud.firestore {
         allow read, write: if isAdmin() || isLoja(chave);
       }
 
+      match /checkpoint/{docId} {
+        allow read, write: if isAdmin() || isLoja(chave);
+      }
+
+      match /inventarios/{inventarioId} {
+        allow read, write: if isAdmin() || isLoja(chave);
+      }
+
       // Logs de auditoria da loja: a loja le, grava e apaga so o que e dela.
       match /auditoria/{logId} {
         allow read, create, update, delete: if isAdmin() || isLoja(chave);

@@ -148,11 +148,33 @@ export function mapearMovimentosPorId(lista) {
  * movimentos de estoque que este terminal ainda não conhece. É o que impede um
  * caixa de desfazer a baixa feita pelo outro.
  */
+export function mesclarConfigLoja(nuvem, local) {
+  if (!nuvem || typeof nuvem !== 'object') return local && typeof local === 'object' ? local : {};
+  if (!local || typeof local !== 'object') return nuvem;
+  const tNuvem = Date.parse(nuvem.atualizadoEm || '') || 0;
+  const tLocal = Date.parse(local.atualizadoEm || '') || 0;
+  return tNuvem >= tLocal ? { ...local, ...nuvem } : { ...nuvem, ...local };
+}
+
+export function montarCheckpointEstoque(produtos = [], movimentos = [], agora = new Date().toISOString()) {
+  const saldos = {};
+  (produtos || []).forEach(p => {
+    if (!p || !p.id || p.controlarEstoque === false) return;
+    saldos[String(p.id)] = parseFloat(p.estoque) || 0;
+  });
+  let ultimoMovAt = '';
+  (movimentos || []).forEach(m => {
+    if (m && m.at && String(m.at) > ultimoMovAt) ultimoMovAt = String(m.at);
+  });
+  return { saldos, ultimoMovAt, geradoEm: agora };
+}
+
 export function consolidarProdutosComMovimentos({
   produtosNuvem = [],
   produtosLocais = [],
   movimentosNuvem = [],
-  movimentosLocais = []
+  movimentosLocais = [],
+  checkpoint = null
 } = {}) {
   const catalogo = mesclarItensPorId(produtosNuvem, produtosLocais);
 
@@ -160,15 +182,31 @@ export function consolidarProdutosComMovimentos({
   (produtosLocais || []).forEach(item => {
     if (item && item.id) mapaLocal.set(String(item.id), item);
   });
+  const mapaNuvem = new Map();
+  (produtosNuvem || []).forEach(item => {
+    if (item && item.id) mapaNuvem.set(String(item.id), item);
+  });
 
   const produtos = catalogo.map(merged => {
     const local = mapaLocal.get(String(merged.id));
-    if (!local) return merged;
-    return { ...merged, estoque: parseFloat(local.estoque) || 0 };
+    const nuvem = mapaNuvem.get(String(merged.id));
+    const { estoque: _estoqueIgnorado, ...catalogoSemEstoque } = merged;
+    if (local) {
+      return { ...catalogoSemEstoque, estoque: parseFloat(local.estoque) || 0 };
+    }
+    let partida = 0;
+    const chave = String(merged.id);
+    if (checkpoint && checkpoint.saldos && checkpoint.saldos[chave] != null) {
+      partida = parseFloat(checkpoint.saldos[chave]) || 0;
+    } else if (nuvem) {
+      partida = parseFloat(nuvem.estoque) || 0;
+    }
+    return { ...catalogoSemEstoque, estoque: partida };
   });
 
   const idsConhecidos = new Set((movimentosLocais || []).map(m => m && m.id).filter(Boolean));
-  const novosMovimentos = normalizarMovimentos(movimentosNuvem).filter(m => !idsConhecidos.has(m.id));
+  const corteCheckpoint = checkpoint && checkpoint.ultimoMovAt ? Date.parse(checkpoint.ultimoMovAt) : 0;
+  const novosMovimentos = normalizarMovimentos(movimentosNuvem).filter(m => m && m.id && !idsConhecidos.has(m.id));
 
   novosMovimentos.forEach(mov => {
     const produto = produtos.find(p =>
@@ -176,20 +214,109 @@ export function consolidarProdutosComMovimentos({
     );
     if (!produto || produto.controlarEstoque === false) return;
 
-    // Para produto que só existe na nuvem, o saldo recebido já embute o
-    // movimento; reaplicar aqui descontaria a mesma venda duas vezes.
     const eraLocal = mapaLocal.has(String(produto.id));
     if (!eraLocal) {
-      const saldoDoCatalogo = new Date(produto.atualizadoEm || 0).getTime();
       const dataDoMovimento = new Date(mov.at || 0).getTime();
-      if (!(dataDoMovimento > saldoDoCatalogo)) return;
+      if (corteCheckpoint) {
+        if (!(dataDoMovimento > corteCheckpoint)) return;
+      } else {
+        const nuvem = mapaNuvem.get(String(produto.id));
+        const saldoDoCatalogo = new Date((nuvem && nuvem.atualizadoEm) || 0).getTime();
+        if (!(dataDoMovimento > saldoDoCatalogo)) return;
+      }
     }
 
     produto.estoque = Math.max(0, (parseFloat(produto.estoque) || 0) + (parseFloat(mov.delta) || 0));
-    if (mov.at) produto.atualizadoEm = mov.at;
   });
 
   return { produtos, novosMovimentos };
+}
+
+export function mesclarSessaoInventario(a, b) {
+  if (!a) return b || null;
+  if (!b) return a;
+  const rank = { agendado: 1, em_andamento: 2, concluido: 3, processado: 4 };
+  const base = tempoDe(b) >= tempoDe(a) ? { ...a, ...b } : { ...b, ...a };
+  const ra = rank[a.status] || 0;
+  const rb = rank[b.status] || 0;
+  if (ra !== rb) base.status = ra > rb ? a.status : b.status;
+
+  const linhasA = a.linhas && typeof a.linhas === 'object' ? a.linhas : {};
+  const linhasB = b.linhas && typeof b.linhas === 'object' ? b.linhas : {};
+  const linhas = {};
+  new Set([...Object.keys(linhasA), ...Object.keys(linhasB)]).forEach(chave => {
+    const la = linhasA[chave];
+    const lb = linhasB[chave];
+    if (!la) { linhas[chave] = lb; return; }
+    if (!lb) { linhas[chave] = la; return; }
+    const mapaLeituras = new Map();
+    [...(la.leituras || []), ...(lb.leituras || [])].forEach(l => {
+      if (l && l.id) mapaLeituras.set(String(l.id), l);
+    });
+    const leituras = Array.from(mapaLeituras.values());
+    const contado = leituras.reduce((soma, l) => soma + (parseFloat(l.qtd) || 0), 0);
+    linhas[chave] = {
+      ...la,
+      ...lb,
+      saldoDe: la.saldoDe != null ? la.saldoDe : lb.saldoDe,
+      leituras,
+      contado
+    };
+  });
+  base.linhas = linhas;
+  return base;
+}
+
+export function mesclarInventarios(nuvem = [], local = []) {
+  const mapa = new Map();
+  [...(nuvem || []), ...(local || [])].forEach(sessao => {
+    if (!sessao || !sessao.id) return;
+    const id = String(sessao.id);
+    const existente = mapa.get(id);
+    mapa.set(id, existente ? mesclarSessaoInventario(existente, sessao) : sessao);
+  });
+  return Array.from(mapa.values());
+}
+
+export function calcularDeltasInventario(sessao, produtosAtuais = []) {
+  const avisos = [];
+  const deltas = [];
+  if (!sessao) {
+    return { deltas, avisos };
+  }
+  const mapaProd = new Map();
+  (produtosAtuais || []).forEach(p => {
+    if (p && p.id) mapaProd.set(String(p.id), p);
+  });
+  const linhas = sessao.linhas && typeof sessao.linhas === 'object' ? Object.values(sessao.linhas) : [];
+  linhas.forEach(linha => {
+    if (!linha || !linha.produtoId) return;
+    const prod = mapaProd.get(String(linha.produtoId));
+    if (!prod || prod.controlarEstoque === false) return;
+    const atual = parseFloat(prod.estoque) || 0;
+    const contado = parseFloat(linha.contado) || 0;
+    const saldoDe = linha.saldoDe != null ? parseFloat(linha.saldoDe) : atual;
+    if (Math.abs(atual - saldoDe) > 0.0001) {
+      avisos.push({
+        produtoId: linha.produtoId,
+        nome: linha.nome || prod.nome,
+        saldoDe,
+        atual,
+        motivo: 'venda_no_meio'
+      });
+    }
+    const delta = contado - atual;
+    if (delta === 0) return;
+    deltas.push({
+      produtoId: linha.produtoId,
+      nome: linha.nome || prod.nome,
+      delta,
+      contado,
+      atual,
+      saldoDe
+    });
+  });
+  return { deltas, avisos };
 }
 
 /** Divide uma lista em lotes para caber no limite de 1 MiB por documento. */

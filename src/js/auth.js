@@ -27,9 +27,6 @@ export const AuthModule = {
 
     if (this.usuarioAtual) {
       this.atualizarHeaderUsuario();
-      if (window.App && typeof window.App.verificarAlertasGerenteLogin === 'function') {
-        setTimeout(() => window.App.verificarAlertasGerenteLogin(), 1500);
-      }
       this.fecharTelaLogin();
       if (window.App && typeof window.App.entrarPorPerfil === 'function') {
         setTimeout(() => window.App.entrarPorPerfil(this.usuarioAtual), 0);
@@ -146,8 +143,10 @@ export const AuthModule = {
     if (!modal) return;
 
     this.usuarioSelecionadoLoginId = null;
+    document.body.classList.add('tela-login-ativa');
     modal.classList.add('active');
     this.renderCardsLogin();
+    this.atualizarNomeLojaLogin();
     this.limparPinLogin();
 
     // Limpar qualquer caractere que possa ter ido para o leitor de código de barras
@@ -179,6 +178,15 @@ export const AuthModule = {
   fecharTelaLogin() {
     const modal = document.getElementById('modal-login-operador');
     if (modal) modal.classList.remove('active');
+    document.body.classList.remove('tela-login-ativa');
+  },
+
+  atualizarNomeLojaLogin() {
+    const el = document.getElementById('login-screen-loja-nome');
+    if (!el) return;
+    const cfg = StorageService.getConfig() || {};
+    const lic = StorageService.getLicenca() || {};
+    el.textContent = cfg.nomeLoja || cfg.nomeEmpresa || lic.razaoSocial || 'FlowPDV';
   },
 
   renderCardsLogin() {
@@ -301,13 +309,6 @@ export const AuthModule = {
       this.atualizarHeaderUsuario();
       if (window.App && typeof window.App.entrarPorPerfil === 'function') {
         window.App.entrarPorPerfil(u);
-      }
-
-      // Alertas Gerenciais no login do Dono/Gerente: EXCLUSIVO PARA GERENTE
-      if (u.cargo === 'gerente' || u.cargo === 'superadmin') {
-        if (window.App && typeof window.App.verificarAlertasGerenteLogin === 'function') {
-          setTimeout(() => window.App.verificarAlertasGerenteLogin(), 350);
-        }
       }
 
       // Atualizar mini dashboard do PDV e permissões da UI imediatamente com base no novo usuário logado
@@ -688,7 +689,8 @@ export const AuthModule = {
           pin,
           cargo,
           ativo,
-          permissoes
+          permissoes,
+          atualizadoEm: new Date().toISOString()
         };
       }
     } else {
@@ -700,7 +702,8 @@ export const AuthModule = {
         cargo,
         ativo,
         permissoes,
-        criadoEm: new Date().toISOString()
+        criadoEm: new Date().toISOString(),
+        atualizadoEm: new Date().toISOString()
       };
       usuarios.push(novo);
     }

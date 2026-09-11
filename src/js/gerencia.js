@@ -346,11 +346,12 @@ export const GerenciaModule = {
       return;
     }
     if (destino === 'vendas') {
-      this.trocarSubAba('indicadores');
       return;
     }
     if (destino === 'loja') {
-      this.trocarSubAba('auditoria');
+      if (window.App && typeof window.App.trocarAba === 'function') {
+        window.App.trocarAba('config');
+      }
       return;
     }
     if (destino === 'atencao') {

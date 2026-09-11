@@ -23807,24 +23807,60 @@
     });
     return mapa;
   }
+  function mesclarConfigLoja(nuvem, local) {
+    if (!nuvem || typeof nuvem !== "object") return local && typeof local === "object" ? local : {};
+    if (!local || typeof local !== "object") return nuvem;
+    const tNuvem = Date.parse(nuvem.atualizadoEm || "") || 0;
+    const tLocal = Date.parse(local.atualizadoEm || "") || 0;
+    return tNuvem >= tLocal ? { ...local, ...nuvem } : { ...nuvem, ...local };
+  }
+  function montarCheckpointEstoque(produtos = [], movimentos = [], agora = (/* @__PURE__ */ new Date()).toISOString()) {
+    const saldos = {};
+    (produtos || []).forEach((p) => {
+      if (!p || !p.id || p.controlarEstoque === false) return;
+      saldos[String(p.id)] = parseFloat(p.estoque) || 0;
+    });
+    let ultimoMovAt = "";
+    (movimentos || []).forEach((m) => {
+      if (m && m.at && String(m.at) > ultimoMovAt) ultimoMovAt = String(m.at);
+    });
+    return { saldos, ultimoMovAt, geradoEm: agora };
+  }
   function consolidarProdutosComMovimentos({
     produtosNuvem = [],
     produtosLocais = [],
     movimentosNuvem = [],
-    movimentosLocais = []
+    movimentosLocais = [],
+    checkpoint = null
   } = {}) {
     const catalogo = mesclarItensPorId(produtosNuvem, produtosLocais);
     const mapaLocal = /* @__PURE__ */ new Map();
     (produtosLocais || []).forEach((item) => {
       if (item && item.id) mapaLocal.set(String(item.id), item);
     });
+    const mapaNuvem = /* @__PURE__ */ new Map();
+    (produtosNuvem || []).forEach((item) => {
+      if (item && item.id) mapaNuvem.set(String(item.id), item);
+    });
     const produtos = catalogo.map((merged) => {
       const local = mapaLocal.get(String(merged.id));
-      if (!local) return merged;
-      return { ...merged, estoque: parseFloat(local.estoque) || 0 };
+      const nuvem = mapaNuvem.get(String(merged.id));
+      const { estoque: _estoqueIgnorado, ...catalogoSemEstoque } = merged;
+      if (local) {
+        return { ...catalogoSemEstoque, estoque: parseFloat(local.estoque) || 0 };
+      }
+      let partida = 0;
+      const chave = String(merged.id);
+      if (checkpoint && checkpoint.saldos && checkpoint.saldos[chave] != null) {
+        partida = parseFloat(checkpoint.saldos[chave]) || 0;
+      } else if (nuvem) {
+        partida = parseFloat(nuvem.estoque) || 0;
+      }
+      return { ...catalogoSemEstoque, estoque: partida };
     });
     const idsConhecidos = new Set((movimentosLocais || []).map((m) => m && m.id).filter(Boolean));
-    const novosMovimentos = normalizarMovimentos(movimentosNuvem).filter((m) => !idsConhecidos.has(m.id));
+    const corteCheckpoint = checkpoint && checkpoint.ultimoMovAt ? Date.parse(checkpoint.ultimoMovAt) : 0;
+    const novosMovimentos = normalizarMovimentos(movimentosNuvem).filter((m) => m && m.id && !idsConhecidos.has(m.id));
     novosMovimentos.forEach((mov) => {
       const produto = produtos.find(
         (p) => String(p.id) === String(mov.produtoId) || String(p.codigoBarras || "") === String(mov.produtoId)
@@ -23832,14 +23868,107 @@
       if (!produto || produto.controlarEstoque === false) return;
       const eraLocal = mapaLocal.has(String(produto.id));
       if (!eraLocal) {
-        const saldoDoCatalogo = new Date(produto.atualizadoEm || 0).getTime();
         const dataDoMovimento = new Date(mov.at || 0).getTime();
-        if (!(dataDoMovimento > saldoDoCatalogo)) return;
+        if (corteCheckpoint) {
+          if (!(dataDoMovimento > corteCheckpoint)) return;
+        } else {
+          const nuvem = mapaNuvem.get(String(produto.id));
+          const saldoDoCatalogo = new Date(nuvem && nuvem.atualizadoEm || 0).getTime();
+          if (!(dataDoMovimento > saldoDoCatalogo)) return;
+        }
       }
       produto.estoque = Math.max(0, (parseFloat(produto.estoque) || 0) + (parseFloat(mov.delta) || 0));
-      if (mov.at) produto.atualizadoEm = mov.at;
     });
     return { produtos, novosMovimentos };
+  }
+  function mesclarSessaoInventario(a, b) {
+    if (!a) return b || null;
+    if (!b) return a;
+    const rank = { agendado: 1, em_andamento: 2, concluido: 3, processado: 4 };
+    const base = tempoDe(b) >= tempoDe(a) ? { ...a, ...b } : { ...b, ...a };
+    const ra = rank[a.status] || 0;
+    const rb = rank[b.status] || 0;
+    if (ra !== rb) base.status = ra > rb ? a.status : b.status;
+    const linhasA = a.linhas && typeof a.linhas === "object" ? a.linhas : {};
+    const linhasB = b.linhas && typeof b.linhas === "object" ? b.linhas : {};
+    const linhas = {};
+    (/* @__PURE__ */ new Set([...Object.keys(linhasA), ...Object.keys(linhasB)])).forEach((chave) => {
+      const la = linhasA[chave];
+      const lb = linhasB[chave];
+      if (!la) {
+        linhas[chave] = lb;
+        return;
+      }
+      if (!lb) {
+        linhas[chave] = la;
+        return;
+      }
+      const mapaLeituras = /* @__PURE__ */ new Map();
+      [...la.leituras || [], ...lb.leituras || []].forEach((l) => {
+        if (l && l.id) mapaLeituras.set(String(l.id), l);
+      });
+      const leituras = Array.from(mapaLeituras.values());
+      const contado = leituras.reduce((soma, l) => soma + (parseFloat(l.qtd) || 0), 0);
+      linhas[chave] = {
+        ...la,
+        ...lb,
+        saldoDe: la.saldoDe != null ? la.saldoDe : lb.saldoDe,
+        leituras,
+        contado
+      };
+    });
+    base.linhas = linhas;
+    return base;
+  }
+  function mesclarInventarios(nuvem = [], local = []) {
+    const mapa = /* @__PURE__ */ new Map();
+    [...nuvem || [], ...local || []].forEach((sessao) => {
+      if (!sessao || !sessao.id) return;
+      const id = String(sessao.id);
+      const existente = mapa.get(id);
+      mapa.set(id, existente ? mesclarSessaoInventario(existente, sessao) : sessao);
+    });
+    return Array.from(mapa.values());
+  }
+  function calcularDeltasInventario(sessao, produtosAtuais = []) {
+    const avisos = [];
+    const deltas = [];
+    if (!sessao) {
+      return { deltas, avisos };
+    }
+    const mapaProd = /* @__PURE__ */ new Map();
+    (produtosAtuais || []).forEach((p) => {
+      if (p && p.id) mapaProd.set(String(p.id), p);
+    });
+    const linhas = sessao.linhas && typeof sessao.linhas === "object" ? Object.values(sessao.linhas) : [];
+    linhas.forEach((linha) => {
+      if (!linha || !linha.produtoId) return;
+      const prod = mapaProd.get(String(linha.produtoId));
+      if (!prod || prod.controlarEstoque === false) return;
+      const atual = parseFloat(prod.estoque) || 0;
+      const contado = parseFloat(linha.contado) || 0;
+      const saldoDe = linha.saldoDe != null ? parseFloat(linha.saldoDe) : atual;
+      if (Math.abs(atual - saldoDe) > 1e-4) {
+        avisos.push({
+          produtoId: linha.produtoId,
+          nome: linha.nome || prod.nome,
+          saldoDe,
+          atual,
+          motivo: "venda_no_meio"
+        });
+      }
+      const delta = contado - atual;
+      if (delta === 0) return;
+      deltas.push({
+        produtoId: linha.produtoId,
+        nome: linha.nome || prod.nome,
+        delta,
+        contado,
+        atual,
+        saldoDe
+      });
+    });
+    return { deltas, avisos };
   }
   function dividirEmLotes(lista, tamanhoLote) {
     const itens = Array.isArray(lista) ? lista : [];
@@ -24185,7 +24314,6 @@
           const fator = item.isFardo ? prod.fatorConversao || 1 : 1;
           const delta = -((parseFloat(item.quantidade) || 0) * fator);
           prod.estoque = Math.max(0, (parseFloat(prod.estoque) || 0) + delta);
-          prod.atualizadoEm = (/* @__PURE__ */ new Date()).toISOString();
           this.registrarMovimentoEstoque({
             produtoId: prod.id,
             delta,
@@ -24404,11 +24532,15 @@
       this.saveConfig(defaults);
       return defaults;
     },
-    saveConfig(config) {
-      if (config && config.habilitarModuloFiado === void 0) {
-        config.habilitarModuloFiado = true;
+    saveConfig(config, opts = {}) {
+      const atual = { ...config || {} };
+      if (atual.habilitarModuloFiado === void 0) {
+        atual.habilitarModuloFiado = true;
       }
-      localStorage.setItem("adega_config", JSON.stringify(config));
+      if (opts.carimbar !== false) {
+        atual.atualizadoEm = (/* @__PURE__ */ new Date()).toISOString();
+      }
+      localStorage.setItem("adega_config", JSON.stringify(atual));
     },
     // Balança de Checkout (USB / Serial RS-232)
     getBalancaConfig() {
@@ -24622,7 +24754,12 @@
       return defaults;
     },
     saveUsuarios(usuarios) {
-      localStorage.setItem("flowpdv_usuarios", JSON.stringify(usuarios));
+      const agora = (/* @__PURE__ */ new Date()).toISOString();
+      const lista = (Array.isArray(usuarios) ? usuarios : []).map((u) => {
+        if (!u || u.atualizadoEm) return u;
+        return { ...u, atualizadoEm: u.criadoEm || agora };
+      });
+      localStorage.setItem("flowpdv_usuarios", JSON.stringify(lista));
     },
     getMovimentosEstoque() {
       const saved = localStorage.getItem("flowpdv_estoque_movimentos");
@@ -24635,7 +24772,7 @@
       }
     },
     saveMovimentosEstoque(movimentos) {
-      const lista = Array.isArray(movimentos) ? movimentos.slice(-2500) : [];
+      const lista = Array.isArray(movimentos) ? movimentos.slice(-8e3) : [];
       try {
         localStorage.setItem("flowpdv_estoque_movimentos", JSON.stringify(lista));
       } catch (e) {
@@ -24662,6 +24799,30 @@
       lista.push(mov);
       this.saveMovimentosEstoque(lista);
       return mov;
+    },
+    getCheckpointEstoque() {
+      try {
+        const raw = localStorage.getItem("flowpdv_checkpoint_estoque");
+        return raw ? JSON.parse(raw) : null;
+      } catch (e) {
+        return null;
+      }
+    },
+    saveCheckpointEstoque(checkpoint) {
+      if (!checkpoint || typeof checkpoint !== "object") return;
+      localStorage.setItem("flowpdv_checkpoint_estoque", JSON.stringify(checkpoint));
+    },
+    getInventarios() {
+      try {
+        const raw = localStorage.getItem("flowpdv_inventarios");
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (e) {
+        return [];
+      }
+    },
+    saveInventarios(lista) {
+      localStorage.setItem("flowpdv_inventarios", JSON.stringify(Array.isArray(lista) ? lista : []));
     },
     // Mesas e Comandas
     getComandas() {
@@ -24749,6 +24910,10 @@
       "flowpdv_partes_hash",
       "flowpdv_movimentos_enviados",
       "flowpdv_ultimo_mov_sync",
+      "flowpdv_checkpoint_estoque",
+      "flowpdv_checkpoint_enviado_em",
+      "flowpdv_inventarios",
+      "flowpdv_inventarios_enviados",
       "adega_licenca_backup",
       "flowpdv_terminal_heartbeat_ms"
     ],
@@ -24811,9 +24976,6 @@
       }
       if (this.usuarioAtual) {
         this.atualizarHeaderUsuario();
-        if (window.App && typeof window.App.verificarAlertasGerenteLogin === "function") {
-          setTimeout(() => window.App.verificarAlertasGerenteLogin(), 1500);
-        }
         this.fecharTelaLogin();
         if (window.App && typeof window.App.entrarPorPerfil === "function") {
           setTimeout(() => window.App.entrarPorPerfil(this.usuarioAtual), 0);
@@ -24906,8 +25068,10 @@
       const modal = document.getElementById("modal-login-operador");
       if (!modal) return;
       this.usuarioSelecionadoLoginId = null;
+      document.body.classList.add("tela-login-ativa");
       modal.classList.add("active");
       this.renderCardsLogin();
+      this.atualizarNomeLojaLogin();
       this.limparPinLogin();
       const barcodeInput = document.getElementById("pdv-barcode-input");
       if (barcodeInput) barcodeInput.value = "";
@@ -24933,6 +25097,14 @@
     fecharTelaLogin() {
       const modal = document.getElementById("modal-login-operador");
       if (modal) modal.classList.remove("active");
+      document.body.classList.remove("tela-login-ativa");
+    },
+    atualizarNomeLojaLogin() {
+      const el = document.getElementById("login-screen-loja-nome");
+      if (!el) return;
+      const cfg = StorageService.getConfig() || {};
+      const lic = StorageService.getLicenca() || {};
+      el.textContent = cfg.nomeLoja || cfg.nomeEmpresa || lic.razaoSocial || "FlowPDV";
     },
     renderCardsLogin() {
       const select = document.getElementById("login-operador-select");
@@ -25036,11 +25208,6 @@
         this.atualizarHeaderUsuario();
         if (window.App && typeof window.App.entrarPorPerfil === "function") {
           window.App.entrarPorPerfil(u);
-        }
-        if (u.cargo === "gerente" || u.cargo === "superadmin") {
-          if (window.App && typeof window.App.verificarAlertasGerenteLogin === "function") {
-            setTimeout(() => window.App.verificarAlertasGerenteLogin(), 350);
-          }
         }
         if (window.PdvModule && typeof window.PdvModule.renderMiniDashboardTurno === "function") {
           window.PdvModule.renderMiniDashboardTurno();
@@ -25377,7 +25544,8 @@
             pin,
             cargo,
             ativo,
-            permissoes
+            permissoes,
+            atualizadoEm: (/* @__PURE__ */ new Date()).toISOString()
           };
         }
       } else {
@@ -25389,7 +25557,8 @@
           cargo,
           ativo,
           permissoes,
-          criadoEm: (/* @__PURE__ */ new Date()).toISOString()
+          criadoEm: (/* @__PURE__ */ new Date()).toISOString(),
+          atualizadoEm: (/* @__PURE__ */ new Date()).toISOString()
         };
         usuarios.push(novo);
       }
@@ -52591,6 +52760,7 @@ Venda bloqueada no PDV!`);
       if (this.produtoEditandoId) {
         const index = produtos.findIndex((p) => p.id === this.produtoEditandoId);
         if (index !== -1) {
+          const estoqueAntes = parseFloat(produtos[index].estoque) || 0;
           produtos[index] = {
             ...produtos[index],
             codigoBarras,
@@ -52623,6 +52793,15 @@ Venda bloqueada no PDV!`);
             precoClube: precoClube2,
             estoque
           });
+          const deltaEstoque = estoque - estoqueAntes;
+          if (controlarEstoque && deltaEstoque !== 0) {
+            StorageService.registrarMovimentoEstoque({
+              produtoId: this.produtoEditandoId,
+              delta: deltaEstoque,
+              origem: "cadastro",
+              refId: this.produtoEditandoId
+            });
+          }
         }
       } else {
         let codFinal = codigoBarras;
@@ -52662,6 +52841,14 @@ Venda bloqueada no PDV!`);
           origem: document.getElementById("prod-origem")?.value || "0"
         };
         produtos.push(novoProduto);
+        if (controlarEstoque && estoque) {
+          StorageService.registrarMovimentoEstoque({
+            produtoId: novoProduto.id,
+            delta: estoque,
+            origem: "cadastro",
+            refId: novoProduto.id
+          });
+        }
         AuditModule.registrarLog("cadastro_produto", `Cadastrou o novo produto "${novoProduto.nome}" (C\xF3digo: ${novoProduto.codigoBarras}, Venda: R$ ${novoProduto.precoVenda.toFixed(2)}, Estoque: ${novoProduto.estoque} un)`, {
           produtoId: novoProduto.id,
           nome: novoProduto.nome,
@@ -57743,6 +57930,8 @@ ${base}`;
   var CHAVE_ASSINATURAS = "flowpdv_partes_hash";
   var CHAVE_MOV_ENVIADOS = "flowpdv_movimentos_enviados";
   var CHAVE_MOV_RECEBIDOS = "flowpdv_ultimo_mov_sync";
+  var CHAVE_CHECKPOINT_ENVIADO = "flowpdv_checkpoint_enviado_em";
+  var CHAVE_INV_ENVIADOS = "flowpdv_inventarios_enviados";
   var CloudSyncModule = {
     debounceTimer: null,
     ouvinteAtivo: false,
@@ -57828,11 +58017,13 @@ ${base}`;
     },
     mesclarProdutosComEstoque(nuvem = [], local = [], movimentosNuvem = []) {
       const movimentosLocais = StorageService.getMovimentosEstoque ? StorageService.getMovimentosEstoque() : [];
+      const checkpoint = StorageService.getCheckpointEstoque ? StorageService.getCheckpointEstoque() : null;
       const { produtos, novosMovimentos } = consolidarProdutosComMovimentos({
         produtosNuvem: nuvem,
         produtosLocais: local,
         movimentosNuvem,
-        movimentosLocais
+        movimentosLocais,
+        checkpoint
       });
       if (novosMovimentos.length && StorageService.saveMovimentosEstoque) {
         StorageService.saveMovimentosEstoque([...movimentosLocais, ...novosMovimentos]);
@@ -57965,6 +58156,8 @@ ${base}`;
         await this.atualizarTurnoAtivoDoTerminal(chave, meuDevId, meuTurno === void 0 ? null : meuTurno);
       }
       await this.enviarMovimentosPendentes(chave, movimentosEstoque);
+      await this.enviarInventariosPendentes(chave);
+      await this.enviarCheckpointEstoque(chave);
     },
     /** Slot na nuvem: turno aberto deste terminal, ou marcador de fechado (nunca deixa lixo "aberto"). */
     turnoParaSlotNuvem(deviceId, turno) {
@@ -58027,7 +58220,13 @@ ${base}`;
       if (!snap.exists()) return null;
       const dados = snap.data() || {};
       const completo = await this.completarPacote(chave, dados, legado);
+      const checkpoint = await this.baixarCheckpointEstoque(chave);
+      if (checkpoint && StorageService.saveCheckpointEstoque && !StorageService.getCheckpointEstoque()) {
+        StorageService.saveCheckpointEstoque(checkpoint);
+      }
+      completo.checkpointEstoque = checkpoint;
       completo.movimentosEstoque = await this.baixarMovimentosNovos(chave, completo.movimentosEstoque);
+      completo.inventarios = await this.baixarInventariosNuvem(chave);
       return completo;
     },
     /**
@@ -58053,14 +58252,15 @@ ${base}`;
       localStorage.setItem(CHAVE_MOV_ENVIADOS, JSON.stringify(Array.from(enviados).slice(-4e3)));
     },
     async baixarMovimentosNovos(chave, movimentosLegado = null) {
-      const meuTerminal = StorageService.getDeviceId();
-      const desde = localStorage.getItem(CHAVE_MOV_RECEBIDOS) || new Date(Date.now() - 3 * 24 * 60 * 60 * 1e3).toISOString();
+      const cp = StorageService.getCheckpointEstoque ? StorageService.getCheckpointEstoque() : null;
+      const janelaDias = cp && cp.ultimoMovAt ? 30 : 3;
+      const desde = localStorage.getItem(CHAVE_MOV_RECEBIDOS) || cp && cp.ultimoMovAt || new Date(Date.now() - janelaDias * 24 * 60 * 60 * 1e3).toISOString();
       try {
         const consulta = query(
           collection(db, COLECAO_BACKUPS, chave, "movimentos"),
           where("at", ">", desde),
           orderBy("at"),
-          limit(800)
+          limit(2e3)
         );
         const snap = await getDocs(consulta);
         const lista = [];
@@ -58069,7 +58269,6 @@ ${base}`;
           const mov = d.data();
           if (!mov || !mov.id) return;
           if (mov.at && mov.at > marcaDagua) marcaDagua = mov.at;
-          if (mov.terminalId && mov.terminalId === meuTerminal) return;
           lista.push(mov);
         });
         this.marcaDaguaMovimentos = marcaDagua;
@@ -58084,6 +58283,76 @@ ${base}`;
       if (this.marcaDaguaMovimentos) {
         localStorage.setItem(CHAVE_MOV_RECEBIDOS, this.marcaDaguaMovimentos);
         this.marcaDaguaMovimentos = null;
+      }
+    },
+    async baixarCheckpointEstoque(chave) {
+      try {
+        const snap = await getDoc(doc(db, COLECAO_BACKUPS, chave, "checkpoint", "estoque"));
+        if (snap.exists()) return snap.data() || null;
+      } catch (e) {
+        console.warn("[CloudSync] N\xE3o foi poss\xEDvel ler o checkpoint de estoque:", e);
+      }
+      return null;
+    },
+    async enviarCheckpointEstoque(chave) {
+      const produtos = StorageService.getProdutos ? StorageService.getProdutos() : [];
+      if (!produtos.length) return;
+      const ultimo = localStorage.getItem(CHAVE_CHECKPOINT_ENVIADO);
+      if (ultimo && Date.now() - (Date.parse(ultimo) || 0) < 12 * 60 * 60 * 1e3) return;
+      const movimentos = StorageService.getMovimentosEstoque ? StorageService.getMovimentosEstoque() : [];
+      const checkpoint = montarCheckpointEstoque(produtos, movimentos);
+      try {
+        await setDoc(doc(db, COLECAO_BACKUPS, chave, "checkpoint", "estoque"), {
+          ...checkpoint,
+          terminalId: StorageService.getDeviceId()
+        });
+        if (StorageService.saveCheckpointEstoque) StorageService.saveCheckpointEstoque(checkpoint);
+        localStorage.setItem(CHAVE_CHECKPOINT_ENVIADO, checkpoint.geradoEm);
+      } catch (e) {
+        console.warn("[CloudSync] Falha ao gravar checkpoint de estoque:", e);
+      }
+    },
+    async baixarInventariosNuvem(chave) {
+      try {
+        const snap = await getDocs(collection(db, COLECAO_BACKUPS, chave, "inventarios"));
+        const lista = [];
+        snap.forEach((d) => {
+          const dados = d.data();
+          if (dados && dados.id) lista.push(dados);
+        });
+        return lista;
+      } catch (e) {
+        console.warn("[CloudSync] N\xE3o foi poss\xEDvel ler os invent\xE1rios:", e);
+        return [];
+      }
+    },
+    async enviarInventariosPendentes(chave) {
+      const lista = StorageService.getInventarios ? StorageService.getInventarios() : [];
+      if (!lista.length) return;
+      let enviados;
+      try {
+        enviados = JSON.parse(localStorage.getItem(CHAVE_INV_ENVIADOS) || "{}") || {};
+      } catch (e) {
+        enviados = {};
+      }
+      const pendentes = lista.filter((s) => s && s.id && enviados[s.id] !== s.atualizadoEm);
+      if (!pendentes.length) return;
+      await Promise.all(pendentes.map((s) => setDoc(
+        doc(db, COLECAO_BACKUPS, chave, "inventarios", String(s.id)),
+        s
+      )));
+      pendentes.forEach((s) => {
+        enviados[s.id] = s.atualizadoEm;
+      });
+      localStorage.setItem(CHAVE_INV_ENVIADOS, JSON.stringify(enviados));
+    },
+    aplicarInventariosRecebidos(nuvem) {
+      if (!Array.isArray(nuvem) || !nuvem.length) return;
+      const local = StorageService.getInventarios ? StorageService.getInventarios() : [];
+      const mesclado = mesclarInventarios(nuvem, local);
+      StorageService.saveInventarios(mesclado);
+      if (window.InventarioModule && typeof window.InventarioModule.renderModal === "function") {
+        window.InventarioModule.renderModal();
       }
     },
     mesclarCategorias(baseA = [], baseB = []) {
@@ -58141,11 +58410,15 @@ ${base}`;
             StorageService.salvarCategorias(categoriasConsolidadas);
           }
           if (Array.isArray(cloudData.usuarios) && cloudData.usuarios.length > 0) {
-            StorageService.saveUsuarios(cloudData.usuarios);
+            StorageService.saveUsuarios(this.mesclarItensPorId(cloudData.usuarios, StorageService.getUsuarios()));
           }
           if (Array.isArray(cloudData.turnosHistorico) && cloudData.turnosHistorico.length > 0) {
-            StorageService.salvarHistoricoTurnos(cloudData.turnosHistorico);
+            StorageService.salvarHistoricoTurnos(this.mesclarItensPorId(cloudData.turnosHistorico, StorageService.getHistoricoTurnos()));
           }
+          if (cloudData.config && typeof cloudData.config === "object" && !this.isUsuarioEditando()) {
+            StorageService.saveConfig(mesclarConfigLoja(cloudData.config, StorageService.getConfig() || {}), { carimbar: false });
+          }
+          this.aplicarInventariosRecebidos(cloudData.inventarios);
           if (produtosConsolidados.length > cloudProds.length || contasConsolidadas.length > cloudContas.length || contasPagarPrecisamReenviar(contasConsolidadas, cloudContas) || clientesConsolidados.length > cloudClientes.length || vendasConsolidadas.length > cloudVendas.length || categoriasConsolidadas.length > (cloudData.categorias || []).length) {
             console.log("[CloudSync] Consolidando novos itens locais para a nuvem...");
             this.enviarAlteracaoNuvem("consolidacao_unificada");
@@ -58198,6 +58471,13 @@ ${base}`;
           try {
             cloudData = await this.completarPacote(chave, resumo);
             cloudData.movimentosEstoque = await this.baixarMovimentosNovos(chave, resumo.movimentosEstoque);
+            cloudData.inventarios = await this.baixarInventariosNuvem(chave);
+            if (!cloudData.checkpointEstoque) {
+              cloudData.checkpointEstoque = await this.baixarCheckpointEstoque(chave);
+              if (cloudData.checkpointEstoque && StorageService.saveCheckpointEstoque && !StorageService.getCheckpointEstoque()) {
+                StorageService.saveCheckpointEstoque(cloudData.checkpointEstoque);
+              }
+            }
           } catch (e) {
             console.warn("[CloudSync] Falha ao carregar as partes do pacote recebido:", e);
           }
@@ -58244,6 +58524,8 @@ ${base}`;
         localStorage.removeItem(CHAVE_MOV_RECEBIDOS);
         localStorage.removeItem(CHAVE_MANIFESTO);
         localStorage.removeItem(CHAVE_ASSINATURAS);
+        localStorage.removeItem(CHAVE_CHECKPOINT_ENVIADO);
+        localStorage.removeItem(CHAVE_INV_ENVIADOS);
         this.marcaDaguaMovimentos = null;
         await encerrarSessaoLoja();
         const cloudData = await this.lerPacote(novaChave);
@@ -58307,8 +58589,12 @@ ${base}`;
     },
     carregarBaseCompletaNovaEmpresa(cloudData) {
       if (!cloudData) return;
-      if (Array.isArray(cloudData.produtos) && cloudData.produtos.length > 0) {
-        StorageService.saveProdutos(cloudData.produtos);
+      if (Array.isArray(cloudData.produtos)) {
+        if (cloudData.checkpointEstoque && StorageService.saveCheckpointEstoque) {
+          StorageService.saveCheckpointEstoque(cloudData.checkpointEstoque);
+        }
+        const produtos = this.mesclarProdutosComEstoque(cloudData.produtos, [], cloudData.movimentosEstoque);
+        StorageService.saveProdutos(produtos);
       } else {
         StorageService.saveProdutos([]);
       }
@@ -58335,6 +58621,14 @@ ${base}`;
       if (Array.isArray(cloudData.usuarios) && cloudData.usuarios.length > 0) {
         StorageService.saveUsuarios(cloudData.usuarios);
       }
+      if (Array.isArray(cloudData.inventarios)) {
+        StorageService.saveInventarios(cloudData.inventarios);
+      } else if (StorageService.saveInventarios) {
+        StorageService.saveInventarios([]);
+      }
+      if (cloudData.config && typeof cloudData.config === "object") {
+        StorageService.saveConfig(cloudData.config, { carimbar: false });
+      }
       if (Array.isArray(cloudData.categorias) && cloudData.categorias.length > 0) {
         StorageService.salvarCategorias(cloudData.categorias);
       }
@@ -58353,6 +58647,8 @@ ${base}`;
       if (modalOp && modalOp.classList.contains("active")) return true;
       const modalCli = document.getElementById("modal-novo-cliente");
       if (modalCli && modalCli.classList.contains("active")) return true;
+      const modalInv = document.getElementById("modal-inventario-sessao");
+      if (modalInv && modalInv.classList.contains("active")) return true;
       const active = document.activeElement;
       if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) {
         return true;
@@ -58367,7 +58663,9 @@ ${base}`;
       try {
         let houveAlteracao = false;
         if (Array.isArray(cloudData.usuarios) && cloudData.usuarios.length > 0) {
-          StorageService.saveUsuarios(cloudData.usuarios);
+          const usuariosConsolidados = this.mesclarItensPorId(cloudData.usuarios, StorageService.getUsuarios());
+          StorageService.saveUsuarios(usuariosConsolidados);
+          precisaReenviarBaseConsolidada = precisaReenviarBaseConsolidada || usuariosConsolidados.length > cloudData.usuarios.length;
           houveAlteracao = true;
           if (window.AuthModule) {
             if (typeof window.AuthModule.renderCardsLogin === "function") window.AuthModule.renderCardsLogin();
@@ -58449,12 +58747,13 @@ ${base}`;
           localStorage.setItem("adega_vendas", JSON.stringify(vendasConsolidadas));
           precisaReenviarBaseConsolidada = precisaReenviarBaseConsolidada || vendasConsolidadas.length > cloudData.vendas.length;
         }
-        if (cloudData.config && typeof cloudData.config === "object") {
-          StorageService.saveConfig(cloudData.config);
-          if (!this.isUsuarioEditando() && window.App && typeof window.App.carregarConfiguracoes === "function") {
+        if (cloudData.config && typeof cloudData.config === "object" && !this.isUsuarioEditando()) {
+          StorageService.saveConfig(mesclarConfigLoja(cloudData.config, StorageService.getConfig() || {}), { carimbar: false });
+          if (window.App && typeof window.App.carregarConfiguracoes === "function") {
             window.App.carregarConfiguracoes();
           }
         }
+        this.aplicarInventariosRecebidos(cloudData.inventarios);
         if (cloudData.atualizadoEm) {
           localStorage.setItem("flowpdv_ultimo_sync_cloud", cloudData.atualizadoEm);
         }
@@ -59167,11 +59466,12 @@ ${base}`;
         return;
       }
       if (destino === "vendas") {
-        this.trocarSubAba("indicadores");
         return;
       }
       if (destino === "loja") {
-        this.trocarSubAba("auditoria");
+        if (window.App && typeof window.App.trocarAba === "function") {
+          window.App.trocarAba("config");
+        }
         return;
       }
       if (destino === "atencao") {
@@ -61643,6 +61943,14 @@ Por favor, escolha uma categoria no campo em vermelho antes de confirmar.`);
               criadoEm: (/* @__PURE__ */ new Date()).toISOString()
             };
             produtosAtuais.unshift(novoProduto);
+            if (qtdFinal) {
+              StorageService.registrarMovimentoEstoque({
+                produtoId: novoProduto.id,
+                delta: qtdFinal,
+                origem: "xml",
+                refId: novoProduto.id
+              });
+            }
             totalNovosCadastros++;
           }
         }
@@ -64112,6 +64420,292 @@ NSU: ${nsuGerado}`
     }
   };
 
+  // src/js/inventario.js
+  var InventarioModule = {
+    sessaoAtivaId: null,
+    init() {
+      const aberta = this.getSessoes().find((s) => s.status === "em_andamento" || s.status === "concluido");
+      if (aberta) this.sessaoAtivaId = aberta.id;
+    },
+    getSessoes() {
+      return StorageService.getInventarios ? StorageService.getInventarios() : [];
+    },
+    getSessaoAtiva() {
+      const lista = this.getSessoes();
+      if (this.sessaoAtivaId) {
+        const atual = lista.find((s) => s && s.id === this.sessaoAtivaId);
+        if (atual) return atual;
+      }
+      return lista.find((s) => s && (s.status === "em_andamento" || s.status === "concluido")) || null;
+    },
+    persistir(sessao) {
+      const lista = this.getSessoes();
+      sessao.atualizadoEm = (/* @__PURE__ */ new Date()).toISOString();
+      const idx = lista.findIndex((s) => s && s.id === sessao.id);
+      if (idx >= 0) lista[idx] = sessao;
+      else lista.unshift(sessao);
+      StorageService.saveInventarios(lista);
+      this.sessaoAtivaId = sessao.id;
+      if (window.CloudSyncModule && typeof window.CloudSyncModule.enviarAlteracaoNuvem === "function") {
+        window.CloudSyncModule.enviarAlteracaoNuvem("inventario");
+      }
+    },
+    abrirSessao() {
+      const existente = this.getSessoes().find((s) => s && (s.status === "em_andamento" || s.status === "concluido"));
+      if (existente) {
+        this.sessaoAtivaId = existente.id;
+        return existente;
+      }
+      const op = window.AuthModule && typeof window.AuthModule.getUsuario === "function" ? window.AuthModule.getUsuario() : null;
+      const sessao = {
+        id: "INV-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6),
+        status: "em_andamento",
+        tipo: "somente_lidos",
+        criadoEm: (/* @__PURE__ */ new Date()).toISOString(),
+        atualizadoEm: (/* @__PURE__ */ new Date()).toISOString(),
+        criadoPor: op ? op.nome : "",
+        terminalId: StorageService.getDeviceId(),
+        linhas: {}
+      };
+      this.persistir(sessao);
+      return sessao;
+    },
+    encontrarProduto(codigo) {
+      const c = String(codigo || "").trim().toUpperCase();
+      if (!c) return null;
+      const produtos = StorageService.getProdutos() || [];
+      return produtos.find(
+        (p) => String(p.codigoBarras || "").toUpperCase() === c || String(p.codigoBarrasFardo || "").toUpperCase() === c || String(p.id || "").toUpperCase() === c
+      ) || null;
+    },
+    bipar(codigo, qtd = 1) {
+      const sessao = this.getSessaoAtiva();
+      if (!sessao || sessao.status !== "em_andamento") {
+        return { erro: "A sess\xE3o n\xE3o est\xE1 em contagem. Abra ou reabra o invent\xE1rio." };
+      }
+      const produto = this.encontrarProduto(codigo);
+      if (!produto) return { erro: "Produto n\xE3o encontrado." };
+      if (produto.controlarEstoque === false) return { erro: "Este produto n\xE3o controla estoque." };
+      const quantidade = parseFloat(String(qtd).replace(",", ".")) || 0;
+      if (quantidade <= 0) return { erro: "Informe uma quantidade v\xE1lida." };
+      const chave = String(produto.id);
+      if (!sessao.linhas[chave]) {
+        sessao.linhas[chave] = {
+          produtoId: produto.id,
+          nome: produto.nome,
+          codigoBarras: produto.codigoBarras || "",
+          saldoDe: parseFloat(produto.estoque) || 0,
+          contado: 0,
+          leituras: []
+        };
+      }
+      sessao.linhas[chave].leituras.push({
+        id: "L-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8),
+        qtd: quantidade,
+        terminalId: StorageService.getDeviceId(),
+        operador: window.AuthModule && typeof window.AuthModule.getNomeOperador === "function" ? window.AuthModule.getNomeOperador() : "",
+        at: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      sessao.linhas[chave].contado = (sessao.linhas[chave].leituras || []).reduce((soma, l) => soma + (parseFloat(l.qtd) || 0), 0);
+      this.persistir(sessao);
+      return { ok: true, produto, linha: sessao.linhas[chave] };
+    },
+    concluir() {
+      const sessao = this.getSessaoAtiva();
+      if (!sessao || sessao.status === "processado") return null;
+      sessao.status = "concluido";
+      this.persistir(sessao);
+      return sessao;
+    },
+    reabrirContagem() {
+      const sessao = this.getSessaoAtiva();
+      if (!sessao || sessao.status === "processado") return null;
+      sessao.status = "em_andamento";
+      this.persistir(sessao);
+      return sessao;
+    },
+    processar() {
+      if (!window.AuthModule || typeof window.AuthModule.isGerente !== "function" || !window.AuthModule.isGerente()) {
+        return { erro: "S\xF3 o gerente processa o invent\xE1rio." };
+      }
+      const sessao = this.getSessaoAtiva();
+      if (!sessao || sessao.status === "processado") {
+        return { erro: "N\xE3o h\xE1 sess\xE3o para processar." };
+      }
+      const produtos = StorageService.getProdutos() || [];
+      const { deltas, avisos } = calcularDeltasInventario(sessao, produtos);
+      if (avisos.length) {
+        return { erro: "venda_no_meio", avisos };
+      }
+      deltas.forEach((d) => {
+        const p = produtos.find((x2) => String(x2.id) === String(d.produtoId));
+        if (!p) return;
+        p.estoque = Math.max(0, (parseFloat(p.estoque) || 0) + d.delta);
+        StorageService.registrarMovimentoEstoque({
+          produtoId: p.id,
+          delta: d.delta,
+          origem: "inventario",
+          refId: sessao.id
+        });
+      });
+      StorageService.saveProdutos(produtos);
+      sessao.status = "processado";
+      sessao.processadoEm = (/* @__PURE__ */ new Date()).toISOString();
+      this.persistir(sessao);
+      if (window.EstoqueModule && typeof window.EstoqueModule.renderTabelaProdutos === "function") {
+        window.EstoqueModule.renderTabelaProdutos();
+      }
+      return { ok: true, deltas };
+    },
+    abrirModal() {
+      const modal = document.getElementById("modal-inventario-sessao");
+      if (!modal) return;
+      this.abrirSessao();
+      modal.classList.add("active");
+      this.renderModal();
+      const input = document.getElementById("inventario-bipar-codigo");
+      if (input) setTimeout(() => input.focus(), 80);
+    },
+    fecharModal() {
+      const modal = document.getElementById("modal-inventario-sessao");
+      if (modal) modal.classList.remove("active");
+    },
+    confirmarBipagem() {
+      const input = document.getElementById("inventario-bipar-codigo");
+      const qtdEl = document.getElementById("inventario-bipar-qtd");
+      const codigo = input ? input.value : "";
+      const qtd = qtdEl ? qtdEl.value : 1;
+      const r = this.bipar(codigo, qtd);
+      const erro = document.getElementById("inventario-erro-msg");
+      if (r.erro) {
+        if (erro) {
+          erro.textContent = r.erro;
+          erro.style.display = "block";
+        }
+        if (window.App && typeof window.App.showToast === "function") {
+          window.App.showToast(r.erro, "warning");
+        }
+        return;
+      }
+      if (erro) erro.style.display = "none";
+      if (input) {
+        input.value = "";
+        input.focus();
+      }
+      if (qtdEl) qtdEl.value = "1";
+      this.renderModal();
+    },
+    confirmarConcluir() {
+      this.concluir();
+      this.renderModal();
+    },
+    confirmarReabrir() {
+      this.reabrirContagem();
+      this.renderModal();
+      const input = document.getElementById("inventario-bipar-codigo");
+      if (input) input.focus();
+    },
+    confirmarProcessar() {
+      const rodar = () => {
+        const r = this.processar();
+        if (r.erro === "venda_no_meio") {
+          const nomes = (r.avisos || []).map((a) => a.nome).filter(Boolean).join(", ");
+          if (window.App && typeof window.App.showToast === "function") {
+            window.App.showToast(
+              "Teve venda no meio da contagem" + (nomes ? " em: " + nomes : "") + ". Reconte esses itens.",
+              "warning",
+              8e3
+            );
+          }
+          this.renderModal(r.avisos);
+          return;
+        }
+        if (r.erro) {
+          if (window.App && typeof window.App.showToast === "function") {
+            window.App.showToast(r.erro, "warning");
+          }
+          return;
+        }
+        if (window.App && typeof window.App.showToast === "function") {
+          window.App.showToast("Invent\xE1rio processado. " + (r.deltas || []).length + " movimento(s) gerado(s).", "success");
+        }
+        this.renderModal();
+      };
+      if (window.AuthModule && typeof window.AuthModule.isGerente === "function" && window.AuthModule.isGerente()) {
+        rodar();
+        return;
+      }
+      if (window.AuthModule && typeof window.AuthModule.solicitarAutorizacaoGerente === "function") {
+        window.AuthModule.solicitarAutorizacaoGerente(rodar, "Processar invent\xE1rio");
+      }
+    },
+    renderModal(avisosVenda) {
+      const modal = document.getElementById("modal-inventario-sessao");
+      if (!modal || !modal.classList.contains("active")) return;
+      const sessao = this.getSessaoAtiva();
+      const statusEl = document.getElementById("inventario-status-label");
+      const listaEl = document.getElementById("inventario-lista-lidos");
+      const countEl = document.getElementById("inventario-count-lidos");
+      const avisoEl = document.getElementById("inventario-aviso-venda");
+      const bipBox = document.getElementById("inventario-bipagem-box");
+      const btnConcluir = document.getElementById("btn-inventario-concluir");
+      const btnReabrir = document.getElementById("btn-inventario-reabrir");
+      const btnProcessar = document.getElementById("btn-inventario-processar");
+      if (!sessao) {
+        if (statusEl) statusEl.textContent = "Nenhuma sess\xE3o";
+        if (listaEl) listaEl.innerHTML = '<div class="inventario-vazio">Abra uma sess\xE3o para come\xE7ar a contar.</div>';
+        return;
+      }
+      const linhas = Object.values(sessao.linhas || {});
+      const divergentes = linhas.filter((l) => Math.abs((parseFloat(l.contado) || 0) - (parseFloat(l.saldoDe) || 0)) > 1e-4);
+      const rotulo = {
+        em_andamento: "Contando \u2014 s\xF3 produtos bipados entram",
+        concluido: "Conclu\xEDdo \u2014 conferir diverg\xEAncias",
+        processado: "Processado \u2014 movimentos gerados"
+      }[sessao.status] || sessao.status;
+      if (statusEl) statusEl.textContent = rotulo;
+      if (countEl) countEl.textContent = linhas.length + " lido(s) \xB7 " + divergentes.length + " divergente(s)";
+      if (bipBox) bipBox.style.display = sessao.status === "em_andamento" ? "block" : "none";
+      if (btnConcluir) btnConcluir.style.display = sessao.status === "em_andamento" ? "inline-flex" : "none";
+      if (btnReabrir) btnReabrir.style.display = sessao.status === "concluido" ? "inline-flex" : "none";
+      if (btnProcessar) btnProcessar.style.display = sessao.status === "processado" ? "none" : "inline-flex";
+      if (avisoEl) {
+        if (avisosVenda && avisosVenda.length) {
+          avisoEl.style.display = "block";
+          avisoEl.textContent = "Teve venda no meio em: " + avisosVenda.map((a) => a.nome).join(", ") + ". Reconte esses itens antes de processar.";
+        } else {
+          avisoEl.style.display = "none";
+        }
+      }
+      if (!listaEl) return;
+      if (!linhas.length) {
+        listaEl.innerHTML = '<div class="inventario-vazio">Nenhum produto lido ainda. O que n\xE3o for bipado n\xE3o zera.</div>';
+        return;
+      }
+      listaEl.innerHTML = linhas.slice().reverse().map((l) => {
+        const contado = parseFloat(l.contado) || 0;
+        const saldo = parseFloat(l.saldoDe) || 0;
+        const delta = contado - saldo;
+        const classe = delta === 0 ? "ok" : "div";
+        const sinal = delta > 0 ? "+" + delta : String(delta);
+        return `<div class="inventario-linha ${classe}">
+        <div>
+          <strong>${this._esc(l.nome || l.produtoId)}</strong>
+          <span>${this._esc(l.codigoBarras || "")}</span>
+        </div>
+        <div class="inventario-nums">
+          <span>Sistema ${saldo}</span>
+          <span>Contado ${contado}</span>
+          <em>${sinal}</em>
+        </div>
+      </div>`;
+      }).join("");
+    },
+    _esc(txt) {
+      return String(txt || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+  };
+
   // src/js/app.js
   var App = {
     abaAtiva: "pdv",
@@ -64134,6 +64728,7 @@ NSU: ${nsuGerado}`
       window.TefModule = TefModule;
       window.EtiquetasModule = EtiquetasModule;
       window.ComandasModule = ComandasModule;
+      window.InventarioModule = InventarioModule;
       window.App = this;
       StorageService.init();
       AuthModule.init();
@@ -64148,6 +64743,7 @@ NSU: ${nsuGerado}`
       TefModule.init();
       EtiquetasModule.init();
       ComandasModule.init();
+      InventarioModule.init();
       LicencaModule.init();
       this.aplicarLayoutPdv(StorageService.getLicenca()?.layoutPdv);
       BackupModule.init();
@@ -64211,9 +64807,11 @@ NSU: ${nsuGerado}`
         });
       }
       document.body.classList.toggle("pdv-operador-restrito", !ehGerente);
-      const isClassico = licenca.layoutPdv === "classico";
-      const abaDestino = isClassico && ehGerente ? "gerencia" : "pdv";
+      const abaDestino = ehGerente ? "gerencia" : "pdv";
       this.trocarAba(abaDestino);
+      if (ehGerente && window.GerenciaModule && typeof window.GerenciaModule.trocarSubAba === "function") {
+        window.GerenciaModule.trocarSubAba("inicio");
+      }
     },
     verificarValidadesAoIniciar() {
       if (window.EstoqueModule && typeof window.EstoqueModule.verificarAlertasValidade === "function") {
@@ -65569,211 +66167,15 @@ NSU: ${nsuGerado}`
       this.carregarConfiguracoes();
       this.showToast("\u{1F4BE} Dados da empresa atualizados com sucesso!", "success");
     },
-    // ==========================================
-    // CENTRAL DE NOTIFICAÇÕES & ALERTAS DO GERENTE
-    // ==========================================
-    verificarAlertasGerenteLogin() {
-      if (!window.AuthModule || !window.AuthModule.isGerente()) return;
-      const modalLogin = document.getElementById("modal-login-operador");
-      if (modalLogin && modalLogin.classList.contains("active")) return;
-      const produtos = StorageService.getProdutos() || [];
-      const hoje = /* @__PURE__ */ new Date();
-      hoje.setHours(0, 0, 0, 0);
-      const hojeStr = hoje.toISOString().split("T")[0];
-      const prodVencidos = [];
-      const prodVence15d = [];
-      const prodVence30d = [];
-      const isValidadeAtivo = StorageService.isModuloAtivo("validadeLotes");
-      if (isValidadeAtivo) {
-        produtos.forEach((p) => {
-          if (p && p.dataValidade) {
-            const dVal = /* @__PURE__ */ new Date(p.dataValidade + "T00:00:00");
-            const diffDias = Math.ceil((dVal - hoje) / (1e3 * 60 * 60 * 24));
-            if (diffDias < 0) {
-              prodVencidos.push({ ...p, diffDias });
-            } else if (diffDias <= 15) {
-              prodVence15d.push({ ...p, diffDias });
-            } else if (diffDias <= 30) {
-              prodVence30d.push({ ...p, diffDias });
-            }
-          }
-        });
-      }
-      const contas = StorageService.getContasPagar() || [];
-      const contasVencidas = [];
-      const contasVenceProximo = [];
-      let totalValorVencido = 0;
-      let totalValorProximo = 0;
-      contas.forEach((c) => {
-        if (c && c.status !== "pago" && c.vencimento) {
-          const val = parseFloat(c.valor) || 0;
-          if (c.vencimento < hojeStr) {
-            contasVencidas.push(c);
-            totalValorVencido += val;
-          } else {
-            const dVenc = /* @__PURE__ */ new Date(c.vencimento + "T00:00:00");
-            const diffDias = Math.ceil((dVenc - hoje) / (1e3 * 60 * 60 * 24));
-            if (diffDias <= 15) {
-              contasVenceProximo.push({ ...c, diffDias });
-              totalValorProximo += val;
-            }
-          }
-        }
-      });
-      const totalAlertas = prodVencidos.length + prodVence15d.length + prodVence30d.length + contasVencidas.length + contasVenceProximo.length;
-      if (totalAlertas === 0) return;
-      this.renderModalAlertaGerencial({
-        prodVencidos,
-        prodVence15d,
-        prodVence30d,
-        contasVencidas,
-        contasVenceProximo,
-        totalValorVencido,
-        totalValorProximo
-      });
-    },
-    renderModalAlertaGerencial(dados) {
-      const modal = document.getElementById("modal-alerta-gerencial-login");
-      const container = document.getElementById("alerta-gerencial-conteudo");
-      if (!modal || !container) return;
-      const formatarMoeda = (val) => {
-        return (parseFloat(val) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      };
-      const formatarData = (dataStr) => {
-        if (!dataStr) return "";
-        const [ano, mes, dia] = dataStr.split("-");
-        return dia + "/" + mes + "/" + ano;
-      };
-      let html = "";
-      const totalEstoque = dados.prodVencidos.length + dados.prodVence15d.length + dados.prodVence30d.length;
-      if (totalEstoque > 0) {
-        html += `
-        <div style="background: #ffffff; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); display: flex; flex-direction: column; gap: 10px;">
-          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 2px; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px;">
-            <span style="font-size: 18px;">\u{1F4E6}</span>
-            <strong style="font-size: 14.5px; font-weight: 800; color: var(--text-main);">Validade de Produtos no Estoque</strong>
-          </div>
-      `;
-        if (dados.prodVencidos.length > 0) {
-          html += `
-          <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;">
-            <div style="color: #b91c1c; font-weight: 800; font-size: 13px; display: flex; align-items: center; gap: 6px;">
-              \u{1F6A8} <span>${dados.prodVencidos.length} produto(s) J\xC1 VENCIDO(S)!</span>
-            </div>
-            <div style="font-size: 12px; color: #991b1b; margin-top: 4px; line-height: 1.4;">
-              ${dados.prodVencidos.slice(0, 3).map((p) => "\u2022 <strong>" + p.nome + "</strong> (Venceu em " + formatarData(p.dataValidade) + " - Saldo: " + (p.estoque || 0) + ")").join("<br>")}
-              ${dados.prodVencidos.length > 3 ? '<span style="font-weight: 700; color: #7f1d1d; display: block; margin-top: 2px;">+ mais ' + (dados.prodVencidos.length - 3) + " produto(s) vencido(s)</span>" : ""}
-            </div>
-          </div>
-        `;
-        }
-        if (dados.prodVence15d.length > 0) {
-          html += `
-          <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;">
-            <div style="color: #b45309; font-weight: 800; font-size: 13px; display: flex; align-items: center; gap: 6px;">
-              \u23F3 <span>${dados.prodVence15d.length} produto(s) vencem nos pr\xF3ximos 15 dias!</span>
-            </div>
-            <div style="font-size: 12px; color: #92400e; margin-top: 4px; line-height: 1.4;">
-              ${dados.prodVence15d.slice(0, 3).map((p) => "\u2022 <strong>" + p.nome + "</strong> (Vence em " + formatarData(p.dataValidade) + " - em " + p.diffDias + " dia(s))").join("<br>")}
-              ${dados.prodVence15d.length > 3 ? '<span style="font-weight: 700; color: #78350f; display: block; margin-top: 2px;">+ mais ' + (dados.prodVence15d.length - 3) + " produto(s)</span>" : ""}
-            </div>
-          </div>
-        `;
-        }
-        if (dados.prodVence30d.length > 0) {
-          html += `
-          <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 8px 12px;">
-            <div style="color: #1d4ed8; font-weight: 700; font-size: 12px; display: flex; align-items: center; gap: 6px;">
-              \u{1F4C5} <span>${dados.prodVence30d.length} produto(s) vencem entre 16 e 30 dias.</span>
-            </div>
-          </div>
-        `;
-        }
-        html += `
-          <div style="margin-top: auto; padding-top: 6px;">
-            <button type="button" class="btn-secondary-action" style="width: 100%; justify-content: center; height: 36px; font-size: 12px; font-weight: 700; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px;" onclick="App.irParaEstoqueComFiltro('${dados.prodVencidos.length > 0 ? "vencidos" : "vence15d"}')">
-              \u{1F4E6} Ver Produtos no Estoque [F3] \u2192
-            </button>
-          </div>
-        </div>`;
-      }
-      const totalContas = dados.contasVencidas.length + dados.contasVenceProximo.length;
-      if (totalContas > 0) {
-        html += `
-        <div style="background: #ffffff; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); display: flex; flex-direction: column; gap: 10px;">
-          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 2px; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px;">
-            <span style="font-size: 18px;">\u{1F4B3}</span>
-            <strong style="font-size: 14.5px; font-weight: 800; color: var(--text-main);">Contas a Pagar & Despesas</strong>
-          </div>
-      `;
-        if (dados.contasVencidas.length > 0) {
-          html += `
-          <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;">
-            <div style="color: #b91c1c; font-weight: 800; font-size: 13px; display: flex; align-items: center; justify-content: space-between;">
-              <span>\u{1F6A8} ${dados.contasVencidas.length} conta(s) VENCIDA(S) em atraso!</span>
-              <span style="font-family: 'JetBrains Mono'; font-weight: 900;">R$ ${formatarMoeda(dados.totalValorVencido)}</span>
-            </div>
-            <div style="font-size: 12px; color: #991b1b; margin-top: 4px; line-height: 1.4;">
-              ${dados.contasVencidas.slice(0, 3).map((c) => "\u2022 <strong>" + (c.descricao || "Despesa") + "</strong> (R$ " + formatarMoeda(c.valor) + " - Venceu em " + formatarData(c.vencimento) + ")").join("<br>")}
-              ${dados.contasVencidas.length > 3 ? '<span style="font-weight: 700; color: #7f1d1d; display: block; margin-top: 2px;">+ mais ' + (dados.contasVencidas.length - 3) + " conta(s)</span>" : ""}
-            </div>
-          </div>
-        `;
-        }
-        if (dados.contasVenceProximo.length > 0) {
-          html += `
-          <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 10px 12px;">
-            <div style="color: #b45309; font-weight: 800; font-size: 13px; display: flex; align-items: center; justify-content: space-between;">
-              <span>\u23F3 ${dados.contasVenceProximo.length} conta(s) a vencer nos pr\xF3ximos 15 dias</span>
-              <span style="font-family: 'JetBrains Mono'; font-weight: 900;">R$ ${formatarMoeda(dados.totalValorProximo)}</span>
-            </div>
-            <div style="font-size: 12px; color: #92400e; margin-top: 4px; line-height: 1.4;">
-              ${dados.contasVenceProximo.slice(0, 3).map((c) => "\u2022 <strong>" + (c.descricao || "Despesa") + "</strong> (R$ " + formatarMoeda(c.valor) + " - Vence em " + formatarData(c.vencimento) + ")").join("<br>")}
-              ${dados.contasVenceProximo.length > 3 ? '<span style="font-weight: 700; color: #78350f; display: block; margin-top: 2px;">+ mais ' + (dados.contasVenceProximo.length - 3) + " conta(s)</span>" : ""}
-            </div>
-          </div>
-        `;
-        }
-        html += `
-          <div style="margin-top: auto; padding-top: 6px;">
-            <button type="button" class="btn-secondary-action" style="width: 100%; justify-content: center; height: 36px; font-size: 12px; font-weight: 700; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px;" onclick="App.irParaContasPagar('${dados.contasVencidas.length > 0 ? "vencidas" : "pendentes"}')">
-              \u{1F4B3} Ver Painel de Contas a Pagar \u2192
-            </button>
-          </div>
-        </div>`;
-      }
-      container.className = totalEstoque > 0 && totalContas > 0 ? "alerta-gerencial-grid" : "alerta-gerencial-grid single-column";
-      container.innerHTML = html;
-      modal.classList.add("active");
-      const listenerTeclado = (e) => {
-        if (modal.classList.contains("active") && (e.key === "Enter" || e.key === "Escape")) {
-          e.preventDefault();
-          App.fecharModalAlertaGerencial();
-          window.removeEventListener("keydown", listenerTeclado);
-        }
-      };
-      window.addEventListener("keydown", listenerTeclado);
-    },
-    fecharModalAlertaGerencial() {
-      const modal = document.getElementById("modal-alerta-gerencial-login");
-      if (modal) modal.classList.remove("active");
-      setTimeout(() => {
-        const barcodeInput = document.getElementById("pdv-barcode-input");
-        if (barcodeInput) barcodeInput.focus();
-      }, 100);
-    },
     irParaEstoqueComFiltro(filtro = "todos") {
       this._manterFiltroValidadeEstoque = filtro || "todos";
-      this.fecharModalAlertaGerencial();
       this.trocarAba("estoque");
     },
     irParaEstoqueBaixo() {
       this._manterFiltroEstoqueBaixo = true;
-      this.fecharModalAlertaGerencial();
       this.trocarAba("estoque");
     },
     irParaContasPagar(filtro = "todos") {
-      this.fecharModalAlertaGerencial();
       this._manterSubAbaGerencia = "financeiro";
       this.trocarAba("gerencia");
       if (window.GerenciaModule) {

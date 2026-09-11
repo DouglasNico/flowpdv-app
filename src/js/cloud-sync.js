@@ -13,7 +13,10 @@ import {
   consolidarProdutosComMovimentos,
   normalizarMovimentos,
   mapearMovimentosPorId,
-  dividirEmLotes
+  dividirEmLotes,
+  mesclarConfigLoja,
+  montarCheckpointEstoque,
+  mesclarInventarios
 } from './merge-core.js';
 
 const COLECAO_BACKUPS = "backups_lojas";
@@ -35,6 +38,8 @@ const CHAVE_MANIFESTO = 'flowpdv_partes_manifesto';
 const CHAVE_ASSINATURAS = 'flowpdv_partes_hash';
 const CHAVE_MOV_ENVIADOS = 'flowpdv_movimentos_enviados';
 const CHAVE_MOV_RECEBIDOS = 'flowpdv_ultimo_mov_sync';
+const CHAVE_CHECKPOINT_ENVIADO = 'flowpdv_checkpoint_enviado_em';
+const CHAVE_INV_ENVIADOS = 'flowpdv_inventarios_enviados';
 
 export const CloudSyncModule = {
   debounceTimer: null,
@@ -137,11 +142,13 @@ export const CloudSyncModule = {
 
   mesclarProdutosComEstoque(nuvem = [], local = [], movimentosNuvem = []) {
     const movimentosLocais = StorageService.getMovimentosEstoque ? StorageService.getMovimentosEstoque() : [];
+    const checkpoint = StorageService.getCheckpointEstoque ? StorageService.getCheckpointEstoque() : null;
     const { produtos, novosMovimentos } = consolidarProdutosComMovimentos({
       produtosNuvem: nuvem,
       produtosLocais: local,
       movimentosNuvem,
-      movimentosLocais
+      movimentosLocais,
+      checkpoint
     });
 
     if (novosMovimentos.length && StorageService.saveMovimentosEstoque) {
@@ -319,6 +326,8 @@ export const CloudSyncModule = {
     }
 
     await this.enviarMovimentosPendentes(chave, movimentosEstoque);
+    await this.enviarInventariosPendentes(chave);
+    await this.enviarCheckpointEstoque(chave);
   },
 
   /** Slot na nuvem: turno aberto deste terminal, ou marcador de fechado (nunca deixa lixo "aberto"). */
@@ -389,7 +398,13 @@ export const CloudSyncModule = {
 
     const dados = snap.data() || {};
     const completo = await this.completarPacote(chave, dados, legado);
+    const checkpoint = await this.baixarCheckpointEstoque(chave);
+    if (checkpoint && StorageService.saveCheckpointEstoque && !StorageService.getCheckpointEstoque()) {
+      StorageService.saveCheckpointEstoque(checkpoint);
+    }
+    completo.checkpointEstoque = checkpoint;
     completo.movimentosEstoque = await this.baixarMovimentosNovos(chave, completo.movimentosEstoque);
+    completo.inventarios = await this.baixarInventariosNuvem(chave);
     return completo;
   },
 
@@ -421,16 +436,18 @@ export const CloudSyncModule = {
   },
 
   async baixarMovimentosNovos(chave, movimentosLegado = null) {
-    const meuTerminal = StorageService.getDeviceId();
+    const cp = StorageService.getCheckpointEstoque ? StorageService.getCheckpointEstoque() : null;
+    const janelaDias = (cp && cp.ultimoMovAt) ? 30 : 3;
     const desde = localStorage.getItem(CHAVE_MOV_RECEBIDOS)
-      || new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+      || (cp && cp.ultimoMovAt)
+      || new Date(Date.now() - janelaDias * 24 * 60 * 60 * 1000).toISOString();
 
     try {
       const consulta = query(
         collection(db, COLECAO_BACKUPS, chave, 'movimentos'),
         where('at', '>', desde),
         orderBy('at'),
-        limit(800)
+        limit(2000)
       );
       const snap = await getDocs(consulta);
 
@@ -440,7 +457,6 @@ export const CloudSyncModule = {
         const mov = d.data();
         if (!mov || !mov.id) return;
         if (mov.at && mov.at > marcaDagua) marcaDagua = mov.at;
-        if (mov.terminalId && mov.terminalId === meuTerminal) return;
         lista.push(mov);
       });
 
@@ -457,6 +473,80 @@ export const CloudSyncModule = {
     if (this.marcaDaguaMovimentos) {
       localStorage.setItem(CHAVE_MOV_RECEBIDOS, this.marcaDaguaMovimentos);
       this.marcaDaguaMovimentos = null;
+    }
+  },
+
+  async baixarCheckpointEstoque(chave) {
+    try {
+      const snap = await getDoc(doc(db, COLECAO_BACKUPS, chave, 'checkpoint', 'estoque'));
+      if (snap.exists()) return snap.data() || null;
+    } catch (e) {
+      console.warn('[CloudSync] Não foi possível ler o checkpoint de estoque:', e);
+    }
+    return null;
+  },
+
+  async enviarCheckpointEstoque(chave) {
+    const produtos = StorageService.getProdutos ? StorageService.getProdutos() : [];
+    if (!produtos.length) return;
+    const ultimo = localStorage.getItem(CHAVE_CHECKPOINT_ENVIADO);
+    if (ultimo && (Date.now() - (Date.parse(ultimo) || 0)) < 12 * 60 * 60 * 1000) return;
+
+    const movimentos = StorageService.getMovimentosEstoque ? StorageService.getMovimentosEstoque() : [];
+    const checkpoint = montarCheckpointEstoque(produtos, movimentos);
+    try {
+      await setDoc(doc(db, COLECAO_BACKUPS, chave, 'checkpoint', 'estoque'), {
+        ...checkpoint,
+        terminalId: StorageService.getDeviceId()
+      });
+      if (StorageService.saveCheckpointEstoque) StorageService.saveCheckpointEstoque(checkpoint);
+      localStorage.setItem(CHAVE_CHECKPOINT_ENVIADO, checkpoint.geradoEm);
+    } catch (e) {
+      console.warn('[CloudSync] Falha ao gravar checkpoint de estoque:', e);
+    }
+  },
+
+  async baixarInventariosNuvem(chave) {
+    try {
+      const snap = await getDocs(collection(db, COLECAO_BACKUPS, chave, 'inventarios'));
+      const lista = [];
+      snap.forEach(d => {
+        const dados = d.data();
+        if (dados && dados.id) lista.push(dados);
+      });
+      return lista;
+    } catch (e) {
+      console.warn('[CloudSync] Não foi possível ler os inventários:', e);
+      return [];
+    }
+  },
+
+  async enviarInventariosPendentes(chave) {
+    const lista = StorageService.getInventarios ? StorageService.getInventarios() : [];
+    if (!lista.length) return;
+    let enviados;
+    try {
+      enviados = JSON.parse(localStorage.getItem(CHAVE_INV_ENVIADOS) || '{}') || {};
+    } catch (e) {
+      enviados = {};
+    }
+    const pendentes = lista.filter(s => s && s.id && enviados[s.id] !== s.atualizadoEm);
+    if (!pendentes.length) return;
+    await Promise.all(pendentes.map(s => setDoc(
+      doc(db, COLECAO_BACKUPS, chave, 'inventarios', String(s.id)),
+      s
+    )));
+    pendentes.forEach(s => { enviados[s.id] = s.atualizadoEm; });
+    localStorage.setItem(CHAVE_INV_ENVIADOS, JSON.stringify(enviados));
+  },
+
+  aplicarInventariosRecebidos(nuvem) {
+    if (!Array.isArray(nuvem) || !nuvem.length) return;
+    const local = StorageService.getInventarios ? StorageService.getInventarios() : [];
+    const mesclado = mesclarInventarios(nuvem, local);
+    StorageService.saveInventarios(mesclado);
+    if (window.InventarioModule && typeof window.InventarioModule.renderModal === 'function') {
+      window.InventarioModule.renderModal();
     }
   },
 
@@ -526,11 +616,15 @@ export const CloudSyncModule = {
           StorageService.salvarCategorias(categoriasConsolidadas);
         }
         if (Array.isArray(cloudData.usuarios) && cloudData.usuarios.length > 0) {
-          StorageService.saveUsuarios(cloudData.usuarios);
+          StorageService.saveUsuarios(this.mesclarItensPorId(cloudData.usuarios, StorageService.getUsuarios()));
         }
         if (Array.isArray(cloudData.turnosHistorico) && cloudData.turnosHistorico.length > 0) {
-          StorageService.salvarHistoricoTurnos(cloudData.turnosHistorico);
+          StorageService.salvarHistoricoTurnos(this.mesclarItensPorId(cloudData.turnosHistorico, StorageService.getHistoricoTurnos()));
         }
+        if (cloudData.config && typeof cloudData.config === 'object' && !this.isUsuarioEditando()) {
+          StorageService.saveConfig(mesclarConfigLoja(cloudData.config, StorageService.getConfig() || {}), { carimbar: false });
+        }
+        this.aplicarInventariosRecebidos(cloudData.inventarios);
 
         // Se tínhamos itens locais novos (como notas XML ou produtos recém-criados), enviamos a base unificada de volta para a nuvem
         if (produtosConsolidados.length > cloudProds.length || contasConsolidadas.length > cloudContas.length || contasPagarPrecisamReenviar(contasConsolidadas, cloudContas) || clientesConsolidados.length > cloudClientes.length || vendasConsolidadas.length > cloudVendas.length || categoriasConsolidadas.length > (cloudData.categorias || []).length) {
@@ -602,6 +696,13 @@ export const CloudSyncModule = {
         try {
           cloudData = await this.completarPacote(chave, resumo);
           cloudData.movimentosEstoque = await this.baixarMovimentosNovos(chave, resumo.movimentosEstoque);
+          cloudData.inventarios = await this.baixarInventariosNuvem(chave);
+          if (!cloudData.checkpointEstoque) {
+            cloudData.checkpointEstoque = await this.baixarCheckpointEstoque(chave);
+            if (cloudData.checkpointEstoque && StorageService.saveCheckpointEstoque && !StorageService.getCheckpointEstoque()) {
+              StorageService.saveCheckpointEstoque(cloudData.checkpointEstoque);
+            }
+          }
         } catch (e) {
           console.warn('[CloudSync] Falha ao carregar as partes do pacote recebido:', e);
         }
@@ -658,6 +759,8 @@ export const CloudSyncModule = {
       localStorage.removeItem(CHAVE_MOV_RECEBIDOS);
       localStorage.removeItem(CHAVE_MANIFESTO);
       localStorage.removeItem(CHAVE_ASSINATURAS);
+      localStorage.removeItem(CHAVE_CHECKPOINT_ENVIADO);
+      localStorage.removeItem(CHAVE_INV_ENVIADOS);
       this.marcaDaguaMovimentos = null;
       await encerrarSessaoLoja();
 
@@ -731,8 +834,12 @@ export const CloudSyncModule = {
     if (!cloudData) return;
 
     // Produtos & Estoque
-    if (Array.isArray(cloudData.produtos) && cloudData.produtos.length > 0) {
-      StorageService.saveProdutos(cloudData.produtos);
+    if (Array.isArray(cloudData.produtos)) {
+      if (cloudData.checkpointEstoque && StorageService.saveCheckpointEstoque) {
+        StorageService.saveCheckpointEstoque(cloudData.checkpointEstoque);
+      }
+      const produtos = this.mesclarProdutosComEstoque(cloudData.produtos, [], cloudData.movimentosEstoque);
+      StorageService.saveProdutos(produtos);
     } else {
       StorageService.saveProdutos([]);
     }
@@ -770,6 +877,16 @@ export const CloudSyncModule = {
       StorageService.saveUsuarios(cloudData.usuarios);
     }
 
+    if (Array.isArray(cloudData.inventarios)) {
+      StorageService.saveInventarios(cloudData.inventarios);
+    } else if (StorageService.saveInventarios) {
+      StorageService.saveInventarios([]);
+    }
+
+    if (cloudData.config && typeof cloudData.config === 'object') {
+      StorageService.saveConfig(cloudData.config, { carimbar: false });
+    }
+
     // Categorias
     if (Array.isArray(cloudData.categorias) && cloudData.categorias.length > 0) {
       StorageService.salvarCategorias(cloudData.categorias);
@@ -797,6 +914,9 @@ export const CloudSyncModule = {
     const modalCli = document.getElementById('modal-novo-cliente');
     if (modalCli && modalCli.classList.contains('active')) return true;
 
+    const modalInv = document.getElementById('modal-inventario-sessao');
+    if (modalInv && modalInv.classList.contains('active')) return true;
+
     // 2. Verificar se o usuário está com foco em algum campo de digitação
     const active = document.activeElement;
     if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
@@ -817,7 +937,9 @@ export const CloudSyncModule = {
 
       // 1. Sincronizar Operadores
       if (Array.isArray(cloudData.usuarios) && cloudData.usuarios.length > 0) {
-        StorageService.saveUsuarios(cloudData.usuarios);
+        const usuariosConsolidados = this.mesclarItensPorId(cloudData.usuarios, StorageService.getUsuarios());
+        StorageService.saveUsuarios(usuariosConsolidados);
+        precisaReenviarBaseConsolidada = precisaReenviarBaseConsolidada || usuariosConsolidados.length > cloudData.usuarios.length;
         houveAlteracao = true;
         if (window.AuthModule) {
           if (typeof window.AuthModule.renderCardsLogin === 'function') window.AuthModule.renderCardsLogin();
@@ -917,12 +1039,14 @@ export const CloudSyncModule = {
       }
 
       // 9. Sincronizar Configurações da Loja (com blindagem contra sobrescrever digitação ativa)
-      if (cloudData.config && typeof cloudData.config === 'object') {
-        StorageService.saveConfig(cloudData.config);
-        if (!this.isUsuarioEditando() && window.App && typeof window.App.carregarConfiguracoes === 'function') {
+      if (cloudData.config && typeof cloudData.config === 'object' && !this.isUsuarioEditando()) {
+        StorageService.saveConfig(mesclarConfigLoja(cloudData.config, StorageService.getConfig() || {}), { carimbar: false });
+        if (window.App && typeof window.App.carregarConfiguracoes === 'function') {
           window.App.carregarConfiguracoes();
         }
       }
+
+      this.aplicarInventariosRecebidos(cloudData.inventarios);
 
       if (cloudData.atualizadoEm) {
         localStorage.setItem('flowpdv_ultimo_sync_cloud', cloudData.atualizadoEm);

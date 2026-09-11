@@ -573,6 +573,14 @@ export const XmlImporterModule = {
             criadoEm: new Date().toISOString()
           };
           produtosAtuais.unshift(novoProduto);
+          if (qtdFinal) {
+            StorageService.registrarMovimentoEstoque({
+              produtoId: novoProduto.id,
+              delta: qtdFinal,
+              origem: 'xml',
+              refId: novoProduto.id
+            });
+          }
           totalNovosCadastros++;
         }
       }

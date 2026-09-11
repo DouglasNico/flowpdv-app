@@ -1538,6 +1538,7 @@ export const EstoqueModule = {
     if (this.produtoEditandoId) {
       const index = produtos.findIndex(p => p.id === this.produtoEditandoId);
       if (index !== -1) {
+        const estoqueAntes = parseFloat(produtos[index].estoque) || 0;
         produtos[index] = {
           ...produtos[index],
           codigoBarras,
@@ -1572,6 +1573,16 @@ export const EstoqueModule = {
         precoClube,
           estoque: estoque
         });
+
+        const deltaEstoque = estoque - estoqueAntes;
+        if (controlarEstoque && deltaEstoque !== 0) {
+          StorageService.registrarMovimentoEstoque({
+            produtoId: this.produtoEditandoId,
+            delta: deltaEstoque,
+            origem: 'cadastro',
+            refId: this.produtoEditandoId
+          });
+        }
       }
     } else {
       // Se não informou código de barras, gera um código automático garantindo unicidade
@@ -1613,6 +1624,15 @@ export const EstoqueModule = {
         origem: document.getElementById('prod-origem')?.value || '0'
       };
       produtos.push(novoProduto);
+
+      if (controlarEstoque && estoque) {
+        StorageService.registrarMovimentoEstoque({
+          produtoId: novoProduto.id,
+          delta: estoque,
+          origem: 'cadastro',
+          refId: novoProduto.id
+        });
+      }
 
       // Log de Auditoria de Cadastro
       AuditModule.registrarLog('cadastro_produto', `Cadastrou o novo produto "${novoProduto.nome}" (Código: ${novoProduto.codigoBarras}, Venda: R$ ${novoProduto.precoVenda.toFixed(2)}, Estoque: ${novoProduto.estoque} un)`, {
