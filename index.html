@@ -2055,202 +2055,188 @@
     <!-- MODAL: CADASTRAR / EDITAR PRODUTO          -->
     <!-- ========================================== -->
     <div class="modal-overlay" id="modal-novo-produto">
-      <div class="modal-content-box" style="max-width: 620px; max-height: 88vh; display: flex; flex-direction: column; overflow: hidden; padding: 0;">
-        <div class="modal-header-bar" style="flex-shrink: 0; margin: 0; padding: 18px 24px;">
+      <div class="modal-content-box modal-produto-box">
+        <div class="modal-header-bar">
           <h3 id="modal-produto-title">➕ Cadastrar Novo Produto</h3>
           <button type="button" class="btn-close-modal" onclick="EstoqueModule.fecharModalProduto()">✕</button>
         </div>
-        <div class="modal-body-content" id="modal-produto-scroll-body" style="flex: 1; overflow-y: auto; padding: 16px 24px;">
-          <form id="form-produto" onsubmit="EstoqueModule.salvarProduto(event)">
-            <div class="form-grid-2" style="margin-bottom: 12px; align-items: start;">
+        <div class="modal-body-content" id="modal-produto-scroll-body">
+          <form id="form-produto" class="produto-form" onsubmit="EstoqueModule.salvarProduto(event)">
+            <div class="produto-ident">
               <div class="form-group-custom">
                 <label class="form-label-custom">Código de Barras / EAN *</label>
-                <input type="text" id="prod-codigo-barras" class="form-input-custom" placeholder="Bipe ou digite o código" style="font-family: 'JetBrains Mono'; font-weight: 700; width: 100%; box-sizing: border-box; text-transform: uppercase;" oninput="this.value = this.value.toUpperCase()">
-                <div style="display: flex; gap: 6px; margin-top: 6px;">
-                  <button type="button" id="btn-buscar-ean-online" class="btn-primary-action" style="flex: 1; padding: 0 8px; height: 32px; font-size: 11px; font-weight: 700; background: #0284c7; color: #fff; margin: 0; justify-content: center;" onclick="EstoqueModule.consultarEanManual()" title="Consultar nome e detalhes do produto no catálogo nacional online">
-                    Buscar
-                  </button>
-                  <button type="button" class="btn-primary-action" style="flex: 1; padding: 0 8px; height: 32px; font-size: 11px; font-weight: 700; background: #4f46e5; color: #fff; margin: 0; justify-content: center;" onclick="EstoqueModule.gerarCodigoInternoAutomatico()" title="Gerar código interno automático para produto sem código de barras de fábrica">
-                    Gerar
-                  </button>
+                <div class="produto-ean-row">
+                  <input type="text" id="prod-codigo-barras" class="form-input-custom" placeholder="Bipe ou digite o código" oninput="this.value = this.value.toUpperCase()">
+                  <button type="button" id="btn-buscar-ean-online" class="produto-ean-btn buscar" onclick="EstoqueModule.consultarEanManual()" title="Consultar nome e detalhes do produto no catálogo nacional online">Buscar</button>
+                  <button type="button" class="produto-ean-btn gerar" onclick="EstoqueModule.gerarCodigoInternoAutomatico()" title="Gerar código interno automático para produto sem código de barras de fábrica">Gerar</button>
                 </div>
               </div>
               <div class="form-group-custom">
                 <label class="form-label-custom">Categoria do Produto *</label>
-                <select id="prod-categoria" class="form-input-custom" required style="width: 100%; box-sizing: border-box;">
-                  <!-- Preenchido dinamicamente com as categorias do cliente -->
+                <select id="prod-categoria" class="form-input-custom" required>
                 </select>
               </div>
+              <div class="form-group-custom produto-nome">
+                <div class="produto-nome-head">
+                  <label class="form-label-custom">Nome / Descrição do Produto *</label>
+                  <span id="ean-lookup-status" class="produto-ean-status">🔍 Consultando catálogo nacional...</span>
+                </div>
+                <input type="text" id="prod-nome" class="form-input-custom" placeholder="Ex: Nome ou descrição completa do produto" required>
+              </div>
             </div>
 
-            <div class="form-group-custom" style="margin-bottom: 12px;">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                <label class="form-label-custom" style="margin: 0;">Nome / Descrição do Produto *</label>
-                <span id="ean-lookup-status" style="font-size: 11px; color: #0284c7; font-weight: 700; display: none;">🔍 Consultando catálogo nacional...</span>
-              </div>
-              <input type="text" id="prod-nome" class="form-input-custom" placeholder="Ex: Nome ou descrição completa do produto" required>
-            </div>
-
-            <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px;">
+            <div class="produto-precos">
               <div class="form-group-custom">
-                <label class="form-label-custom">Custo (R$)</label>
-                <input type="text" inputmode="numeric" id="prod-preco-custo" class="form-input-custom" placeholder="0,00" style="font-family: 'JetBrains Mono'; font-weight: 700;">
+                <label class="form-label-custom" id="prod-preco-custo-label">Custo (R$)</label>
+                <input type="text" inputmode="numeric" id="prod-preco-custo" class="form-input-custom produto-input-mono" placeholder="0,00">
               </div>
               <div class="form-group-custom">
-                <label class="form-label-custom">Venda (R$) *</label>
-                <input type="text" inputmode="numeric" id="prod-preco-venda" class="form-input-custom" placeholder="0,00" required style="font-size: 15px; font-weight: 800; color: var(--accent-green); font-family: 'JetBrains Mono';">
+                <label class="form-label-custom" id="prod-preco-venda-label">Venda (R$) *</label>
+                <input type="text" inputmode="numeric" id="prod-preco-venda" class="form-input-custom produto-input-mono produto-input-venda" placeholder="0,00" required>
               </div>
               <div class="form-group-custom" id="box-preco-clube">
-                <label class="form-label-custom" style="color: #a16207;">Clube (R$)</label>
-                <input type="text" inputmode="numeric" id="prod-preco-clube" class="form-input-custom" placeholder="0,00" style="font-size: 15px; font-weight: 800; color: #ca8a04; font-family: 'JetBrains Mono'; border-color: #fde047;">
+                <label class="form-label-custom produto-label-clube" id="prod-preco-clube-label">Clube (R$)</label>
+                <input type="text" inputmode="numeric" id="prod-preco-clube" class="form-input-custom produto-input-mono produto-input-clube" placeholder="0,00">
               </div>
             </div>
 
-            <!-- Controle de Estoque (Switch Ativar/Desativar) -->
-            <div id="form-cliente-secao-clube" style="background: #f8fafc; border: 1px solid var(--border-card); border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between;">
-              <div style="display: flex; align-items: center; gap: 10px;">
-                <span style="font-size: 20px;">📊</span>
-                <div>
-                  <strong style="font-size: 13px; color: var(--text-main); display: block;">Controlar Estoque deste Item</strong>
-                  <span id="prod-controlar-estoque-hint" style="font-size: 11px; color: var(--text-muted);">Controle de quantidade física com bloqueio quando zerado.</span>
+            <div class="produto-cards-2">
+              <div class="produto-card">
+                <div id="form-cliente-secao-clube" class="produto-card-switch">
+                  <div class="produto-card-copy">
+                    <span class="produto-card-ico">📊</span>
+                    <div>
+                      <strong>Controlar estoque</strong>
+                      <span id="prod-controlar-estoque-hint">Quantidade física com bloqueio quando zerado.</span>
+                    </div>
+                  </div>
+                  <label class="switch-toggle">
+                    <input type="checkbox" id="prod-controlar-estoque" checked onchange="EstoqueModule.toggleControleEstoque()">
+                    <span class="slider-toggle"></span>
+                  </label>
                 </div>
-              </div>
-              <label class="switch-toggle">
-                <input type="checkbox" id="prod-controlar-estoque" checked onchange="EstoqueModule.toggleControleEstoque()">
-                <span class="slider-toggle"></span>
-              </label>
-            </div>
-
-            <div id="box-campos-estoque" class="form-grid-2" style="margin-bottom: 12px;">
-              <div class="form-group-custom">
-                <label class="form-label-custom">Estoque Atual (Unidades)</label>
-                <input type="number" step="0.001" id="prod-estoque-atual" class="form-input-custom" placeholder="0">
-              </div>
-              <div class="form-group-custom">
-                <label class="form-label-custom">Estoque Mínimo (Alerta)</label>
-                <input type="number" step="0.001" id="prod-estoque-minimo" class="form-input-custom" value="5">
-              </div>
-            </div>
-
-            <!-- Venda Fracionada / Decimal & Data de Validade -->
-            <div class="form-grid-2" style="margin-bottom: 14px;">
-              <div id="box-modulo-balanca" style="background: #f8fafc; border: 1px solid var(--border-card); border-radius: 8px; padding: 10px 14px; display: flex; align-items: center; justify-content: space-between;">
-                <div style="display: flex; align-items: center; gap: 8px;">
-                  <span style="font-size: 18px;">⚖️</span>
-                  <div>
-                    <strong style="font-size: 12.5px; color: var(--text-main); display: block;">Venda Fracionada</strong>
-                    <span style="font-size: 10.5px; color: var(--text-muted);">Permite pesar/decimais (ex: 0.350 kg)</span>
-                  </div>
-                </div>
-                <label class="switch-toggle">
-                  <input type="checkbox" id="prod-permite-fracionado">
-                  <span class="slider-toggle"></span>
-                </label>
-              </div>
-
-              <div id="box-modulo-validade" class="form-group-custom">
-                <label class="form-label-custom">Data de Validade (Opcional)</label>
-                <input type="date" id="prod-data-validade" class="form-input-custom" style="cursor: pointer;" onclick="if(this.showPicker) this.showPicker()">
-              </div>
-            </div>
-
-            <!-- Grade / Atacado / Kit / Vestuário (Opcional e Expansível) -->
-            <div id="box-modulo-fardos" style="background: #f8fafc; border: 1px solid var(--border-card); border-radius: 8px; padding: 12px; margin-bottom: 16px; transition: all 0.2s ease;">
-              <div style="display: flex; align-items: center; justify-content: space-between; cursor: pointer; user-select: none;" onclick="EstoqueModule.toggleGradeFracionada()">
-                <div id="titulo-modulo-fardos" style="display: flex; align-items: center; gap: 8px;">
-                  <span style="font-size: 16px;">📦</span>
-                  <div>
-                    <strong style="font-size: 13px; color: var(--text-main); display: block;">Venda em Atacado / Kit / Grade (Opcional)</strong>
-                    <span style="font-size: 11px; color: var(--text-muted);">Defina grade de tamanhos, cores ou preço com desconto para kits/fardos.</span>
-                  </div>
-                </div>
-                <span id="grade-toggle-icon" style="font-size: 12px; font-weight: 800; color: #6366f1; background: #e0e7ff; padding: 3px 8px; border-radius: 4px;">➕ Configurar</span>
-              </div>
-
-              <div id="grade-fracionada-campos" style="display: none; margin-top: 12px; border-top: 1px dashed #cbd5e1; padding-top: 10px;">
-                <div class="form-grid-2" style="margin-bottom: 8px;">
-                  <div>
-                    <label id="label-nome-embalagem-grade" style="font-size: 11px; color: var(--text-dim); font-weight: 700; display: block; margin-bottom: 3px;">Nome da Embalagem / Grade:</label>
-                    <input type="text" id="prod-unidade-fracionada" class="form-input-custom" placeholder="Ex: Tam M, Fardo c/ 12, Kit c/ 3">
-                  </div>
-                  <div>
-                    <label style="font-size: 11px; color: var(--text-dim); font-weight: 700; display: block; margin-bottom: 3px;">Qtd de Unidades no Pacote:</label>
-                    <input type="number" id="prod-fator-conversao" class="form-input-custom" placeholder="12">
-                  </div>
-                </div>
-                <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;">
-                  <div>
-                    <label style="font-size: 11px; color: var(--text-dim); font-weight: 700; display: block; margin-bottom: 3px;">Código de Barras do Pacote/Fardo:</label>
-                    <input type="text" id="prod-codigo-barras-fardo" class="form-input-custom" placeholder="Bipe o código do fardo" style="font-family: 'JetBrains Mono';">
-                  </div>
-                  <div>
-                    <label style="font-size: 11px; color: var(--text-dim); font-weight: 700; display: block; margin-bottom: 3px;">Preço de Venda do Pacote (R$):</label>
-                    <input type="text" inputmode="numeric" id="prod-preco-fardo" class="form-input-custom" placeholder="0,00" style="font-family: 'JetBrains Mono'; font-weight: 700; color: #4338ca;">
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Dados Fiscais (NFC-e / SAT) -->
-            <div style="background: #f8fafc; border: 1px solid var(--border-card); border-radius: 8px; padding: 12px; margin-bottom: 12px; transition: all 0.2s ease;">
-              <div style="display: flex; align-items: center; justify-content: space-between; cursor: pointer; user-select: none;" onclick="EstoqueModule.toggleDadosFiscais()">
-                <div style="display: flex; align-items: center; gap: 8px;">
-                  <span style="font-size: 16px;">🏛️</span>
-                  <div>
-                    <strong style="font-size: 13px; color: var(--text-main); display: block;">Dados Fiscais & NFC-e (Opcional)</strong>
-                    <span style="font-size: 11px; color: var(--text-muted);">NCM, CEST, CFOP, CSOSN e Origem para emissão fiscal.</span>
-                  </div>
-                </div>
-                <span id="fiscal-toggle-icon" style="font-size: 12px; font-weight: 800; color: #0284c7; background: #e0f2fe; padding: 3px 8px; border-radius: 4px;">➕ Configurar</span>
-              </div>
-
-              <div id="dados-fiscais-campos" style="display: none; margin-top: 12px; border-top: 1px dashed #cbd5e1; padding-top: 10px;">
-                <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 8px;">
-                  <div>
-                    <label style="font-size: 11px; color: var(--text-dim); font-weight: 700; display: block; margin-bottom: 3px;">Código NCM (8 dígitos):</label>
-                    <input type="text" id="prod-ncm" class="form-input-custom" placeholder="Ex: 22030000" style="font-family: 'JetBrains Mono'; font-weight: 700;">
-                  </div>
-                  <div>
-                    <label style="font-size: 11px; color: var(--text-dim); font-weight: 700; display: block; margin-bottom: 3px;">Código CEST (Opcional):</label>
-                    <input type="text" id="prod-cest" class="form-input-custom" placeholder="Ex: 0300100" style="font-family: 'JetBrains Mono'; font-weight: 700;">
-                  </div>
-                  <div>
-                    <label style="font-size: 11px; color: var(--text-dim); font-weight: 700; display: block; margin-bottom: 3px;">CFOP Padrão:</label>
-                    <input type="text" id="prod-cfop" class="form-input-custom" value="5102" style="font-family: 'JetBrains Mono'; font-weight: 700;">
-                  </div>
-                </div>
-                <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 10px;">
+                <div id="box-campos-estoque" class="produto-estoque-grid">
                   <div class="form-group-custom">
-                    <label class="form-label-custom" style="font-weight: 700; color: #334155; margin-bottom: 4px;">🏷️ CSOSN (Simples Nacional) / CST:</label>
-                    <select id="prod-csosn" class="form-select-custom" style="font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; width: 100%;">
-                      <option value="102">102 - Tributada pelo Simples s/ crédito</option>
-                      <option value="500">500 - ICMS cobrado anteriormente por ST</option>
-                      <option value="101">101 - Tributada c/ permissão de crédito</option>
-                      <option value="103">103 - Isenção do ICMS no Simples</option>
-                      <option value="400">400 - Não tributada pelo Simples</option>
-                      <option value="900">900 - Outros</option>
-                    </select>
+                    <label class="form-label-custom" id="prod-estoque-atual-label">Estoque atual</label>
+                    <input type="number" step="0.001" id="prod-estoque-atual" class="form-input-custom" placeholder="0">
                   </div>
                   <div class="form-group-custom">
-                    <label class="form-label-custom" style="font-weight: 700; color: #334155; margin-bottom: 4px;">🌐 Origem da Mercadoria:</label>
-                    <select id="prod-origem" class="form-select-custom" style="font-size: 12px; font-weight: 600; width: 100%;">
-                      <option value="0">0 - Nacional</option>
-                      <option value="1">1 - Estrangeira (Importação direta)</option>
-                      <option value="2">2 - Estrangeira (Adquirida no mercado interno)</option>
-                    </select>
+                    <label class="form-label-custom" id="prod-estoque-minimo-label">Estoque mínimo</label>
+                    <input type="number" step="0.001" id="prod-estoque-minimo" class="form-input-custom" value="5">
+                  </div>
+                </div>
+              </div>
+
+              <div class="produto-card-stack">
+                <div id="box-modulo-balanca" class="produto-card produto-card-switch">
+                  <div class="produto-card-copy">
+                    <span class="produto-card-ico">⚖️</span>
+                    <div>
+                      <strong>Venda fracionada</strong>
+                      <span id="prod-fracionado-hint">Liga isso em carne, frios, queijo… preço e estoque passam a ser por kg.</span>
+                    </div>
+                  </div>
+                  <label class="switch-toggle">
+                    <input type="checkbox" id="prod-permite-fracionado" onchange="EstoqueModule.toggleVendaFracionada()">
+                    <span class="slider-toggle"></span>
+                  </label>
+                </div>
+                <div id="box-modulo-validade" class="produto-card">
+                  <label class="form-label-custom">Data de validade (opcional)</label>
+                  <input type="date" id="prod-data-validade" class="form-input-custom" onclick="if(this.showPicker) this.showPicker()">
+                </div>
+              </div>
+            </div>
+
+            <div class="produto-extras">
+              <div id="box-modulo-fardos" class="produto-card produto-card-extra">
+                <div class="produto-extra-head" onclick="EstoqueModule.toggleGradeFracionada()">
+                  <div id="titulo-modulo-fardos" class="produto-card-copy">
+                    <span class="produto-card-ico">📦</span>
+                    <div>
+                      <strong>Grade / fardo (opcional)</strong>
+                      <span>Tamanho, cor ou preço de kit/fardo.</span>
+                    </div>
+                  </div>
+                  <span id="grade-toggle-icon" class="produto-extra-chip indigo">➕ Configurar</span>
+                </div>
+                <div id="grade-fracionada-campos" class="produto-extra-campos" style="display: none;">
+                  <div class="produto-estoque-grid">
+                    <div>
+                      <label id="label-nome-embalagem-grade" class="form-label-custom">Nome da embalagem / grade</label>
+                      <input type="text" id="prod-unidade-fracionada" class="form-input-custom" placeholder="Ex: Tam M, Fardo c/ 12, Kit c/ 3">
+                    </div>
+                    <div>
+                      <label class="form-label-custom">Qtd de unidades no pacote</label>
+                      <input type="number" id="prod-fator-conversao" class="form-input-custom" placeholder="12">
+                    </div>
+                    <div>
+                      <label class="form-label-custom">Código de barras do fardo</label>
+                      <input type="text" id="prod-codigo-barras-fardo" class="form-input-custom produto-input-mono" placeholder="Bipe o código do fardo">
+                    </div>
+                    <div>
+                      <label class="form-label-custom">Preço do pacote (R$)</label>
+                      <input type="text" inputmode="numeric" id="prod-preco-fardo" class="form-input-custom produto-input-mono produto-input-fardo" placeholder="0,00">
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="produto-card produto-card-extra">
+                <div class="produto-extra-head" onclick="EstoqueModule.toggleDadosFiscais()">
+                  <div class="produto-card-copy">
+                    <span class="produto-card-ico">🏛️</span>
+                    <div>
+                      <strong>Dados fiscais / NFC-e (opcional)</strong>
+                      <span>NCM, CEST, CFOP, CSOSN e origem.</span>
+                    </div>
+                  </div>
+                  <span id="fiscal-toggle-icon" class="produto-extra-chip blue">➕ Configurar</span>
+                </div>
+                <div id="dados-fiscais-campos" class="produto-extra-campos" style="display: none;">
+                  <div class="produto-fiscal-grid">
+                    <div>
+                      <label class="form-label-custom">NCM (8 dígitos)</label>
+                      <input type="text" id="prod-ncm" class="form-input-custom produto-input-mono" placeholder="Ex: 22030000">
+                    </div>
+                    <div>
+                      <label class="form-label-custom">CEST</label>
+                      <input type="text" id="prod-cest" class="form-input-custom produto-input-mono" placeholder="Ex: 0300100">
+                    </div>
+                    <div>
+                      <label class="form-label-custom">CFOP padrão</label>
+                      <input type="text" id="prod-cfop" class="form-input-custom produto-input-mono" value="5102">
+                    </div>
+                  </div>
+                  <div class="produto-estoque-grid" style="margin-top: 10px;">
+                    <div class="form-group-custom">
+                      <label class="form-label-custom">CSOSN / CST</label>
+                      <select id="prod-csosn" class="form-select-custom produto-select">
+                        <option value="102">102 - Tributada pelo Simples s/ crédito</option>
+                        <option value="500">500 - ICMS cobrado anteriormente por ST</option>
+                        <option value="101">101 - Tributada c/ permissão de crédito</option>
+                        <option value="103">103 - Isenção do ICMS no Simples</option>
+                        <option value="400">400 - Não tributada pelo Simples</option>
+                        <option value="900">900 - Outros</option>
+                      </select>
+                    </div>
+                    <div class="form-group-custom">
+                      <label class="form-label-custom">Origem da mercadoria</label>
+                      <select id="prod-origem" class="form-select-custom produto-select">
+                        <option value="0">0 - Nacional</option>
+                        <option value="1">1 - Estrangeira (Importação direta)</option>
+                        <option value="2">2 - Estrangeira (Adquirida no mercado interno)</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           </form>
         </div>
-        <div class="modal-footer-bar" style="padding: 12px 24px; background: #ffffff; border-top: 1px solid var(--border-subtle); display: flex; gap: 10px; flex-shrink: 0;">
-          <button type="submit" form="form-produto" class="btn-primary-action" style="flex: 1; justify-content: center; height: 44px; margin: 0;">
-            💾 Salvar Produto
-          </button>
-          <button type="button" class="btn-secondary-action" style="height: 44px; padding: 0 20px; margin: 0;" onclick="EstoqueModule.fecharModalProduto()">
-            Cancelar
-          </button>
+        <div class="modal-footer-bar produto-form-footer">
+          <button type="button" class="btn-secondary-action" onclick="EstoqueModule.fecharModalProduto()">Cancelar</button>
+          <button type="submit" form="form-produto" class="btn-primary-action">💾 Salvar Produto</button>
         </div>
       </div>
     </div>
@@ -2434,26 +2420,36 @@
         <div class="modal-body-content inventario-body">
           <p class="inventario-hint">Bipar não mexe no saldo. Só produtos lidos entram. O que ninguém bipar não zera. Os 3 PDVs podem contar a mesma sessão.</p>
           <div id="inventario-aviso-venda" class="inventario-aviso" style="display:none;"></div>
+          <div id="inventario-aviso-processado" class="inventario-aviso-ok" style="display:none;"></div>
           <div id="inventario-bipagem-box">
             <label class="form-label-custom">Bipar código de barras</label>
             <div class="inventario-bip-row">
-              <input type="text" id="inventario-bipar-codigo" class="form-input-custom" placeholder="Bipe ou digite o código..." onkeydown="if(event.key==='Enter'){event.preventDefault();InventarioModule.confirmarBipagem();}">
-              <input type="number" id="inventario-bipar-qtd" class="form-input-custom" value="1" min="1" step="1">
+              <input type="text" id="inventario-bipar-codigo" class="form-input-custom" placeholder="Bipe ou digite o código..." onkeydown="InventarioModule.onCodigoKey(event)">
+              <input type="number" id="inventario-bipar-qtd" class="form-input-custom" value="1" min="1" step="any" placeholder="Qtd" title="Quantidade — Enter manda pra lista" onkeydown="InventarioModule.onQtdKey(event)" onfocus="this.select()">
               <button type="button" class="chip-btn inventario-btn-ok" onclick="InventarioModule.confirmarBipagem()">Bipar</button>
             </div>
             <div id="inventario-erro-msg" class="login-erro" style="display:none;"></div>
           </div>
           <div class="inventario-lista-head">
-            <span>Produtos lidos nesta sessão</span>
+            <span id="inventario-lista-titulo">Produtos lidos nesta sessão</span>
             <span id="inventario-count-lidos">0 lido(s)</span>
+          </div>
+          <div class="inventario-cols" aria-hidden="true">
+            <span>Produto</span>
+            <span>Sistema</span>
+            <span>Contado</span>
+            <span>Diferença</span>
+            <span class="inventario-col-atualizado" title="Estoque atualizado">Atualizado</span>
+            <span class="inventario-col-del"></span>
           </div>
           <div id="inventario-lista-lidos" class="inventario-lista"></div>
         </div>
         <div class="modal-footer-bar inventario-footer">
           <button type="button" class="btn-toolbar-estoque" onclick="InventarioModule.fecharModal()">Fechar</button>
           <button type="button" id="btn-inventario-reabrir" class="btn-toolbar-estoque" style="display:none;" onclick="InventarioModule.confirmarReabrir()">Reabrir contagem</button>
-          <button type="button" id="btn-inventario-concluir" class="btn-toolbar-estoque" onclick="InventarioModule.confirmarConcluir()">Concluir</button>
+          <button type="button" id="btn-inventario-concluir" class="btn-toolbar-estoque" onclick="InventarioModule.confirmarConcluir()">Pausar contagem</button>
           <button type="button" id="btn-inventario-processar" class="btn-toolbar-estoque primary" onclick="InventarioModule.confirmarProcessar()">Processar (gerente)</button>
+          <button type="button" id="btn-inventario-nova" class="btn-toolbar-estoque primary" style="display:none;" onclick="InventarioModule.novaContagem()">Nova contagem</button>
         </div>
       </div>
     </div>
@@ -3152,17 +3148,20 @@
     <div class="modal-overlay login-screen-overlay" id="modal-login-operador">
       <div class="login-screen">
         <aside class="login-screen-brand">
-          <div class="login-screen-brand-top">
-            <img src="src/assets/FlowPDV-Logo.png" alt="FlowPDV" class="login-screen-logo">
+          <div class="login-screen-wordmark">
+            <img src="src/assets/flow-cart.png" alt="" class="login-screen-cart">
+            <div class="login-screen-name" aria-label="FlowPDV">
+              <span class="login-flow">Flow</span><span class="login-pdv">PDV</span>
+            </div>
             <p class="login-screen-kicker">Sistema frente de caixa</p>
-          </div>
-          <div class="login-screen-loja-logo-wrap" id="login-screen-loja-logo-wrap">
-            <img id="login-screen-loja-logo" alt="Logo da loja" class="login-screen-loja-logo">
           </div>
         </aside>
         <section class="login-screen-panel">
-          <div class="login-screen-card">
-            <h2>Acesso do operador</h2>
+          <div class="login-screen-panel-inner">
+            <div class="login-screen-loja-logo-wrap" id="login-screen-loja-logo-wrap">
+              <img id="login-screen-loja-logo" alt="Logo da loja" class="login-screen-loja-logo">
+            </div>
+            <div class="login-screen-card">
             <div class="login-field">
               <div class="login-field-head">
                 <label for="login-operador-select">Operador</label>
@@ -3178,9 +3177,16 @@
               <input type="password" id="login-pin-input" class="form-input-custom login-pin" placeholder="••••" maxlength="8" onkeydown="if(event.key === 'Enter') AuthModule.executarLogin()">
               <div id="login-erro-msg" class="login-erro">Senha ou PIN incorreto!</div>
             </div>
-            <button type="button" class="login-submit" onclick="AuthModule.executarLogin()">Entrar no sistema</button>
+            <button type="button" class="login-submit" id="login-submit-btn" onclick="AuthModule.executarLogin()">Entrar</button>
+            </div>
           </div>
         </section>
+        <div id="login-carregando" class="login-carregando" aria-live="polite" aria-busy="false">
+          <div class="login-carregando-box">
+            <span class="login-carregando-spinner"></span>
+            <span>Carregando...</span>
+          </div>
+        </div>
       </div>
     </div>
     <!-- ========================================== -->

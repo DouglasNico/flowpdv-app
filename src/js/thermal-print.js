@@ -19,6 +19,79 @@ export const ThermalPrintModule = {
     return `R$ ${Number(valor || 0).toFixed(2).replace('.', ',')}`;
   },
 
+  escCupom(txt) {
+    return String(txt || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  },
+
+  codigoCurtoCupom(item) {
+    const digits = String(item && (item.codigoBarras || item.id) || '').replace(/\D/g, '');
+    if (digits.length >= 5) return digits.slice(-5);
+    const id = String(item && item.id || '').replace(/[^A-Z0-9]/gi, '');
+    return (id.slice(-5) || '-----').toUpperCase();
+  },
+
+  formatarQtdCupom(qtd) {
+    const n = Number(qtd) || 0;
+    if (Number.isInteger(n)) return String(n);
+    return n.toFixed(3).replace('.', ',').replace(/0+$/, '').replace(/,$/, '');
+  },
+
+  itemEhPeso(item) {
+    if (!item) return false;
+    if (item.permiteFracionado === true) return true;
+    return !!(item.unidade && String(item.unidade).toLowerCase() === 'kg');
+  },
+
+  unidadeQtdCupom(item) {
+    return this.itemEhPeso(item) ? 'KG' : 'UN';
+  },
+
+  htmlItensCupom(itens, is80) {
+    const lista = itens || [];
+    if (is80) {
+      return `
+        <table class="table-items">
+          <thead>
+            <tr class="bold">
+              <td class="col-cod">COD</td>
+              <td>DESCR</td>
+              <td class="col-num">QTD</td>
+              <td class="col-num">VL UNIT</td>
+              <td class="col-num">TOTAL</td>
+            </tr>
+          </thead>
+          <tbody>
+            ${lista.map((item) => {
+              const qtd = Number(item.quantidade) || 0;
+              const vu = Number(item.precoUnitario) || 0;
+              return `<tr>
+                <td class="col-cod">${this.escCupom(this.codigoCurtoCupom(item))}</td>
+                <td class="col-desc">${this.escCupom(item.nome)}</td>
+                <td class="col-num">${this.formatarQtdCupom(qtd)} ${this.unidadeQtdCupom(item)}</td>
+                <td class="col-num">${vu.toFixed(2).replace('.', ',')}</td>
+                <td class="col-num">${(vu * qtd).toFixed(2).replace('.', ',')}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+    return lista.map((item) => {
+      const qtd = Number(item.quantidade) || 0;
+      const vu = Number(item.precoUnitario) || 0;
+      return `<div class="item-block">
+        <div class="item-name">${this.escCupom(this.codigoCurtoCupom(item))} ${this.escCupom(item.nome)}</div>
+        <div class="item-vals">
+          <span>${this.formatarQtdCupom(qtd)} ${this.unidadeQtdCupom(item)} x ${vu.toFixed(2).replace('.', ',')}${this.itemEhPeso(item) ? '/kg' : ''}</span>
+          <span class="money">${(vu * qtd).toFixed(2).replace('.', ',')}</span>
+        </div>
+      </div>`;
+    }).join('');
+  },
+
   linhaPagamentoHtml(nome, valor) {
     return `<tr><td>${this.rotuloFormaCupom(nome)}</td><td class="text-right money">${this.formatarMoedaCupom(valor)}</td></tr>`;
   },
@@ -45,8 +118,8 @@ export const ThermalPrintModule = {
     }
 
     return `
-      <div class="bold">Pagamento</div>
       <table class="pay-table">
+        <tr class="bold"><td>FORMA DE PAGAMENTO</td><td class="text-right">VALOR PAGO</td></tr>
         ${linhas.join('')}
       </table>
     `;
@@ -103,6 +176,14 @@ export const ThermalPrintModule = {
 
     const isNfce = Boolean(venda.chaveNfe || venda.statusFiscal === 'autorizada');
     const chaveFormatada = (venda.chaveNfe || '').replace(/(.{4})/g, '$1 ').trim();
+    const is80 = config.impressoraTipo === '80mm';
+    const qtdeItens = (venda.itens || []).reduce((acc, item) => {
+      if (this.itemEhPeso(item)) return acc + 1;
+      return acc + (Number(item.quantidade) || 0);
+    }, 0);
+    const fiscal = StorageService.getFiscalConfig ? StorageService.getFiscalConfig() : {};
+    const cnpj = fiscal.cnpjEmitente || config.cnpj || '';
+    const ie = fiscal.inscricaoEstadual || '';
 
     const html = `
       <!DOCTYPE html>
@@ -112,118 +193,95 @@ export const ThermalPrintModule = {
         <style>
           @page { margin: 0; size: auto; }
           body {
-            font-family: 'Courier New', monospace;
+            font-family: 'Courier New', Courier, monospace;
             width: ${largura};
             margin: 0 auto;
-            padding: 8px 4px;
+            padding: 6px 3px 10px;
             font-size: 11px;
-            line-height: 1.3;
+            line-height: 1.28;
             color: #000;
             background: #fff;
             hyphens: none;
             -webkit-hyphens: none;
+            word-break: normal;
+            overflow-wrap: break-word;
           }
           .text-center { text-align: center; }
           .text-right { text-align: right; }
           .bold { font-weight: bold; }
-          .divider { border-top: 1px dashed #000; margin: 6px 0; }
-          .money { white-space: nowrap; }
+          .divider { border-top: 1px dashed #000; margin: 5px 0; }
+          .money, .col-num, .col-cod { white-space: nowrap; }
           .table-items { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 10px; }
-          .table-items td { padding: 2px 0; vertical-align: top; overflow-wrap: anywhere; }
-          .table-items td:nth-child(2) { width: 22px; white-space: nowrap; }
-          .table-items td:nth-child(3) { width: 64px; white-space: nowrap; }
-          .pay-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 11px; margin-top: 2px; }
-          .pay-table td { padding: 1px 0; vertical-align: top; }
-          .pay-table td:first-child { overflow-wrap: anywhere; padding-right: 6px; }
-          .pay-table td:last-child { width: 64px; }
+          .table-items td { padding: 2px 0; vertical-align: top; }
+          .col-cod { width: 38px; }
+          .col-num { width: 58px; text-align: right; }
+          .col-desc { padding-right: 4px; overflow-wrap: break-word; word-break: normal; hyphens: none; }
+          .item-block { margin: 3px 0 5px; }
+          .item-name { overflow-wrap: break-word; word-break: normal; hyphens: none; }
+          .item-vals { display: flex; justify-content: space-between; gap: 8px; white-space: nowrap; }
+          .pay-table, .tot-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 11px; }
+          .pay-table td, .tot-table td { padding: 1px 0; vertical-align: top; }
+          .pay-table td:first-child, .tot-table td:first-child { padding-right: 6px; overflow-wrap: break-word; word-break: normal; }
+          .pay-table td:last-child, .tot-table td:last-child { width: 78px; white-space: nowrap; }
+          .chave { font-size: 9px; letter-spacing: 0.2px; word-break: break-all; }
         </style>
       </head>
       <body>
-        <div class="text-center bold" style="font-size: 13px;">${config.nomeEmpresa || 'FLOWPDV'}</div>
-        ${config.cidade ? `<div class="text-center">${config.cidade}</div>` : ''}
-        ${config.cnpj ? `<div class="text-center">CNPJ: ${config.cnpj}</div>` : ''}
-        ${config.telefone ? `<div class="text-center">Tel/Whats: ${config.telefone}</div>` : ''}
-        
+        <div class="text-center bold" style="font-size: 13px;">${this.escCupom(config.nomeEmpresa || 'FLOWPDV')}</div>
+        ${config.cidade ? `<div class="text-center">${this.escCupom(config.cidade)}</div>` : ''}
+        ${cnpj ? `<div class="text-center">CNPJ: ${this.escCupom(cnpj)}</div>` : ''}
+        ${ie ? `<div class="text-center">IE: ${this.escCupom(ie)}</div>` : ''}
+        ${config.telefone ? `<div class="text-center">Tel: ${this.escCupom(config.telefone)}</div>` : ''}
+
         <div class="divider"></div>
         ${isNfce ? `
-          <div class="text-center bold">DANFE NFC-e</div>
-          <div class="text-center bold">Documento Auxiliar</div>
-          <div class="text-center bold">Nota Fiscal de Consumidor Eletrônica</div>
-          ${venda.ambiente === 'homologacao' ? '<div class="text-center bold" style="color: #555; font-size: 9.5px; margin-top: 2px;">EMITIDA EM HOMOLOGAÇÃO - SEM VALOR FISCAL</div>' : ''}
-          <div style="font-size: 10px; margin-top: 4px;">NFC-e Nº: <strong>${venda.numeroNfce || 1}</strong> &bull; Série: <strong>${venda.serieNfce || 1}</strong></div>
-          <div style="font-size: 10px;">Protocolo: <strong>${venda.protocoloNfe || '135260000000000'}</strong></div>
+          <div class="text-center bold">Documento Auxiliar da Nota Fiscal</div>
+          <div class="text-center bold">de Consumidor Eletrônica</div>
+          ${venda.ambiente === 'homologacao' ? '<div class="text-center bold" style="font-size: 9.5px; margin-top: 2px;">EMITIDA EM HOMOLOGAÇÃO - SEM VALOR FISCAL</div>' : ''}
         ` : `
           <div class="text-center bold">CUPOM NÃO FISCAL</div>
         `}
-        <div>Venda: #${StorageService.formatarNumeroVenda(venda)}</div>
-        <div>Data: ${new Date(venda.data).toLocaleString('pt-BR')}</div>
-        <div>Operador: ${venda.operador || 'Caixa'}</div>
-        ${venda.cpfCliente ? `
-          <div class="bold" style="font-size: 10.5px; margin-top: 2px;">CONSUMIDOR CPF: ${venda.cpfCliente}</div>
-        ` : (isNfce ? `
-          <div style="font-size: 9.5px; margin-top: 2px; color: #444;">CONSUMIDOR NÃO IDENTIFICADO</div>
-        ` : '')}
-        <div class="divider"></div>
 
-        <table class="table-items">
-          <thead>
-            <tr class="bold">
-              <td>ITEM</td>
-              <td class="text-center">QTD</td>
-              <td class="text-right">TOTAL</td>
-            </tr>
-          </thead>
-          <tbody>
-            ${(venda.itens || []).map(item => `
-              <tr>
-                <td>${item.nome}</td>
-                <td class="text-center">${item.quantidade}x</td>
-                <td class="text-right money">R$ ${(item.precoUnitario * item.quantidade).toFixed(2).replace('.', ',')}</td>
-              </tr>
-            `).join('')}
-          </tbody>
+        <div class="divider"></div>
+        ${this.htmlItensCupom(venda.itens, is80)}
+
+        <div class="divider"></div>
+        <table class="tot-table">
+          <tr><td>QTDE. TOTAL DE ITENS</td><td class="text-right">${this.formatarQtdCupom(qtdeItens)}</td></tr>
+          <tr><td>VALOR TOTAL</td><td class="text-right money">${this.formatarMoedaCupom(venda.subtotal || venda.total)}</td></tr>
+          ${venda.desconto > 0 ? `<tr><td>DESCONTO</td><td class="text-right money">- ${this.formatarMoedaCupom(venda.desconto)}</td></tr>` : ''}
+          <tr class="bold"><td>VALOR A PAGAR</td><td class="text-right money">${this.formatarMoedaCupom(venda.total)}</td></tr>
         </table>
 
-        <div class="divider"></div>
-        <div style="display: flex; justify-content: space-between;">
-          <span>Subtotal:</span>
-          <span class="money">R$ ${(venda.subtotal || venda.total || 0).toFixed(2).replace('.', ',')}</span>
-        </div>
-        ${venda.desconto > 0 ? `
-          <div style="display: flex; justify-content: space-between;">
-            <span>Desconto:</span>
-            <span class="money">- R$ ${venda.desconto.toFixed(2).replace('.', ',')}</span>
-          </div>
-        ` : ''}
-        <div class="bold" style="display: flex; justify-content: space-between; font-size: 13px; margin-top: 4px;">
-          <span>TOTAL:</span>
-          <span class="money">R$ ${(venda.total || 0).toFixed(2).replace('.', ',')}</span>
-        </div>
-        
         <div class="divider"></div>
         ${this.htmlBlocoPagamento(venda)}
 
         ${isNfce ? `
           <div class="divider"></div>
-          <div style="font-size: 9.5px; text-align: center; word-break: break-all;">
-            <strong>CHAVE DE ACESSO:</strong><br>
-            <span style="font-family: monospace; font-size: 9px;">${chaveFormatada}</span>
+          <div class="text-center" style="font-size: 9.5px;">Consulte pela chave de acesso em</div>
+          <div class="text-center" style="font-size: 9px;"><strong>www.nfce.fazenda.sp.gov.br/consulta</strong></div>
+          <div class="text-center chave" style="margin-top: 4px;">${this.escCupom(chaveFormatada)}</div>
+          <div class="text-center" style="font-size: 9.5px; margin-top: 6px;">
+            ${venda.cpfCliente ? `CONSUMIDOR CPF: ${this.escCupom(venda.cpfCliente)}` : 'NÃO IDENTIFICADO'}
           </div>
-          <div style="font-size: 9px; text-align: center; margin-top: 4px;">
-            Consulte pela Chave de Acesso em:<br>
-            <strong>www.fazenda.sp.gov.br/nfce/consulta</strong>
+          <div class="text-center" style="font-size: 9.5px; margin-top: 4px;">
+            NFC-e numero ${venda.numeroNfce || 1}<br>
+            Serie ${venda.serieNfce || 1} ${new Date(venda.data).toLocaleString('pt-BR')}<br>
+            Protocolo de autorizacao: ${this.escCupom(venda.protocoloNfe || '')}
           </div>
-          <div class="divider"></div>
-          <div style="font-size: 8.5px; text-align: center; color: #444;">
-            * Tributos Incidentes (Lei 12.741/2012): R$ ${venda.tributosAproximados || (venda.total * 0.184).toFixed(2).replace('.', ',')}
+          <div class="text-center" style="font-size: 8.5px; margin-top: 5px;">
+            Valor aproximado dos tributos deste cupom ${this.formatarMoedaCupom(venda.tributosAproximados || (Number(venda.total || 0) * 0.184))}
+            (Conf. Lei Fed. 12.741/2012)
           </div>
-        ` : ''}
+        ` : `
+          <div>Venda: #${StorageService.formatarNumeroVenda(venda)}</div>
+          <div>Data: ${new Date(venda.data).toLocaleString('pt-BR')}</div>
+          ${venda.cpfCliente ? `<div>CONSUMIDOR CPF: ${this.escCupom(venda.cpfCliente)}</div>` : ''}
+        `}
 
         <div class="divider"></div>
-        <div class="text-center" style="margin-top: 6px;">
-          Obrigado pela preferência!<br>
-          Volte Sempre!
-        </div>
+        <div class="text-center">Operador: ${this.escCupom(venda.operador || 'Caixa')}</div>
+        <div class="text-center bold" style="margin-top: 6px;">VOLTE SEMPRE!</div>
       </body>
       </html>
     `;
@@ -522,7 +580,7 @@ export const ThermalPrintModule = {
             ${(venda.itens || []).map(item => `
               <tr>
                 <td><strong>${item.nome}</strong></td>
-                <td style="text-align: center;">${item.quantidade} un</td>
+                <td style="text-align: center;">${item.quantidade} ${item.permiteFracionado || (item.unidade && String(item.unidade).toLowerCase() === 'kg') ? 'kg' : 'un'}</td>
                 <td style="text-align: right;">R$ ${(item.precoUnitario || 0).toFixed(2).replace('.', ',')}</td>
                 <td style="text-align: right; font-weight: 700;">R$ ${(item.precoUnitario * item.quantidade).toFixed(2).replace('.', ',')}</td>
               </tr>

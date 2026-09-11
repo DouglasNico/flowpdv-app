@@ -30,6 +30,28 @@ export const PdvModule = {
     return StorageService.parseMoedaBR(valor);
   },
 
+  itemEhPeso(item) {
+    if (!item) return false;
+    if (item.permiteFracionado === true) return true;
+    if (item.unidade && String(item.unidade).toLowerCase() === 'kg') return true;
+    const produtos = StorageService.getProdutos() || [];
+    const p = produtos.find(x => String(x.id) === String(item.id));
+    return !!(p && (p.permiteFracionado === true || (p.unidade && String(p.unidade).toLowerCase() === 'kg')));
+  },
+
+  formatarQtdItem(item) {
+    const qtd = parseFloat(item && item.quantidade) || 0;
+    const num = Number.isInteger(qtd)
+      ? String(qtd)
+      : qtd.toFixed(3).replace(/\.?0+$/, '').replace('.', ',');
+    return this.itemEhPeso(item) ? num + ' kg' : num;
+  },
+
+  formatarPrecoUnitarioItem(item) {
+    const preco = (parseFloat(item && item.precoUnitario) || 0).toFixed(2).replace('.', ',');
+    return this.itemEhPeso(item) ? preco + '/kg' : preco;
+  },
+
   getInputLeitorAtivo() {
     const tabPdv = document.getElementById('tab-pdv');
     const isClassic = document.body.classList.contains('pdv-layout-classico') || 
@@ -590,7 +612,9 @@ export const PdvModule = {
         categoria: produto.categoria || 'Geral',
         precoUnitario: precoUnitario,
         quantidade: quantidade,
-        isFardo: isFardo
+        isFardo: isFardo,
+        permiteFracionado: produto.permiteFracionado === true || (produto.unidade && String(produto.unidade).toLowerCase() === 'kg'),
+        unidade: (produto.permiteFracionado || (produto.unidade && String(produto.unidade).toLowerCase() === 'kg')) ? 'kg' : (produto.unidade || 'un')
       });
     }
 
@@ -598,7 +622,10 @@ export const PdvModule = {
     const classicUnit = document.getElementById('classic-valor-unitario');
     const classicTotalItem = document.getElementById('classic-total-item');
     if (classicCodigo) classicCodigo.textContent = produto.codigoBarras || produto.id || '';
-    if (classicUnit) classicUnit.textContent = precoUnitario.toFixed(2).replace('.', ',');
+    if (classicUnit) {
+      const precoTxt = precoUnitario.toFixed(2).replace('.', ',');
+      classicUnit.textContent = this.itemEhPeso(produto) ? precoTxt + '/kg' : precoTxt;
+    }
     if (classicTotalItem) classicTotalItem.textContent = (precoUnitario * quantidade).toFixed(2).replace('.', ',');
 
     this.renderCarrinho();
@@ -1012,7 +1039,10 @@ export const PdvModule = {
       }
     });
 
-    const totalItens = this.carrinho.reduce((acc, item) => acc + item.quantidade, 0);
+    const totalItens = this.carrinho.reduce((acc, item) => {
+      if (this.itemEhPeso(item)) return acc + 1;
+      return acc + (parseFloat(item.quantidade) || 0);
+    }, 0);
     const totalDescontos = this.desconto + descontoClube;
     const total = Math.max(0, subtotal - totalDescontos);
 
@@ -1084,7 +1114,7 @@ export const PdvModule = {
           <td>
             <div class="item-qty-control">
               <button type="button" class="btn-qty" onclick="PdvModule.alterarQuantidade(${idx}, -1)">-</button>
-              <strong style="min-width: 24px; text-align: center; font-family: 'JetBrains Mono';">${Number.isInteger(item.quantidade) ? item.quantidade : item.quantidade.toFixed(3).replace(/\.?0+$/, '')}</strong>
+              <strong style="min-width: 24px; text-align: center; font-family: 'JetBrains Mono';">${this.formatarQtdItem(item)}</strong>
               <button type="button" class="btn-qty" onclick="PdvModule.alterarQuantidade(${idx}, 1)">+</button>
             </div>
           </td>
@@ -1125,8 +1155,8 @@ export const PdvModule = {
             <td style="font-weight: bold;">${String(idx + 1).padStart(3, '0')}</td>
             <td>${item.codigoBarras || item.id}</td>
             <td style="font-weight: bold;">${item.nome}</td>
-            <td style="text-align: center;">${Number.isInteger(item.quantidade) ? item.quantidade : item.quantidade.toFixed(3).replace(/\.?0+$/, '')}</td>
-            <td style="text-align: right;">${item.precoUnitario.toFixed(2).replace('.', ',')}</td>
+            <td style="text-align: center; white-space: nowrap;">${this.formatarQtdItem(item)}</td>
+            <td style="text-align: right; white-space: nowrap;">${this.formatarPrecoUnitarioItem(item)}</td>
             <td style="text-align: right; font-weight: bold;">${(item.precoUnitario * item.quantidade).toFixed(2).replace('.', ',')}</td>
           </tr>
         `).join('');
@@ -1656,19 +1686,16 @@ export const PdvModule = {
 
       if (!termoLower) return true;
 
-      const nome = (p.nome || '').toLowerCase();
-      const cod = String(p.codigoBarras || '').toLowerCase();
-      const codFardo = String(p.codigoBarrasFardo || '').toLowerCase();
-      const cat = (p.categoria || 'Geral').toLowerCase();
-      const id = String(p.id || '').toLowerCase();
-
-      return nome.includes(termoLower) || cod.includes(termoLower) || codFardo.includes(termoLower) || cat.includes(termoLower) || id.includes(termoLower);
+      return StorageService.produtoCombinaBusca(p, termoLower);
     });
 
     filtrados.sort((a, b) => {
       if (termoLower) {
-        const aNameStarts = (a.nome || '').toLowerCase().startsWith(termoLower);
-        const bNameStarts = (b.nome || '').toLowerCase().startsWith(termoLower);
+        const nTermo = StorageService.normalizarTextoBusca(termoLower);
+        const aNameStarts = StorageService.normalizarTextoBusca(a.nome).startsWith(nTermo)
+          || (a.nome || '').toLowerCase().startsWith(termoLower);
+        const bNameStarts = StorageService.normalizarTextoBusca(b.nome).startsWith(nTermo)
+          || (b.nome || '').toLowerCase().startsWith(termoLower);
         if (aNameStarts && !bNameStarts) return -1;
         if (!aNameStarts && bNameStarts) return 1;
       }

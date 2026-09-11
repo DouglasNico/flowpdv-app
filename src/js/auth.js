@@ -143,6 +143,7 @@ export const AuthModule = {
     if (!modal) return;
 
     this.usuarioSelecionadoLoginId = null;
+    this.mostrarCarregandoLogin(false);
     document.body.classList.add('tela-login-ativa');
     modal.classList.add('active');
     this.renderCardsLogin();
@@ -179,6 +180,25 @@ export const AuthModule = {
     const modal = document.getElementById('modal-login-operador');
     if (modal) modal.classList.remove('active');
     document.body.classList.remove('tela-login-ativa');
+    this.mostrarCarregandoLogin(false);
+  },
+
+  mostrarCarregandoLogin(ativo) {
+    this._loginCarregando = !!ativo;
+    const overlay = document.getElementById('login-carregando');
+    const btn = document.getElementById('login-submit-btn');
+    const pinInput = document.getElementById('login-pin-input');
+    const select = document.getElementById('login-operador-select');
+    if (overlay) {
+      overlay.classList.toggle('ativo', !!ativo);
+      overlay.setAttribute('aria-busy', ativo ? 'true' : 'false');
+    }
+    if (btn) {
+      btn.disabled = !!ativo;
+      btn.textContent = ativo ? 'Carregando...' : 'Entrar';
+    }
+    if (pinInput) pinInput.disabled = !!ativo;
+    if (select) select.disabled = !!ativo;
   },
 
   atualizarNomeLojaLogin() {
@@ -281,6 +301,8 @@ export const AuthModule = {
   },
 
   executarLogin() {
+    if (this._loginCarregando) return;
+
     const pinInput = document.getElementById('login-pin-input');
     const erroEl = document.getElementById('login-erro-msg');
     const pin = pinInput ? pinInput.value.trim() : '';
@@ -303,6 +325,15 @@ export const AuthModule = {
       return;
     }
 
+    if (erroEl) erroEl.style.display = 'none';
+    this.mostrarCarregandoLogin(true);
+    setTimeout(() => this._concluirLogin(pin, u), 550);
+  },
+
+  _concluirLogin(pin, u) {
+    const pinInput = document.getElementById('login-pin-input');
+    const erroEl = document.getElementById('login-erro-msg');
+    const usuarios = StorageService.getUsuarios();
     const pinMaster = localStorage.getItem('flowpdv_pin_gerente') || StorageService.getLicenca()?.pinGerente;
     const isPinValido = String(u.pin).trim() === pin || (u.cargo === 'gerente' && pinMaster && pin === String(pinMaster).trim());
 
@@ -360,6 +391,7 @@ export const AuthModule = {
         window.App.showToast(`🟢 Bem-vindo(a), ${u.nome}!`, 'success');
       }
     } else {
+      this.mostrarCarregandoLogin(false);
       if (erroEl) {
         erroEl.textContent = 'Senha / PIN incorreto para este operador!';
         erroEl.style.display = 'block';

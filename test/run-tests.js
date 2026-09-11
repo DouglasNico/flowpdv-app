@@ -419,6 +419,15 @@ teste('exclusao total esconde log antigo e libera log novo', () => {
   assert.strictEqual(logCaiuNaExclusao(novo, exclusao, Date.parse('2026-09-10T13:00:00.000Z')), false);
 });
 
+teste('busca acha produto mesmo sem hifen ou com acento', () => {
+  const p = { id: 'P1', nome: 'COCA-COLA', codigoBarras: '7891000' };
+  assert.strictEqual(StorageService.textoCombinaBusca(p.nome, 'COCA COLA'), true);
+  assert.strictEqual(StorageService.produtoCombinaBusca(p, 'coca cola'), true);
+  assert.strictEqual(StorageService.produtoCombinaBusca(p, 'coca-cola'), true);
+  assert.strictEqual(StorageService.textoCombinaBusca('GUARANÁ ANTARCTICA', 'guarana'), true);
+  assert.strictEqual(StorageService.produtoCombinaBusca(p, 'pepsi'), false);
+});
+
 teste('fila de pendentes nao ressuscita log ja apagado por id', () => {
   const exclusao = { apagarTudo: false, em: '2026-09-10T12:00:00.000Z', ids: ['LOG-X'], corteMs: 0 };
   assert.strictEqual(logCaiuNaExclusao({ id: 'LOG-X' }, exclusao, Date.parse('2026-09-10T11:00:00.000Z')), true);

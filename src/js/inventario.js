@@ -111,6 +111,21 @@ export const InventarioModule = {
     return { ok: true, produto, linha: sessao.linhas[chave] };
   },
 
+  removerLinha(produtoId) {
+    const sessao = this.getSessaoAtiva();
+    if (!sessao || sessao.status === 'processado') {
+      if (window.App && typeof window.App.showToast === 'function') {
+        window.App.showToast('Depois de processar não dá para apagar a linha. O estoque já foi ajustado.', 'warning');
+      }
+      return;
+    }
+    const chave = String(produtoId || '');
+    if (!sessao.linhas || !sessao.linhas[chave]) return;
+    delete sessao.linhas[chave];
+    this.persistir(sessao);
+    this.renderModal();
+  },
+
   concluir() {
     const sessao = this.getSessaoAtiva();
     if (!sessao || sessao.status === 'processado') return null;
@@ -152,6 +167,13 @@ export const InventarioModule = {
       });
     });
     StorageService.saveProdutos(produtos);
+    Object.values(sessao.linhas || {}).forEach(l => {
+      if (!l) return;
+      const p = produtos.find(x => String(x.id) === String(l.produtoId));
+      l.saldoPara = p && p.controlarEstoque !== false
+        ? Math.max(0, parseFloat(p.estoque) || 0)
+        : Math.max(0, parseFloat(l.contado) || 0);
+    });
     sessao.status = 'processado';
     sessao.processadoEm = new Date().toISOString();
     this.persistir(sessao);
@@ -174,6 +196,32 @@ export const InventarioModule = {
   fecharModal() {
     const modal = document.getElementById('modal-inventario-sessao');
     if (modal) modal.classList.remove('active');
+  },
+
+  onCodigoKey(event) {
+    if (event.key !== 'Enter' && event.key !== 'Tab') return;
+    const input = document.getElementById('inventario-bipar-codigo');
+    if (!input || !String(input.value || '').trim()) return;
+    event.preventDefault();
+    const qtdEl = document.getElementById('inventario-bipar-qtd');
+    if (qtdEl) {
+      qtdEl.focus();
+      qtdEl.select();
+    }
+  },
+
+  onQtdKey(event) {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    this.confirmarBipagem();
+  },
+
+  novaContagem() {
+    this.sessaoAtivaId = null;
+    this.abrirSessao();
+    this.renderModal();
+    const input = document.getElementById('inventario-bipar-codigo');
+    if (input) setTimeout(() => input.focus(), 80);
   },
 
   confirmarBipagem() {
@@ -263,8 +311,13 @@ export const InventarioModule = {
     const btnConcluir = document.getElementById('btn-inventario-concluir');
     const btnReabrir = document.getElementById('btn-inventario-reabrir');
     const btnProcessar = document.getElementById('btn-inventario-processar');
+    const btnNova = document.getElementById('btn-inventario-nova');
+    const avisoProcEl = document.getElementById('inventario-aviso-processado');
 
     if (!sessao) {
+      modal.classList.remove('is-processado');
+      const boxVazio = modal.querySelector('.inventario-modal');
+      if (boxVazio) boxVazio.classList.remove('is-processado');
       if (statusEl) statusEl.textContent = 'Nenhuma sessão';
       if (listaEl) listaEl.innerHTML = '<div class="inventario-vazio">Abra uma sessão para começar a contar.</div>';
       return;
@@ -274,16 +327,54 @@ export const InventarioModule = {
     const divergentes = linhas.filter(l => Math.abs((parseFloat(l.contado) || 0) - (parseFloat(l.saldoDe) || 0)) > 0.0001);
     const rotulo = {
       em_andamento: 'Contando — só produtos bipados entram',
-      concluido: 'Concluído — conferir divergências',
-      processado: 'Processado — movimentos gerados'
+      concluido: 'Pausado — conferir divergências',
+      processado: 'Processado — comprovante'
     }[sessao.status] || sessao.status;
 
+    const processado = sessao.status === 'processado';
+    modal.classList.toggle('is-processado', processado);
+    const boxModal = modal.querySelector('.inventario-modal') || modal;
+    boxModal.classList.toggle('is-processado', processado);
+
     if (statusEl) statusEl.textContent = rotulo;
-    if (countEl) countEl.textContent = linhas.length + ' lido(s) · ' + divergentes.length + ' divergente(s)';
+    const hintEl = modal.querySelector('.inventario-hint');
+    if (hintEl) {
+      hintEl.style.display = processado ? 'none' : '';
+      hintEl.textContent = 'Bipar não mexe no saldo. Só produtos lidos entram. O que ninguém bipar não zera. Os 3 PDVs podem contar a mesma sessão.';
+    }
+    const tituloLista = document.getElementById('inventario-lista-titulo');
+    if (tituloLista) tituloLista.textContent = processado ? 'Comprovante' : 'Produtos lidos nesta sessão';
+
+    let entrada = 0;
+    let saida = 0;
+    linhas.forEach(l => {
+      const d = (parseFloat(l.contado) || 0) - (parseFloat(l.saldoDe) || 0);
+      if (d > 0) entrada += d;
+      else if (d < 0) saida += d;
+    });
+    if (countEl) {
+      countEl.textContent = processado
+        ? linhas.length + ' item(ns) · ' + divergentes.length + ' ajuste(s)'
+        : linhas.length + ' lido(s) · ' + divergentes.length + ' divergente(s)';
+    }
     if (bipBox) bipBox.style.display = sessao.status === 'em_andamento' ? 'block' : 'none';
     if (btnConcluir) btnConcluir.style.display = sessao.status === 'em_andamento' ? 'inline-flex' : 'none';
     if (btnReabrir) btnReabrir.style.display = sessao.status === 'concluido' ? 'inline-flex' : 'none';
-    if (btnProcessar) btnProcessar.style.display = sessao.status === 'processado' ? 'none' : 'inline-flex';
+    if (btnProcessar) btnProcessar.style.display = processado ? 'none' : 'inline-flex';
+    if (btnNova) btnNova.style.display = processado ? 'inline-flex' : 'none';
+    if (avisoProcEl) {
+      if (processado) {
+        avisoProcEl.style.display = 'block';
+        avisoProcEl.innerHTML = '<strong>Estoque atualizado.</strong> '
+          + divergentes.length + ' movimento(s) gravado(s)'
+          + (entrada ? ' · entrada <b>+' + entrada + '</b>' : '')
+          + (saida ? ' · saída <b>' + saida + '</b>' : '')
+          + '.';
+      } else {
+        avisoProcEl.style.display = 'none';
+        avisoProcEl.textContent = '';
+      }
+    }
 
     if (avisoEl) {
       if (avisosVenda && avisosVenda.length) {
@@ -300,24 +391,49 @@ export const InventarioModule = {
       return;
     }
 
-    listaEl.innerHTML = linhas.slice().reverse().map(l => {
+    const podeApagar = !processado;
+    const ordenadas = processado
+      ? linhas.slice().sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'))
+      : linhas.slice().reverse();
+    const linhasHtml = ordenadas.map(l => {
       const contado = parseFloat(l.contado) || 0;
       const saldo = parseFloat(l.saldoDe) || 0;
       const delta = contado - saldo;
-      const classe = delta === 0 ? 'ok' : 'div';
+      const classe = delta === 0 ? 'ok' : (delta > 0 ? 'div mais' : 'div menos');
       const sinal = delta > 0 ? '+' + delta : String(delta);
+      const idEsc = String(l.produtoId || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      const botao = podeApagar
+        ? `<button type="button" class="inventario-linha-del" title="Remover este produto da contagem" onclick="InventarioModule.removerLinha('${idEsc}')">✕</button>`
+        : '';
+      const novo = l.saldoPara != null ? (parseFloat(l.saldoPara) || 0) : Math.max(0, contado);
+      const colNovo = processado
+        ? `<div class="inventario-num atualizado">
+            <small>Estoque atualizado</small>
+            <b>${novo}</b>
+          </div>`
+        : '';
       return `<div class="inventario-linha ${classe}">
-        <div>
+        <div class="inventario-linha-prod">
           <strong>${this._esc(l.nome || l.produtoId)}</strong>
           <span>${this._esc(l.codigoBarras || '')}</span>
         </div>
-        <div class="inventario-nums">
-          <span>Sistema ${saldo}</span>
-          <span>Contado ${contado}</span>
-          <em>${sinal}</em>
+        <div class="inventario-num sistema">
+          <small>Sistema</small>
+          <b>${saldo}</b>
         </div>
+        <div class="inventario-num contado">
+          <small>Contado</small>
+          <b>${contado}</b>
+        </div>
+        <div class="inventario-num dif">
+          <small>Diferença</small>
+          <b>${sinal}</b>
+        </div>
+        ${colNovo}
+        ${botao}
       </div>`;
     }).join('');
+    listaEl.innerHTML = linhasHtml;
   },
 
   _esc(txt) {

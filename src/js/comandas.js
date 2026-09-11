@@ -578,10 +578,8 @@ export const ComandasModule = {
     }
 
     const todosProdutos = StorageService.getProdutos().filter(p => p.ativo !== false);
-    const filtrados = todosProdutos.filter(p => 
-      (p.nome || '').toLowerCase().includes(texto) ||
-      (p.codigo || '').toLowerCase().includes(texto) ||
-      (p.codigoBarras || '').toLowerCase().includes(texto)
+    const filtrados = todosProdutos.filter(p =>
+      StorageService.produtoCombinaBusca(p, texto, ['nome', 'codigo', 'codigoBarras'])
     ).slice(0, 8);
 
     this.sugestoesAtuais = filtrados;
@@ -693,7 +691,7 @@ export const ComandasModule = {
       let produto = todosProdutos.find(p => p.codigoBarras === val || p.codigo === val);
       
       if (!produto) {
-        produto = todosProdutos.find(p => (p.nome || '').toLowerCase().includes(val.toLowerCase()));
+        produto = todosProdutos.find(p => StorageService.textoCombinaBusca(p.nome, val));
       }
 
       if (produto) {
@@ -748,7 +746,7 @@ export const ComandasModule = {
       produto = todosProdutos.find(p => p.id === this.produtoSelecionadoId);
     }
     if (!produto && val) {
-      produto = todosProdutos.find(p => p.codigoBarras === val || p.codigo === val || (p.nome || '').toLowerCase().includes(val.toLowerCase()));
+      produto = todosProdutos.find(p => p.codigoBarras === val || p.codigo === val || StorageService.textoCombinaBusca(p.nome, val));
     }
 
     if (!produto) {

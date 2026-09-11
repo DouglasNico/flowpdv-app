@@ -827,6 +827,30 @@ export const EstoqueModule = {
     }
   },
 
+  toggleVendaFracionada(forcarAtivo = null) {
+    const checkbox = document.getElementById('prod-permite-fracionado');
+    if (!checkbox) return;
+    if (forcarAtivo !== null) checkbox.checked = forcarAtivo;
+    const on = checkbox.checked;
+    const setTxt = (id, txt) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = txt;
+    };
+    setTxt('prod-preco-custo-label', on ? 'Custo (R$/kg)' : 'Custo (R$)');
+    setTxt('prod-preco-venda-label', on ? 'Venda (R$/kg) *' : 'Venda (R$) *');
+    setTxt('prod-preco-clube-label', on ? 'Clube (R$/kg)' : 'Clube (R$)');
+    setTxt('prod-estoque-atual-label', on ? 'Estoque atual (kg)' : 'Estoque atual');
+    setTxt('prod-estoque-minimo-label', on ? 'Estoque mínimo (kg)' : 'Estoque mínimo');
+    const hint = document.getElementById('prod-fracionado-hint');
+    if (hint) {
+      hint.textContent = on
+        ? 'Preço e estoque são por kg. No caixa: 0,350*código ou a balança.'
+        : 'Liga isso em carne, frios, queijo… preço e estoque passam a ser por kg.';
+    }
+    const estoqueAtual = document.getElementById('prod-estoque-atual');
+    if (estoqueAtual) estoqueAtual.placeholder = on ? 'Ex: 12,5' : '0';
+  },
+
   toggleControleEstoque(forcarAtivo = null) {
     const checkbox = document.getElementById('prod-controlar-estoque');
     const boxCampos = document.getElementById('box-campos-estoque');
@@ -850,12 +874,15 @@ export const EstoqueModule = {
   },
 
   bindGlobalDropdownListener() {
+    if (this._dropdownGlobalBound) return;
+    this._dropdownGlobalBound = true;
     document.addEventListener('click', (e) => {
       if (!e.target.closest('.category-dropdown-wrapper')) {
         this.fecharDropdownCategorias();
         this.fecharMenuAcoesEstoque();
       }
     });
+    window.addEventListener('resize', () => this.ajustarAlturaDropdownCategorias());
   },
 
   renderBarraCategorias() {
@@ -902,7 +929,7 @@ export const EstoqueModule = {
               </span>
             </div>
             <div id="dropdown-mais-categorias" class="category-dropdown-menu" style="display: none;">
-              <div style="font-size: 11px; font-weight: 800; color: #64748b; padding: 6px 10px 4px 10px; text-transform: uppercase; letter-spacing: 0.5px;">Outras Categorias:</div>
+              <div class="category-dropdown-label">Outras categorias</div>
               ${extras.map(cat => {
                 const isItemActive = (this.categoriaFiltro.toLowerCase() === cat.toLowerCase());
                 const icone = StorageService.getIconeCategoria(cat);
@@ -923,7 +950,7 @@ export const EstoqueModule = {
               📂 Mais Categorias (${extras.length}) ▾
             </button>
             <div id="dropdown-mais-categorias" class="category-dropdown-menu" style="display: none;">
-              <div style="font-size: 11px; font-weight: 800; color: #64748b; padding: 6px 10px 4px 10px; text-transform: uppercase; letter-spacing: 0.5px;">Outras Categorias:</div>
+              <div class="category-dropdown-label">Outras categorias</div>
               ${extras.map(cat => {
                 const icone = StorageService.getIconeCategoria(cat);
                 return `
@@ -948,6 +975,27 @@ export const EstoqueModule = {
     if (!dropdown) return;
     const isVis = dropdown.style.display === 'block';
     dropdown.style.display = isVis ? 'none' : 'block';
+    if (!isVis) this.ajustarAlturaDropdownCategorias();
+  },
+
+  ajustarAlturaDropdownCategorias() {
+    const dropdown = document.getElementById('dropdown-mais-categorias');
+    if (!dropdown || dropdown.style.display !== 'block') return;
+    const wrap = dropdown.closest('.category-dropdown-wrapper') || dropdown;
+    const rect = wrap.getBoundingClientRect();
+    const margem = 16;
+    const abaixo = Math.floor(window.innerHeight - rect.bottom - margem);
+    const acima = Math.floor(rect.top - margem);
+    const minH = 140;
+    if (abaixo >= 180 || abaixo >= acima) {
+      dropdown.style.top = 'calc(100% + 6px)';
+      dropdown.style.bottom = 'auto';
+      dropdown.style.maxHeight = Math.max(minH, abaixo) + 'px';
+    } else {
+      dropdown.style.top = 'auto';
+      dropdown.style.bottom = 'calc(100% + 6px)';
+      dropdown.style.maxHeight = Math.max(minH, acima) + 'px';
+    }
   },
 
   fecharDropdownCategorias() {
@@ -1079,11 +1127,7 @@ export const EstoqueModule = {
     }
 
     if (busca) {
-      produtos = produtos.filter(p => 
-        p.nome.toLowerCase().includes(busca) || 
-        p.codigoBarras.includes(busca) ||
-        p.id.toLowerCase().includes(busca)
-      );
+      produtos = produtos.filter(p => StorageService.produtoCombinaBusca(p, busca, ['nome', 'codigoBarras', 'id']));
     }
 
     // Aplicar Ordenação Clicável
@@ -1394,6 +1438,7 @@ export const EstoqueModule = {
     const inputPrecoFardo = document.getElementById('prod-preco-fardo');
     if (inputPrecoFardo) inputPrecoFardo.dataset.autoCalculado = id ? 'false' : 'true';
     this.atualizarFeedbackDescontoGrade();
+    this.toggleVendaFracionada();
 
     if (modal) modal.classList.add('active');
   },
@@ -1441,8 +1486,14 @@ export const EstoqueModule = {
     const precoVenda = this.parseMoedaBR(document.getElementById('prod-preco-venda').value);
     const precoClube = this.parseMoedaBR(document.getElementById('prod-preco-clube')?.value || '');
     const controlarEstoque = document.getElementById('prod-controlar-estoque')?.checked ?? true;
-    const estoque = controlarEstoque ? (parseInt(document.getElementById('prod-estoque-atual').value, 10) || 0) : 0;
-    const estoqueMinimo = controlarEstoque ? (parseInt(document.getElementById('prod-estoque-minimo').value, 10) || 5) : 0;
+    const parseQtd = (raw, fallback) => {
+      const n = parseFloat(String(raw || '').replace(',', '.'));
+      return Number.isFinite(n) ? n : fallback;
+    };
+    const estoque = controlarEstoque ? parseQtd(document.getElementById('prod-estoque-atual').value, 0) : 0;
+    const estoqueMinimo = controlarEstoque ? parseQtd(document.getElementById('prod-estoque-minimo').value, 5) : 0;
+    const permiteFracionado = document.getElementById('prod-permite-fracionado')?.checked || false;
+    const unidade = permiteFracionado ? 'kg' : 'un';
     
     const camposGrade = document.getElementById('grade-fracionada-campos');
     const isGradeAberta = camposGrade && camposGrade.style.display !== 'none';
@@ -1555,7 +1606,8 @@ export const EstoqueModule = {
           fatorConversao: fatorConversao || null,
           precoFardo: precoFardo || null,
           codigoBarrasFardo: codigoBarrasFardo || null,
-          permiteFracionado: document.getElementById('prod-permite-fracionado')?.checked || false,
+          permiteFracionado,
+          unidade,
           dataValidade: document.getElementById('prod-data-validade')?.value || '',
           ncm: document.getElementById('prod-ncm')?.value.trim() || null,
           cest: document.getElementById('prod-cest')?.value.trim() || null,
@@ -1615,7 +1667,8 @@ export const EstoqueModule = {
         fatorConversao: fatorConversao || null,
         precoFardo: precoFardo || null,
         codigoBarrasFardo: codigoBarrasFardo || null,
-        permiteFracionado: document.getElementById('prod-permite-fracionado')?.checked || false,
+        permiteFracionado,
+        unidade,
         dataValidade: document.getElementById('prod-data-validade')?.value || '',
         ncm: document.getElementById('prod-ncm')?.value.trim() || null,
         cest: document.getElementById('prod-cest')?.value.trim() || null,

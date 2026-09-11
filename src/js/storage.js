@@ -38,6 +38,39 @@ export const StorageService = {
     return num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   },
 
+  normalizarTextoBusca(texto) {
+    return String(texto || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  },
+
+  textoCombinaBusca(campo, termo) {
+    const brutoCampo = String(campo || '').toLowerCase();
+    const brutoTermo = String(termo || '').toLowerCase().trim();
+    if (!brutoTermo) return true;
+    if (brutoCampo.includes(brutoTermo)) return true;
+
+    const nCampo = this.normalizarTextoBusca(campo);
+    const nTermo = this.normalizarTextoBusca(termo);
+    if (!nTermo) return true;
+    if (nCampo.includes(nTermo)) return true;
+
+    const tokens = nTermo.split(' ').filter(t => t.length >= 2 || /^\d/.test(t));
+    return tokens.length > 0 && tokens.every(t => nCampo.includes(t));
+  },
+
+  produtoCombinaBusca(produto, termo, campos) {
+    if (!produto) return false;
+    const lista = campos && campos.length
+      ? campos
+      : ['nome', 'codigoBarras', 'codigoBarrasFardo', 'codigo', 'id', 'categoria'];
+    return lista.some(campo => this.textoCombinaBusca(produto[campo], termo));
+  },
+
   formatarNumeroTurno(id) {
     if (!id) return '000000';
     const texto = String(id);

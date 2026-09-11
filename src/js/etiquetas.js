@@ -303,10 +303,7 @@ export const EtiquetasModule = {
 
     const filtrados = todosProdutos.filter(p => {
       if (!termo) return true;
-      return (p.nome || '').toLowerCase().includes(termo) ||
-             (p.codigo || '').toLowerCase().includes(termo) ||
-             (p.codigoBarras || '').toLowerCase().includes(termo) ||
-             (p.categoria || '').toLowerCase().includes(termo);
+      return StorageService.produtoCombinaBusca(p, termo, ['nome', 'codigo', 'codigoBarras', 'categoria']);
     });
 
     if (filtrados.length === 0) {

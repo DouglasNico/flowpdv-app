@@ -24049,6 +24049,26 @@
       const num = parseFloat(valor) || 0;
       return num.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     },
+    normalizarTextoBusca(texto) {
+      return String(texto || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+    },
+    textoCombinaBusca(campo, termo) {
+      const brutoCampo = String(campo || "").toLowerCase();
+      const brutoTermo = String(termo || "").toLowerCase().trim();
+      if (!brutoTermo) return true;
+      if (brutoCampo.includes(brutoTermo)) return true;
+      const nCampo = this.normalizarTextoBusca(campo);
+      const nTermo = this.normalizarTextoBusca(termo);
+      if (!nTermo) return true;
+      if (nCampo.includes(nTermo)) return true;
+      const tokens = nTermo.split(" ").filter((t) => t.length >= 2 || /^\d/.test(t));
+      return tokens.length > 0 && tokens.every((t) => nCampo.includes(t));
+    },
+    produtoCombinaBusca(produto, termo, campos) {
+      if (!produto) return false;
+      const lista = campos && campos.length ? campos : ["nome", "codigoBarras", "codigoBarrasFardo", "codigo", "id", "categoria"];
+      return lista.some((campo) => this.textoCombinaBusca(produto[campo], termo));
+    },
     formatarNumeroTurno(id) {
       if (!id) return "000000";
       const texto = String(id);
@@ -25068,6 +25088,7 @@
       const modal = document.getElementById("modal-login-operador");
       if (!modal) return;
       this.usuarioSelecionadoLoginId = null;
+      this.mostrarCarregandoLogin(false);
       document.body.classList.add("tela-login-ativa");
       modal.classList.add("active");
       this.renderCardsLogin();
@@ -25098,6 +25119,24 @@
       const modal = document.getElementById("modal-login-operador");
       if (modal) modal.classList.remove("active");
       document.body.classList.remove("tela-login-ativa");
+      this.mostrarCarregandoLogin(false);
+    },
+    mostrarCarregandoLogin(ativo) {
+      this._loginCarregando = !!ativo;
+      const overlay = document.getElementById("login-carregando");
+      const btn = document.getElementById("login-submit-btn");
+      const pinInput = document.getElementById("login-pin-input");
+      const select = document.getElementById("login-operador-select");
+      if (overlay) {
+        overlay.classList.toggle("ativo", !!ativo);
+        overlay.setAttribute("aria-busy", ativo ? "true" : "false");
+      }
+      if (btn) {
+        btn.disabled = !!ativo;
+        btn.textContent = ativo ? "Carregando..." : "Entrar";
+      }
+      if (pinInput) pinInput.disabled = !!ativo;
+      if (select) select.disabled = !!ativo;
     },
     atualizarNomeLojaLogin() {
       const wrap2 = document.getElementById("login-screen-loja-logo-wrap");
@@ -25185,6 +25224,7 @@
       if (erroEl) erroEl.style.display = "none";
     },
     executarLogin() {
+      if (this._loginCarregando) return;
       const pinInput = document.getElementById("login-pin-input");
       const erroEl = document.getElementById("login-erro-msg");
       const pin = pinInput ? pinInput.value.trim() : "";
@@ -25204,6 +25244,14 @@
         }
         return;
       }
+      if (erroEl) erroEl.style.display = "none";
+      this.mostrarCarregandoLogin(true);
+      setTimeout(() => this._concluirLogin(pin, u), 550);
+    },
+    _concluirLogin(pin, u) {
+      const pinInput = document.getElementById("login-pin-input");
+      const erroEl = document.getElementById("login-erro-msg");
+      const usuarios = StorageService.getUsuarios();
       const pinMaster = localStorage.getItem("flowpdv_pin_gerente") || StorageService.getLicenca()?.pinGerente;
       const isPinValido = String(u.pin).trim() === pin || u.cargo === "gerente" && pinMaster && pin === String(pinMaster).trim();
       if (isPinValido) {
@@ -25252,6 +25300,7 @@
           window.App.showToast(`\u{1F7E2} Bem-vindo(a), ${u.nome}!`, "success");
         }
       } else {
+        this.mostrarCarregandoLogin(false);
         if (erroEl) {
           erroEl.textContent = "Senha / PIN incorreto para este operador!";
           erroEl.style.display = "block";
@@ -25622,6 +25671,70 @@
     formatarMoedaCupom(valor) {
       return `R$ ${Number(valor || 0).toFixed(2).replace(".", ",")}`;
     },
+    escCupom(txt) {
+      return String(txt || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    },
+    codigoCurtoCupom(item) {
+      const digits = String(item && (item.codigoBarras || item.id) || "").replace(/\D/g, "");
+      if (digits.length >= 5) return digits.slice(-5);
+      const id = String(item && item.id || "").replace(/[^A-Z0-9]/gi, "");
+      return (id.slice(-5) || "-----").toUpperCase();
+    },
+    formatarQtdCupom(qtd) {
+      const n = Number(qtd) || 0;
+      if (Number.isInteger(n)) return String(n);
+      return n.toFixed(3).replace(".", ",").replace(/0+$/, "").replace(/,$/, "");
+    },
+    itemEhPeso(item) {
+      if (!item) return false;
+      if (item.permiteFracionado === true) return true;
+      return !!(item.unidade && String(item.unidade).toLowerCase() === "kg");
+    },
+    unidadeQtdCupom(item) {
+      return this.itemEhPeso(item) ? "KG" : "UN";
+    },
+    htmlItensCupom(itens, is80) {
+      const lista = itens || [];
+      if (is80) {
+        return `
+        <table class="table-items">
+          <thead>
+            <tr class="bold">
+              <td class="col-cod">COD</td>
+              <td>DESCR</td>
+              <td class="col-num">QTD</td>
+              <td class="col-num">VL UNIT</td>
+              <td class="col-num">TOTAL</td>
+            </tr>
+          </thead>
+          <tbody>
+            ${lista.map((item) => {
+          const qtd = Number(item.quantidade) || 0;
+          const vu = Number(item.precoUnitario) || 0;
+          return `<tr>
+                <td class="col-cod">${this.escCupom(this.codigoCurtoCupom(item))}</td>
+                <td class="col-desc">${this.escCupom(item.nome)}</td>
+                <td class="col-num">${this.formatarQtdCupom(qtd)} ${this.unidadeQtdCupom(item)}</td>
+                <td class="col-num">${vu.toFixed(2).replace(".", ",")}</td>
+                <td class="col-num">${(vu * qtd).toFixed(2).replace(".", ",")}</td>
+              </tr>`;
+        }).join("")}
+          </tbody>
+        </table>
+      `;
+      }
+      return lista.map((item) => {
+        const qtd = Number(item.quantidade) || 0;
+        const vu = Number(item.precoUnitario) || 0;
+        return `<div class="item-block">
+        <div class="item-name">${this.escCupom(this.codigoCurtoCupom(item))} ${this.escCupom(item.nome)}</div>
+        <div class="item-vals">
+          <span>${this.formatarQtdCupom(qtd)} ${this.unidadeQtdCupom(item)} x ${vu.toFixed(2).replace(".", ",")}${this.itemEhPeso(item) ? "/kg" : ""}</span>
+          <span class="money">${(vu * qtd).toFixed(2).replace(".", ",")}</span>
+        </div>
+      </div>`;
+      }).join("");
+    },
     linhaPagamentoHtml(nome, valor) {
       return `<tr><td>${this.rotuloFormaCupom(nome)}</td><td class="text-right money">${this.formatarMoedaCupom(valor)}</td></tr>`;
     },
@@ -25643,8 +25756,8 @@
         linhas.push(this.linhaPagamentoHtml("Troco", venda.troco));
       }
       return `
-      <div class="bold">Pagamento</div>
       <table class="pay-table">
+        <tr class="bold"><td>FORMA DE PAGAMENTO</td><td class="text-right">VALOR PAGO</td></tr>
         ${linhas.join("")}
       </table>
     `;
@@ -25693,6 +25806,14 @@
       }
       const isNfce = Boolean(venda.chaveNfe || venda.statusFiscal === "autorizada");
       const chaveFormatada = (venda.chaveNfe || "").replace(/(.{4})/g, "$1 ").trim();
+      const is80 = config.impressoraTipo === "80mm";
+      const qtdeItens = (venda.itens || []).reduce((acc, item) => {
+        if (this.itemEhPeso(item)) return acc + 1;
+        return acc + (Number(item.quantidade) || 0);
+      }, 0);
+      const fiscal = StorageService.getFiscalConfig ? StorageService.getFiscalConfig() : {};
+      const cnpj = fiscal.cnpjEmitente || config.cnpj || "";
+      const ie2 = fiscal.inscricaoEstadual || "";
       const html = `
       <!DOCTYPE html>
       <html>
@@ -25701,118 +25822,95 @@
         <style>
           @page { margin: 0; size: auto; }
           body {
-            font-family: 'Courier New', monospace;
+            font-family: 'Courier New', Courier, monospace;
             width: ${largura};
             margin: 0 auto;
-            padding: 8px 4px;
+            padding: 6px 3px 10px;
             font-size: 11px;
-            line-height: 1.3;
+            line-height: 1.28;
             color: #000;
             background: #fff;
             hyphens: none;
             -webkit-hyphens: none;
+            word-break: normal;
+            overflow-wrap: break-word;
           }
           .text-center { text-align: center; }
           .text-right { text-align: right; }
           .bold { font-weight: bold; }
-          .divider { border-top: 1px dashed #000; margin: 6px 0; }
-          .money { white-space: nowrap; }
+          .divider { border-top: 1px dashed #000; margin: 5px 0; }
+          .money, .col-num, .col-cod { white-space: nowrap; }
           .table-items { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 10px; }
-          .table-items td { padding: 2px 0; vertical-align: top; overflow-wrap: anywhere; }
-          .table-items td:nth-child(2) { width: 22px; white-space: nowrap; }
-          .table-items td:nth-child(3) { width: 64px; white-space: nowrap; }
-          .pay-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 11px; margin-top: 2px; }
-          .pay-table td { padding: 1px 0; vertical-align: top; }
-          .pay-table td:first-child { overflow-wrap: anywhere; padding-right: 6px; }
-          .pay-table td:last-child { width: 64px; }
+          .table-items td { padding: 2px 0; vertical-align: top; }
+          .col-cod { width: 38px; }
+          .col-num { width: 58px; text-align: right; }
+          .col-desc { padding-right: 4px; overflow-wrap: break-word; word-break: normal; hyphens: none; }
+          .item-block { margin: 3px 0 5px; }
+          .item-name { overflow-wrap: break-word; word-break: normal; hyphens: none; }
+          .item-vals { display: flex; justify-content: space-between; gap: 8px; white-space: nowrap; }
+          .pay-table, .tot-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 11px; }
+          .pay-table td, .tot-table td { padding: 1px 0; vertical-align: top; }
+          .pay-table td:first-child, .tot-table td:first-child { padding-right: 6px; overflow-wrap: break-word; word-break: normal; }
+          .pay-table td:last-child, .tot-table td:last-child { width: 78px; white-space: nowrap; }
+          .chave { font-size: 9px; letter-spacing: 0.2px; word-break: break-all; }
         </style>
       </head>
       <body>
-        <div class="text-center bold" style="font-size: 13px;">${config.nomeEmpresa || "FLOWPDV"}</div>
-        ${config.cidade ? `<div class="text-center">${config.cidade}</div>` : ""}
-        ${config.cnpj ? `<div class="text-center">CNPJ: ${config.cnpj}</div>` : ""}
-        ${config.telefone ? `<div class="text-center">Tel/Whats: ${config.telefone}</div>` : ""}
-        
+        <div class="text-center bold" style="font-size: 13px;">${this.escCupom(config.nomeEmpresa || "FLOWPDV")}</div>
+        ${config.cidade ? `<div class="text-center">${this.escCupom(config.cidade)}</div>` : ""}
+        ${cnpj ? `<div class="text-center">CNPJ: ${this.escCupom(cnpj)}</div>` : ""}
+        ${ie2 ? `<div class="text-center">IE: ${this.escCupom(ie2)}</div>` : ""}
+        ${config.telefone ? `<div class="text-center">Tel: ${this.escCupom(config.telefone)}</div>` : ""}
+
         <div class="divider"></div>
         ${isNfce ? `
-          <div class="text-center bold">DANFE NFC-e</div>
-          <div class="text-center bold">Documento Auxiliar</div>
-          <div class="text-center bold">Nota Fiscal de Consumidor Eletr\xF4nica</div>
-          ${venda.ambiente === "homologacao" ? '<div class="text-center bold" style="color: #555; font-size: 9.5px; margin-top: 2px;">EMITIDA EM HOMOLOGA\xC7\xC3O - SEM VALOR FISCAL</div>' : ""}
-          <div style="font-size: 10px; margin-top: 4px;">NFC-e N\xBA: <strong>${venda.numeroNfce || 1}</strong> &bull; S\xE9rie: <strong>${venda.serieNfce || 1}</strong></div>
-          <div style="font-size: 10px;">Protocolo: <strong>${venda.protocoloNfe || "135260000000000"}</strong></div>
+          <div class="text-center bold">Documento Auxiliar da Nota Fiscal</div>
+          <div class="text-center bold">de Consumidor Eletr\xF4nica</div>
+          ${venda.ambiente === "homologacao" ? '<div class="text-center bold" style="font-size: 9.5px; margin-top: 2px;">EMITIDA EM HOMOLOGA\xC7\xC3O - SEM VALOR FISCAL</div>' : ""}
         ` : `
           <div class="text-center bold">CUPOM N\xC3O FISCAL</div>
         `}
-        <div>Venda: #${StorageService.formatarNumeroVenda(venda)}</div>
-        <div>Data: ${new Date(venda.data).toLocaleString("pt-BR")}</div>
-        <div>Operador: ${venda.operador || "Caixa"}</div>
-        ${venda.cpfCliente ? `
-          <div class="bold" style="font-size: 10.5px; margin-top: 2px;">CONSUMIDOR CPF: ${venda.cpfCliente}</div>
-        ` : isNfce ? `
-          <div style="font-size: 9.5px; margin-top: 2px; color: #444;">CONSUMIDOR N\xC3O IDENTIFICADO</div>
-        ` : ""}
-        <div class="divider"></div>
 
-        <table class="table-items">
-          <thead>
-            <tr class="bold">
-              <td>ITEM</td>
-              <td class="text-center">QTD</td>
-              <td class="text-right">TOTAL</td>
-            </tr>
-          </thead>
-          <tbody>
-            ${(venda.itens || []).map((item) => `
-              <tr>
-                <td>${item.nome}</td>
-                <td class="text-center">${item.quantidade}x</td>
-                <td class="text-right money">R$ ${(item.precoUnitario * item.quantidade).toFixed(2).replace(".", ",")}</td>
-              </tr>
-            `).join("")}
-          </tbody>
+        <div class="divider"></div>
+        ${this.htmlItensCupom(venda.itens, is80)}
+
+        <div class="divider"></div>
+        <table class="tot-table">
+          <tr><td>QTDE. TOTAL DE ITENS</td><td class="text-right">${this.formatarQtdCupom(qtdeItens)}</td></tr>
+          <tr><td>VALOR TOTAL</td><td class="text-right money">${this.formatarMoedaCupom(venda.subtotal || venda.total)}</td></tr>
+          ${venda.desconto > 0 ? `<tr><td>DESCONTO</td><td class="text-right money">- ${this.formatarMoedaCupom(venda.desconto)}</td></tr>` : ""}
+          <tr class="bold"><td>VALOR A PAGAR</td><td class="text-right money">${this.formatarMoedaCupom(venda.total)}</td></tr>
         </table>
 
-        <div class="divider"></div>
-        <div style="display: flex; justify-content: space-between;">
-          <span>Subtotal:</span>
-          <span class="money">R$ ${(venda.subtotal || venda.total || 0).toFixed(2).replace(".", ",")}</span>
-        </div>
-        ${venda.desconto > 0 ? `
-          <div style="display: flex; justify-content: space-between;">
-            <span>Desconto:</span>
-            <span class="money">- R$ ${venda.desconto.toFixed(2).replace(".", ",")}</span>
-          </div>
-        ` : ""}
-        <div class="bold" style="display: flex; justify-content: space-between; font-size: 13px; margin-top: 4px;">
-          <span>TOTAL:</span>
-          <span class="money">R$ ${(venda.total || 0).toFixed(2).replace(".", ",")}</span>
-        </div>
-        
         <div class="divider"></div>
         ${this.htmlBlocoPagamento(venda)}
 
         ${isNfce ? `
           <div class="divider"></div>
-          <div style="font-size: 9.5px; text-align: center; word-break: break-all;">
-            <strong>CHAVE DE ACESSO:</strong><br>
-            <span style="font-family: monospace; font-size: 9px;">${chaveFormatada}</span>
+          <div class="text-center" style="font-size: 9.5px;">Consulte pela chave de acesso em</div>
+          <div class="text-center" style="font-size: 9px;"><strong>www.nfce.fazenda.sp.gov.br/consulta</strong></div>
+          <div class="text-center chave" style="margin-top: 4px;">${this.escCupom(chaveFormatada)}</div>
+          <div class="text-center" style="font-size: 9.5px; margin-top: 6px;">
+            ${venda.cpfCliente ? `CONSUMIDOR CPF: ${this.escCupom(venda.cpfCliente)}` : "N\xC3O IDENTIFICADO"}
           </div>
-          <div style="font-size: 9px; text-align: center; margin-top: 4px;">
-            Consulte pela Chave de Acesso em:<br>
-            <strong>www.fazenda.sp.gov.br/nfce/consulta</strong>
+          <div class="text-center" style="font-size: 9.5px; margin-top: 4px;">
+            NFC-e numero ${venda.numeroNfce || 1}<br>
+            Serie ${venda.serieNfce || 1} ${new Date(venda.data).toLocaleString("pt-BR")}<br>
+            Protocolo de autorizacao: ${this.escCupom(venda.protocoloNfe || "")}
           </div>
-          <div class="divider"></div>
-          <div style="font-size: 8.5px; text-align: center; color: #444;">
-            * Tributos Incidentes (Lei 12.741/2012): R$ ${venda.tributosAproximados || (venda.total * 0.184).toFixed(2).replace(".", ",")}
+          <div class="text-center" style="font-size: 8.5px; margin-top: 5px;">
+            Valor aproximado dos tributos deste cupom ${this.formatarMoedaCupom(venda.tributosAproximados || Number(venda.total || 0) * 0.184)}
+            (Conf. Lei Fed. 12.741/2012)
           </div>
-        ` : ""}
+        ` : `
+          <div>Venda: #${StorageService.formatarNumeroVenda(venda)}</div>
+          <div>Data: ${new Date(venda.data).toLocaleString("pt-BR")}</div>
+          ${venda.cpfCliente ? `<div>CONSUMIDOR CPF: ${this.escCupom(venda.cpfCliente)}</div>` : ""}
+        `}
 
         <div class="divider"></div>
-        <div class="text-center" style="margin-top: 6px;">
-          Obrigado pela prefer\xEAncia!<br>
-          Volte Sempre!
-        </div>
+        <div class="text-center">Operador: ${this.escCupom(venda.operador || "Caixa")}</div>
+        <div class="text-center bold" style="margin-top: 6px;">VOLTE SEMPRE!</div>
       </body>
       </html>
     `;
@@ -26102,7 +26200,7 @@
             ${(venda.itens || []).map((item) => `
               <tr>
                 <td><strong>${item.nome}</strong></td>
-                <td style="text-align: center;">${item.quantidade} un</td>
+                <td style="text-align: center;">${item.quantidade} ${item.permiteFracionado || item.unidade && String(item.unidade).toLowerCase() === "kg" ? "kg" : "un"}</td>
                 <td style="text-align: right;">R$ ${(item.precoUnitario || 0).toFixed(2).replace(".", ",")}</td>
                 <td style="text-align: right; font-weight: 700;">R$ ${(item.precoUnitario * item.quantidade).toFixed(2).replace(".", ",")}</td>
               </tr>
@@ -48611,6 +48709,23 @@ This typically indicates that your device does not have a healthy Internet conne
     parseMoedaBR(valor) {
       return StorageService.parseMoedaBR(valor);
     },
+    itemEhPeso(item) {
+      if (!item) return false;
+      if (item.permiteFracionado === true) return true;
+      if (item.unidade && String(item.unidade).toLowerCase() === "kg") return true;
+      const produtos = StorageService.getProdutos() || [];
+      const p = produtos.find((x2) => String(x2.id) === String(item.id));
+      return !!(p && (p.permiteFracionado === true || p.unidade && String(p.unidade).toLowerCase() === "kg"));
+    },
+    formatarQtdItem(item) {
+      const qtd = parseFloat(item && item.quantidade) || 0;
+      const num = Number.isInteger(qtd) ? String(qtd) : qtd.toFixed(3).replace(/\.?0+$/, "").replace(".", ",");
+      return this.itemEhPeso(item) ? num + " kg" : num;
+    },
+    formatarPrecoUnitarioItem(item) {
+      const preco = (parseFloat(item && item.precoUnitario) || 0).toFixed(2).replace(".", ",");
+      return this.itemEhPeso(item) ? preco + "/kg" : preco;
+    },
     getInputLeitorAtivo() {
       const tabPdv = document.getElementById("tab-pdv");
       const isClassic = document.body.classList.contains("pdv-layout-classico") || tabPdv && tabPdv.classList.contains("pdv-layout-classico");
@@ -49088,14 +49203,19 @@ Venda bloqueada no PDV!`);
           categoria: produto.categoria || "Geral",
           precoUnitario,
           quantidade,
-          isFardo
+          isFardo,
+          permiteFracionado: produto.permiteFracionado === true || produto.unidade && String(produto.unidade).toLowerCase() === "kg",
+          unidade: produto.permiteFracionado || produto.unidade && String(produto.unidade).toLowerCase() === "kg" ? "kg" : produto.unidade || "un"
         });
       }
       const classicCodigo = document.getElementById("classic-codigo-barras");
       const classicUnit = document.getElementById("classic-valor-unitario");
       const classicTotalItem = document.getElementById("classic-total-item");
       if (classicCodigo) classicCodigo.textContent = produto.codigoBarras || produto.id || "";
-      if (classicUnit) classicUnit.textContent = precoUnitario.toFixed(2).replace(".", ",");
+      if (classicUnit) {
+        const precoTxt = precoUnitario.toFixed(2).replace(".", ",");
+        classicUnit.textContent = this.itemEhPeso(produto) ? precoTxt + "/kg" : precoTxt;
+      }
       if (classicTotalItem) classicTotalItem.textContent = (precoUnitario * quantidade).toFixed(2).replace(".", ",");
       this.renderCarrinho();
       if (this.carrinho.length === 1 && !this.clubePerguntaExibida && StorageService.isModuloAtivo("clubeFidelidade")) {
@@ -49458,7 +49578,10 @@ Venda bloqueada no PDV!`);
           }
         }
       });
-      const totalItens = this.carrinho.reduce((acc, item) => acc + item.quantidade, 0);
+      const totalItens = this.carrinho.reduce((acc, item) => {
+        if (this.itemEhPeso(item)) return acc + 1;
+        return acc + (parseFloat(item.quantidade) || 0);
+      }, 0);
       const totalDescontos = this.desconto + descontoClube;
       const total = Math.max(0, subtotal - totalDescontos);
       return { subtotal, totalItens, total, desconto: this.desconto, descontoClube };
@@ -49522,7 +49645,7 @@ Venda bloqueada no PDV!`);
           <td>
             <div class="item-qty-control">
               <button type="button" class="btn-qty" onclick="PdvModule.alterarQuantidade(${idx}, -1)">-</button>
-              <strong style="min-width: 24px; text-align: center; font-family: 'JetBrains Mono';">${Number.isInteger(item.quantidade) ? item.quantidade : item.quantidade.toFixed(3).replace(/\.?0+$/, "")}</strong>
+              <strong style="min-width: 24px; text-align: center; font-family: 'JetBrains Mono';">${this.formatarQtdItem(item)}</strong>
               <button type="button" class="btn-qty" onclick="PdvModule.alterarQuantidade(${idx}, 1)">+</button>
             </div>
           </td>
@@ -49560,8 +49683,8 @@ Venda bloqueada no PDV!`);
             <td style="font-weight: bold;">${String(idx + 1).padStart(3, "0")}</td>
             <td>${item.codigoBarras || item.id}</td>
             <td style="font-weight: bold;">${item.nome}</td>
-            <td style="text-align: center;">${Number.isInteger(item.quantidade) ? item.quantidade : item.quantidade.toFixed(3).replace(/\.?0+$/, "")}</td>
-            <td style="text-align: right;">${item.precoUnitario.toFixed(2).replace(".", ",")}</td>
+            <td style="text-align: center; white-space: nowrap;">${this.formatarQtdItem(item)}</td>
+            <td style="text-align: right; white-space: nowrap;">${this.formatarPrecoUnitarioItem(item)}</td>
             <td style="text-align: right; font-weight: bold;">${(item.precoUnitario * item.quantidade).toFixed(2).replace(".", ",")}</td>
           </tr>
         `).join("");
@@ -50026,17 +50149,13 @@ Venda bloqueada no PDV!`);
           if (!matchCat) return false;
         }
         if (!termoLower) return true;
-        const nome = (p.nome || "").toLowerCase();
-        const cod = String(p.codigoBarras || "").toLowerCase();
-        const codFardo = String(p.codigoBarrasFardo || "").toLowerCase();
-        const cat = (p.categoria || "Geral").toLowerCase();
-        const id = String(p.id || "").toLowerCase();
-        return nome.includes(termoLower) || cod.includes(termoLower) || codFardo.includes(termoLower) || cat.includes(termoLower) || id.includes(termoLower);
+        return StorageService.produtoCombinaBusca(p, termoLower);
       });
       filtrados.sort((a, b) => {
         if (termoLower) {
-          const aNameStarts = (a.nome || "").toLowerCase().startsWith(termoLower);
-          const bNameStarts = (b.nome || "").toLowerCase().startsWith(termoLower);
+          const nTermo = StorageService.normalizarTextoBusca(termoLower);
+          const aNameStarts = StorageService.normalizarTextoBusca(a.nome).startsWith(nTermo) || (a.nome || "").toLowerCase().startsWith(termoLower);
+          const bNameStarts = StorageService.normalizarTextoBusca(b.nome).startsWith(nTermo) || (b.nome || "").toLowerCase().startsWith(termoLower);
           if (aNameStarts && !bNameStarts) return -1;
           if (!aNameStarts && bNameStarts) return 1;
         }
@@ -52153,6 +52272,27 @@ Venda bloqueada no PDV!`);
         }
       }
     },
+    toggleVendaFracionada(forcarAtivo = null) {
+      const checkbox = document.getElementById("prod-permite-fracionado");
+      if (!checkbox) return;
+      if (forcarAtivo !== null) checkbox.checked = forcarAtivo;
+      const on2 = checkbox.checked;
+      const setTxt = (id, txt) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = txt;
+      };
+      setTxt("prod-preco-custo-label", on2 ? "Custo (R$/kg)" : "Custo (R$)");
+      setTxt("prod-preco-venda-label", on2 ? "Venda (R$/kg) *" : "Venda (R$) *");
+      setTxt("prod-preco-clube-label", on2 ? "Clube (R$/kg)" : "Clube (R$)");
+      setTxt("prod-estoque-atual-label", on2 ? "Estoque atual (kg)" : "Estoque atual");
+      setTxt("prod-estoque-minimo-label", on2 ? "Estoque m\xEDnimo (kg)" : "Estoque m\xEDnimo");
+      const hint = document.getElementById("prod-fracionado-hint");
+      if (hint) {
+        hint.textContent = on2 ? "Pre\xE7o e estoque s\xE3o por kg. No caixa: 0,350*c\xF3digo ou a balan\xE7a." : "Liga isso em carne, frios, queijo\u2026 pre\xE7o e estoque passam a ser por kg.";
+      }
+      const estoqueAtual = document.getElementById("prod-estoque-atual");
+      if (estoqueAtual) estoqueAtual.placeholder = on2 ? "Ex: 12,5" : "0";
+    },
     toggleControleEstoque(forcarAtivo = null) {
       const checkbox = document.getElementById("prod-controlar-estoque");
       const boxCampos = document.getElementById("box-campos-estoque");
@@ -52171,12 +52311,15 @@ Venda bloqueada no PDV!`);
       }
     },
     bindGlobalDropdownListener() {
+      if (this._dropdownGlobalBound) return;
+      this._dropdownGlobalBound = true;
       document.addEventListener("click", (e) => {
         if (!e.target.closest(".category-dropdown-wrapper")) {
           this.fecharDropdownCategorias();
           this.fecharMenuAcoesEstoque();
         }
       });
+      window.addEventListener("resize", () => this.ajustarAlturaDropdownCategorias());
     },
     renderBarraCategorias() {
       const container = document.getElementById("estoque-category-bar");
@@ -52217,7 +52360,7 @@ Venda bloqueada no PDV!`);
               </span>
             </div>
             <div id="dropdown-mais-categorias" class="category-dropdown-menu" style="display: none;">
-              <div style="font-size: 11px; font-weight: 800; color: #64748b; padding: 6px 10px 4px 10px; text-transform: uppercase; letter-spacing: 0.5px;">Outras Categorias:</div>
+              <div class="category-dropdown-label">Outras categorias</div>
               ${extras.map((cat) => {
             const isItemActive = this.categoriaFiltro.toLowerCase() === cat.toLowerCase();
             const icone = StorageService.getIconeCategoria(cat);
@@ -52238,7 +52381,7 @@ Venda bloqueada no PDV!`);
               \u{1F4C2} Mais Categorias (${extras.length}) \u25BE
             </button>
             <div id="dropdown-mais-categorias" class="category-dropdown-menu" style="display: none;">
-              <div style="font-size: 11px; font-weight: 800; color: #64748b; padding: 6px 10px 4px 10px; text-transform: uppercase; letter-spacing: 0.5px;">Outras Categorias:</div>
+              <div class="category-dropdown-label">Outras categorias</div>
               ${extras.map((cat) => {
             const icone = StorageService.getIconeCategoria(cat);
             return `
@@ -52261,6 +52404,26 @@ Venda bloqueada no PDV!`);
       if (!dropdown) return;
       const isVis = dropdown.style.display === "block";
       dropdown.style.display = isVis ? "none" : "block";
+      if (!isVis) this.ajustarAlturaDropdownCategorias();
+    },
+    ajustarAlturaDropdownCategorias() {
+      const dropdown = document.getElementById("dropdown-mais-categorias");
+      if (!dropdown || dropdown.style.display !== "block") return;
+      const wrap2 = dropdown.closest(".category-dropdown-wrapper") || dropdown;
+      const rect = wrap2.getBoundingClientRect();
+      const margem = 16;
+      const abaixo = Math.floor(window.innerHeight - rect.bottom - margem);
+      const acima = Math.floor(rect.top - margem);
+      const minH = 140;
+      if (abaixo >= 180 || abaixo >= acima) {
+        dropdown.style.top = "calc(100% + 6px)";
+        dropdown.style.bottom = "auto";
+        dropdown.style.maxHeight = Math.max(minH, abaixo) + "px";
+      } else {
+        dropdown.style.top = "auto";
+        dropdown.style.bottom = "calc(100% + 6px)";
+        dropdown.style.maxHeight = Math.max(minH, acima) + "px";
+      }
     },
     fecharDropdownCategorias() {
       const dropdown = document.getElementById("dropdown-mais-categorias");
@@ -52371,9 +52534,7 @@ Venda bloqueada no PDV!`);
         });
       }
       if (busca) {
-        produtos = produtos.filter(
-          (p) => p.nome.toLowerCase().includes(busca) || p.codigoBarras.includes(busca) || p.id.toLowerCase().includes(busca)
-        );
+        produtos = produtos.filter((p) => StorageService.produtoCombinaBusca(p, busca, ["nome", "codigoBarras", "id"]));
       }
       if (this.ordenacaoAtual.coluna) {
         const { coluna, direcao } = this.ordenacaoAtual;
@@ -52648,6 +52809,7 @@ Venda bloqueada no PDV!`);
       const inputPrecoFardo = document.getElementById("prod-preco-fardo");
       if (inputPrecoFardo) inputPrecoFardo.dataset.autoCalculado = id ? "false" : "true";
       this.atualizarFeedbackDescontoGrade();
+      this.toggleVendaFracionada();
       if (modal) modal.classList.add("active");
     },
     gerarCodigoInternoAutomatico() {
@@ -52686,8 +52848,14 @@ Venda bloqueada no PDV!`);
       const precoVenda = this.parseMoedaBR(document.getElementById("prod-preco-venda").value);
       const precoClube2 = this.parseMoedaBR(document.getElementById("prod-preco-clube")?.value || "");
       const controlarEstoque = document.getElementById("prod-controlar-estoque")?.checked ?? true;
-      const estoque = controlarEstoque ? parseInt(document.getElementById("prod-estoque-atual").value, 10) || 0 : 0;
-      const estoqueMinimo = controlarEstoque ? parseInt(document.getElementById("prod-estoque-minimo").value, 10) || 5 : 0;
+      const parseQtd = (raw, fallback) => {
+        const n = parseFloat(String(raw || "").replace(",", "."));
+        return Number.isFinite(n) ? n : fallback;
+      };
+      const estoque = controlarEstoque ? parseQtd(document.getElementById("prod-estoque-atual").value, 0) : 0;
+      const estoqueMinimo = controlarEstoque ? parseQtd(document.getElementById("prod-estoque-minimo").value, 5) : 0;
+      const permiteFracionado = document.getElementById("prod-permite-fracionado")?.checked || false;
+      const unidade = permiteFracionado ? "kg" : "un";
       const camposGrade = document.getElementById("grade-fracionada-campos");
       const isGradeAberta = camposGrade && camposGrade.style.display !== "none";
       const unidadeFracionada = isGradeAberta ? document.getElementById("prod-unidade-fracionada").value.trim() : "";
@@ -52786,7 +52954,8 @@ Venda bloqueada no PDV!`);
             fatorConversao: fatorConversao || null,
             precoFardo: precoFardo || null,
             codigoBarrasFardo: codigoBarrasFardo || null,
-            permiteFracionado: document.getElementById("prod-permite-fracionado")?.checked || false,
+            permiteFracionado,
+            unidade,
             dataValidade: document.getElementById("prod-data-validade")?.value || "",
             ncm: document.getElementById("prod-ncm")?.value.trim() || null,
             cest: document.getElementById("prod-cest")?.value.trim() || null,
@@ -52841,7 +53010,8 @@ Venda bloqueada no PDV!`);
           fatorConversao: fatorConversao || null,
           precoFardo: precoFardo || null,
           codigoBarrasFardo: codigoBarrasFardo || null,
-          permiteFracionado: document.getElementById("prod-permite-fracionado")?.checked || false,
+          permiteFracionado,
+          unidade,
           dataValidade: document.getElementById("prod-data-validade")?.value || "",
           ncm: document.getElementById("prod-ncm")?.value.trim() || null,
           cest: document.getElementById("prod-cest")?.value.trim() || null,
@@ -63096,7 +63266,7 @@ NSU: ${nsuGerado}`
       const todosProdutos = StorageService.getProdutos().filter((p) => p.ativo !== false);
       const filtrados = todosProdutos.filter((p) => {
         if (!termo) return true;
-        return (p.nome || "").toLowerCase().includes(termo) || (p.codigo || "").toLowerCase().includes(termo) || (p.codigoBarras || "").toLowerCase().includes(termo) || (p.categoria || "").toLowerCase().includes(termo);
+        return StorageService.produtoCombinaBusca(p, termo, ["nome", "codigo", "codigoBarras", "categoria"]);
       });
       if (filtrados.length === 0) {
         container.innerHTML = `
@@ -63900,7 +64070,7 @@ NSU: ${nsuGerado}`
       }
       const todosProdutos = StorageService.getProdutos().filter((p) => p.ativo !== false);
       const filtrados = todosProdutos.filter(
-        (p) => (p.nome || "").toLowerCase().includes(texto) || (p.codigo || "").toLowerCase().includes(texto) || (p.codigoBarras || "").toLowerCase().includes(texto)
+        (p) => StorageService.produtoCombinaBusca(p, texto, ["nome", "codigo", "codigoBarras"])
       ).slice(0, 8);
       this.sugestoesAtuais = filtrados;
       this.sugestaoSelecionadaIdx = -1;
@@ -63997,7 +64167,7 @@ NSU: ${nsuGerado}`
         const todosProdutos = StorageService.getProdutos().filter((p) => p.ativo !== false);
         let produto = todosProdutos.find((p) => p.codigoBarras === val || p.codigo === val);
         if (!produto) {
-          produto = todosProdutos.find((p) => (p.nome || "").toLowerCase().includes(val.toLowerCase()));
+          produto = todosProdutos.find((p) => StorageService.textoCombinaBusca(p.nome, val));
         }
         if (produto) {
           const qtdInput = document.getElementById("comanda-qtd-input");
@@ -64043,7 +64213,7 @@ NSU: ${nsuGerado}`
         produto = todosProdutos.find((p) => p.id === this.produtoSelecionadoId);
       }
       if (!produto && val) {
-        produto = todosProdutos.find((p) => p.codigoBarras === val || p.codigo === val || (p.nome || "").toLowerCase().includes(val.toLowerCase()));
+        produto = todosProdutos.find((p) => p.codigoBarras === val || p.codigo === val || StorageService.textoCombinaBusca(p.nome, val));
       }
       if (!produto) {
         if (window.App) window.App.showToast("Digite ou selecione um produto para lan\xE7ar!", "warning");
@@ -64540,6 +64710,20 @@ NSU: ${nsuGerado}`
       this.persistir(sessao);
       return { ok: true, produto, linha: sessao.linhas[chave] };
     },
+    removerLinha(produtoId) {
+      const sessao = this.getSessaoAtiva();
+      if (!sessao || sessao.status === "processado") {
+        if (window.App && typeof window.App.showToast === "function") {
+          window.App.showToast("Depois de processar n\xE3o d\xE1 para apagar a linha. O estoque j\xE1 foi ajustado.", "warning");
+        }
+        return;
+      }
+      const chave = String(produtoId || "");
+      if (!sessao.linhas || !sessao.linhas[chave]) return;
+      delete sessao.linhas[chave];
+      this.persistir(sessao);
+      this.renderModal();
+    },
     concluir() {
       const sessao = this.getSessaoAtiva();
       if (!sessao || sessao.status === "processado") return null;
@@ -64579,6 +64763,11 @@ NSU: ${nsuGerado}`
         });
       });
       StorageService.saveProdutos(produtos);
+      Object.values(sessao.linhas || {}).forEach((l) => {
+        if (!l) return;
+        const p = produtos.find((x2) => String(x2.id) === String(l.produtoId));
+        l.saldoPara = p && p.controlarEstoque !== false ? Math.max(0, parseFloat(p.estoque) || 0) : Math.max(0, parseFloat(l.contado) || 0);
+      });
       sessao.status = "processado";
       sessao.processadoEm = (/* @__PURE__ */ new Date()).toISOString();
       this.persistir(sessao);
@@ -64599,6 +64788,29 @@ NSU: ${nsuGerado}`
     fecharModal() {
       const modal = document.getElementById("modal-inventario-sessao");
       if (modal) modal.classList.remove("active");
+    },
+    onCodigoKey(event) {
+      if (event.key !== "Enter" && event.key !== "Tab") return;
+      const input = document.getElementById("inventario-bipar-codigo");
+      if (!input || !String(input.value || "").trim()) return;
+      event.preventDefault();
+      const qtdEl = document.getElementById("inventario-bipar-qtd");
+      if (qtdEl) {
+        qtdEl.focus();
+        qtdEl.select();
+      }
+    },
+    onQtdKey(event) {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      this.confirmarBipagem();
+    },
+    novaContagem() {
+      this.sessaoAtivaId = null;
+      this.abrirSessao();
+      this.renderModal();
+      const input = document.getElementById("inventario-bipar-codigo");
+      if (input) setTimeout(() => input.focus(), 80);
     },
     confirmarBipagem() {
       const input = document.getElementById("inventario-bipar-codigo");
@@ -64681,7 +64893,12 @@ NSU: ${nsuGerado}`
       const btnConcluir = document.getElementById("btn-inventario-concluir");
       const btnReabrir = document.getElementById("btn-inventario-reabrir");
       const btnProcessar = document.getElementById("btn-inventario-processar");
+      const btnNova = document.getElementById("btn-inventario-nova");
+      const avisoProcEl = document.getElementById("inventario-aviso-processado");
       if (!sessao) {
+        modal.classList.remove("is-processado");
+        const boxVazio = modal.querySelector(".inventario-modal");
+        if (boxVazio) boxVazio.classList.remove("is-processado");
         if (statusEl) statusEl.textContent = "Nenhuma sess\xE3o";
         if (listaEl) listaEl.innerHTML = '<div class="inventario-vazio">Abra uma sess\xE3o para come\xE7ar a contar.</div>';
         return;
@@ -64690,15 +64907,45 @@ NSU: ${nsuGerado}`
       const divergentes = linhas.filter((l) => Math.abs((parseFloat(l.contado) || 0) - (parseFloat(l.saldoDe) || 0)) > 1e-4);
       const rotulo = {
         em_andamento: "Contando \u2014 s\xF3 produtos bipados entram",
-        concluido: "Conclu\xEDdo \u2014 conferir diverg\xEAncias",
-        processado: "Processado \u2014 movimentos gerados"
+        concluido: "Pausado \u2014 conferir diverg\xEAncias",
+        processado: "Processado \u2014 comprovante"
       }[sessao.status] || sessao.status;
+      const processado = sessao.status === "processado";
+      modal.classList.toggle("is-processado", processado);
+      const boxModal = modal.querySelector(".inventario-modal") || modal;
+      boxModal.classList.toggle("is-processado", processado);
       if (statusEl) statusEl.textContent = rotulo;
-      if (countEl) countEl.textContent = linhas.length + " lido(s) \xB7 " + divergentes.length + " divergente(s)";
+      const hintEl = modal.querySelector(".inventario-hint");
+      if (hintEl) {
+        hintEl.style.display = processado ? "none" : "";
+        hintEl.textContent = "Bipar n\xE3o mexe no saldo. S\xF3 produtos lidos entram. O que ningu\xE9m bipar n\xE3o zera. Os 3 PDVs podem contar a mesma sess\xE3o.";
+      }
+      const tituloLista = document.getElementById("inventario-lista-titulo");
+      if (tituloLista) tituloLista.textContent = processado ? "Comprovante" : "Produtos lidos nesta sess\xE3o";
+      let entrada = 0;
+      let saida = 0;
+      linhas.forEach((l) => {
+        const d = (parseFloat(l.contado) || 0) - (parseFloat(l.saldoDe) || 0);
+        if (d > 0) entrada += d;
+        else if (d < 0) saida += d;
+      });
+      if (countEl) {
+        countEl.textContent = processado ? linhas.length + " item(ns) \xB7 " + divergentes.length + " ajuste(s)" : linhas.length + " lido(s) \xB7 " + divergentes.length + " divergente(s)";
+      }
       if (bipBox) bipBox.style.display = sessao.status === "em_andamento" ? "block" : "none";
       if (btnConcluir) btnConcluir.style.display = sessao.status === "em_andamento" ? "inline-flex" : "none";
       if (btnReabrir) btnReabrir.style.display = sessao.status === "concluido" ? "inline-flex" : "none";
-      if (btnProcessar) btnProcessar.style.display = sessao.status === "processado" ? "none" : "inline-flex";
+      if (btnProcessar) btnProcessar.style.display = processado ? "none" : "inline-flex";
+      if (btnNova) btnNova.style.display = processado ? "inline-flex" : "none";
+      if (avisoProcEl) {
+        if (processado) {
+          avisoProcEl.style.display = "block";
+          avisoProcEl.innerHTML = "<strong>Estoque atualizado.</strong> " + divergentes.length + " movimento(s) gravado(s)" + (entrada ? " \xB7 entrada <b>+" + entrada + "</b>" : "") + (saida ? " \xB7 sa\xEDda <b>" + saida + "</b>" : "") + ".";
+        } else {
+          avisoProcEl.style.display = "none";
+          avisoProcEl.textContent = "";
+        }
+      }
       if (avisoEl) {
         if (avisosVenda && avisosVenda.length) {
           avisoEl.style.display = "block";
@@ -64712,24 +64959,43 @@ NSU: ${nsuGerado}`
         listaEl.innerHTML = '<div class="inventario-vazio">Nenhum produto lido ainda. O que n\xE3o for bipado n\xE3o zera.</div>';
         return;
       }
-      listaEl.innerHTML = linhas.slice().reverse().map((l) => {
+      const podeApagar = !processado;
+      const ordenadas = processado ? linhas.slice().sort((a, b) => String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR")) : linhas.slice().reverse();
+      const linhasHtml = ordenadas.map((l) => {
         const contado = parseFloat(l.contado) || 0;
         const saldo = parseFloat(l.saldoDe) || 0;
         const delta = contado - saldo;
-        const classe = delta === 0 ? "ok" : "div";
+        const classe = delta === 0 ? "ok" : delta > 0 ? "div mais" : "div menos";
         const sinal = delta > 0 ? "+" + delta : String(delta);
+        const idEsc = String(l.produtoId || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+        const botao = podeApagar ? `<button type="button" class="inventario-linha-del" title="Remover este produto da contagem" onclick="InventarioModule.removerLinha('${idEsc}')">\u2715</button>` : "";
+        const novo = l.saldoPara != null ? parseFloat(l.saldoPara) || 0 : Math.max(0, contado);
+        const colNovo = processado ? `<div class="inventario-num atualizado">
+            <small>Estoque atualizado</small>
+            <b>${novo}</b>
+          </div>` : "";
         return `<div class="inventario-linha ${classe}">
-        <div>
+        <div class="inventario-linha-prod">
           <strong>${this._esc(l.nome || l.produtoId)}</strong>
           <span>${this._esc(l.codigoBarras || "")}</span>
         </div>
-        <div class="inventario-nums">
-          <span>Sistema ${saldo}</span>
-          <span>Contado ${contado}</span>
-          <em>${sinal}</em>
+        <div class="inventario-num sistema">
+          <small>Sistema</small>
+          <b>${saldo}</b>
         </div>
+        <div class="inventario-num contado">
+          <small>Contado</small>
+          <b>${contado}</b>
+        </div>
+        <div class="inventario-num dif">
+          <small>Diferen\xE7a</small>
+          <b>${sinal}</b>
+        </div>
+        ${colNovo}
+        ${botao}
       </div>`;
       }).join("");
+      listaEl.innerHTML = linhasHtml;
     },
     _esc(txt) {
       return String(txt || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
