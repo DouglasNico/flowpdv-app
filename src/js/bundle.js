@@ -23738,6 +23738,93 @@
     });
     return Array.from(mapa.values());
   }
+  function campoVazio(valor) {
+    if (valor === void 0 || valor === null) return true;
+    return typeof valor === "string" && valor.trim() === "";
+  }
+  function mesclarRegistroPreservando(antigo, recente, chaves = []) {
+    const out = { ...antigo, ...recente };
+    (chaves || []).forEach((key) => {
+      if (campoVazio(out[key]) && !campoVazio(antigo[key])) {
+        out[key] = antigo[key];
+      }
+    });
+    if (out.membroClube === void 0 && antigo && antigo.membroClube !== void 0) {
+      out.membroClube = antigo.membroClube;
+    }
+    return out;
+  }
+  var CAMPOS_CLIENTE_PRESERVAR = [
+    "cpfCnpj",
+    "telefone",
+    "email",
+    "nome",
+    "endereco",
+    "cep",
+    "numero",
+    "bairro",
+    "cidade",
+    "complemento"
+  ];
+  function mesclarClientes(nuvem = [], local = []) {
+    const mapa = /* @__PURE__ */ new Map();
+    (nuvem || []).forEach((item) => {
+      const key = chaveDoItem(item);
+      if (key) mapa.set(key, item);
+    });
+    (local || []).forEach((item) => {
+      const key = chaveDoItem(item);
+      if (!key) return;
+      const existente = mapa.get(key);
+      if (!existente) {
+        mapa.set(key, item);
+        return;
+      }
+      const tExistente = tempoDe(existente);
+      const tNovo = tempoDe(item);
+      if (tNovo >= tExistente) {
+        mapa.set(key, mesclarRegistroPreservando(existente, item, CAMPOS_CLIENTE_PRESERVAR));
+      } else {
+        mapa.set(key, mesclarRegistroPreservando(item, existente, CAMPOS_CLIENTE_PRESERVAR));
+      }
+    });
+    return Array.from(mapa.values());
+  }
+  function clientesPrecisamReenviar(consolidadas = [], nuvem = []) {
+    const mapaNuvem = new Map((nuvem || []).map((c) => [String(c && c.id), c]));
+    if ((consolidadas || []).length !== (nuvem || []).length) return true;
+    return (consolidadas || []).some((c) => {
+      const outro = mapaNuvem.get(String(c && c.id));
+      if (!outro) return true;
+      const docLocal = String(c.cpfCnpj || "").replace(/\D/g, "");
+      const docNuvem = String(outro.cpfCnpj || "").replace(/\D/g, "");
+      return Boolean(docLocal) && docLocal !== docNuvem;
+    });
+  }
+  function documentosDoCliente(cliente) {
+    if (!cliente) return [];
+    const vistos = /* @__PURE__ */ new Set();
+    const docs = [];
+    [cliente.cpfCnpj, cliente.cpf, cliente.cnpj, cliente.documento].forEach((valor) => {
+      const digitos = String(valor || "").replace(/\D/g, "");
+      if (!digitos || vistos.has(digitos)) return;
+      vistos.add(digitos);
+      docs.push(digitos);
+    });
+    return docs;
+  }
+  function encontrarClientePorDocumento(clientes, documento) {
+    const alvo = String(documento || "").replace(/\D/g, "");
+    if (alvo.length !== 11 && alvo.length !== 14) return null;
+    const lista = Array.isArray(clientes) ? clientes : [];
+    return lista.find((c) => documentosDoCliente(c).some((doc2) => {
+      if (doc2 === alvo) return true;
+      if (alvo.length === 11 && doc2.length <= 11) {
+        return doc2.padStart(11, "0") === alvo.padStart(11, "0");
+      }
+      return false;
+    })) || null;
+  }
   function ehContaPaga(conta) {
     return String(conta && conta.status || "").toLowerCase() === "pago";
   }
@@ -24481,7 +24568,16 @@
       return defaults;
     },
     saveClientes(clientes) {
-      localStorage.setItem("adega_clientes", JSON.stringify(clientes));
+      let anteriores = [];
+      try {
+        const saved = localStorage.getItem("adega_clientes");
+        anteriores = saved ? JSON.parse(saved) : [];
+        if (!Array.isArray(anteriores)) anteriores = [];
+      } catch (e) {
+        anteriores = [];
+      }
+      const carimbados = carimbarAlterados(Array.isArray(clientes) ? clientes : [], anteriores);
+      localStorage.setItem("adega_clientes", JSON.stringify(carimbados));
     },
     // Contas a Pagar (Módulo Financeiro)
     getContasPagar() {
@@ -51445,11 +51541,11 @@ Venda bloqueada no PDV!`);
         modal.classList.add("active");
         const cpfInput = document.getElementById("clube-cpf-input");
         if (cpfInput) {
-          cpfInput.value = this.formatarCpfClube(this.clienteClubeAtivo ? this.clienteClubeAtivo.cpfCnpj || "" : "");
+          cpfInput.value = this.formatarCpfCnpj(this.clienteClubeAtivo ? this.clienteClubeAtivo.cpfCnpj || "" : "");
           if (!cpfInput.dataset.hasMask) {
             cpfInput.dataset.hasMask = "true";
             cpfInput.addEventListener("input", () => {
-              cpfInput.value = this.formatarCpfClube(cpfInput.value);
+              cpfInput.value = this.formatarCpfCnpj(cpfInput.value);
             });
           }
         }
@@ -51472,11 +51568,7 @@ Venda bloqueada no PDV!`);
       }
     },
     formatarCpfClube(valor) {
-      let numeros = String(valor || "").replace(/\D/g, "").slice(0, 11);
-      numeros = numeros.replace(/(\d{3})(\d)/, "$1.$2");
-      numeros = numeros.replace(/(\d{3})(\d)/, "$1.$2");
-      numeros = numeros.replace(/(\d{3})(\d{1,2})$/, "$1-$2");
-      return numeros;
+      return this.formatarCpfCnpj(valor);
     },
     fecharModalClubeFidelidade() {
       const modal = document.getElementById("modal-clube-fidelidade");
@@ -51487,12 +51579,12 @@ Venda bloqueada no PDV!`);
       e.preventDefault();
       const cpfRaw = document.getElementById("clube-cpf-input").value;
       const cpf = cpfRaw.replace(/\D/g, "");
-      if (cpf.length < 11) {
+      if (cpf.length !== 11 && cpf.length !== 14) {
         window.App.showToast("CPF/CNPJ invalido!", "warning");
         return;
       }
       const clientes = StorageService.getClientes() || [];
-      const cliente = clientes.find((c) => (c.cpfCnpj || "").replace(/\D/g, "") === cpf);
+      const cliente = encontrarClientePorDocumento(clientes, cpf);
       const infoBox = document.getElementById("clube-fidelidade-info");
       const infoNome = document.getElementById("clube-fidelidade-nome");
       const infoStatus = document.getElementById("clube-fidelidade-status");
@@ -58573,7 +58665,7 @@ ${base}`;
           }
           const produtosConsolidados = this.mesclarProdutosComEstoque(cloudProds, produtosLocais, cloudData.movimentosEstoque);
           const contasConsolidadas = mesclarContasPagar(cloudContas, contasLocais);
-          const clientesConsolidados = this.mesclarItensPorId(cloudClientes, clientesLocais);
+          const clientesConsolidados = mesclarClientes(cloudClientes, clientesLocais);
           const vendasConsolidadas = this.mesclarItensPorId(cloudVendas, vendasLocais);
           StorageService.saveProdutos(produtosConsolidados);
           StorageService.saveContasPagar(contasConsolidadas);
@@ -58598,7 +58690,7 @@ ${base}`;
             StorageService.saveConfig(mesclarConfigLoja(cloudData.config, StorageService.getConfig() || {}), { carimbar: false });
           }
           this.aplicarInventariosRecebidos(cloudData.inventarios);
-          if (produtosConsolidados.length > cloudProds.length || contasConsolidadas.length > cloudContas.length || contasPagarPrecisamReenviar(contasConsolidadas, cloudContas) || clientesConsolidados.length > cloudClientes.length || vendasConsolidadas.length > cloudVendas.length || categoriasConsolidadas.length > (cloudData.categorias || []).length) {
+          if (produtosConsolidados.length > cloudProds.length || contasConsolidadas.length > cloudContas.length || contasPagarPrecisamReenviar(contasConsolidadas, cloudContas) || clientesPrecisamReenviar(clientesConsolidados, cloudClientes) || vendasConsolidadas.length > cloudVendas.length || categoriasConsolidadas.length > (cloudData.categorias || []).length) {
             console.log("[CloudSync] Consolidando novos itens locais para a nuvem...");
             this.enviarAlteracaoNuvem("consolidacao_unificada");
           }
@@ -58888,9 +58980,9 @@ ${base}`;
           }
         }
         if (Array.isArray(cloudData.clientes)) {
-          const clientesConsolidados = this.mesclarItensPorId(cloudData.clientes, StorageService.getClientes());
+          const clientesConsolidados = mesclarClientes(cloudData.clientes, StorageService.getClientes());
           StorageService.saveClientes(clientesConsolidados);
-          precisaReenviarBaseConsolidada = precisaReenviarBaseConsolidada || clientesConsolidados.length > cloudData.clientes.length;
+          precisaReenviarBaseConsolidada = precisaReenviarBaseConsolidada || clientesPrecisamReenviar(clientesConsolidados, cloudData.clientes);
           houveAlteracao = true;
           if (window.ClientesModule && typeof window.ClientesModule.renderTabela === "function") {
             window.ClientesModule.renderTabela();

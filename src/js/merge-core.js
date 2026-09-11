@@ -51,6 +51,102 @@ export function mesclarItensPorId(baseA = [], baseB = []) {
   return Array.from(mapa.values());
 }
 
+function campoVazio(valor) {
+  if (valor === undefined || valor === null) return true;
+  return typeof valor === 'string' && valor.trim() === '';
+}
+
+function mesclarRegistroPreservando(antigo, recente, chaves = []) {
+  const out = { ...antigo, ...recente };
+  (chaves || []).forEach(key => {
+    if (campoVazio(out[key]) && !campoVazio(antigo[key])) {
+      out[key] = antigo[key];
+    }
+  });
+  if (out.membroClube === undefined && antigo && antigo.membroClube !== undefined) {
+    out.membroClube = antigo.membroClube;
+  }
+  return out;
+}
+
+const CAMPOS_CLIENTE_PRESERVAR = [
+  'cpfCnpj', 'telefone', 'email', 'nome', 'endereco',
+  'cep', 'numero', 'bairro', 'cidade', 'complemento'
+];
+
+/**
+ * Mesma regra do merge por id, mas um CPF/telefone vazio no notebook
+ * não pode apagar o documento que o outro caixa acabou de cadastrar.
+ */
+export function mesclarClientes(nuvem = [], local = []) {
+  const mapa = new Map();
+
+  (nuvem || []).forEach(item => {
+    const key = chaveDoItem(item);
+    if (key) mapa.set(key, item);
+  });
+
+  (local || []).forEach(item => {
+    const key = chaveDoItem(item);
+    if (!key) return;
+
+    const existente = mapa.get(key);
+    if (!existente) {
+      mapa.set(key, item);
+      return;
+    }
+
+    const tExistente = tempoDe(existente);
+    const tNovo = tempoDe(item);
+
+    if (tNovo >= tExistente) {
+      mapa.set(key, mesclarRegistroPreservando(existente, item, CAMPOS_CLIENTE_PRESERVAR));
+    } else {
+      mapa.set(key, mesclarRegistroPreservando(item, existente, CAMPOS_CLIENTE_PRESERVAR));
+    }
+  });
+
+  return Array.from(mapa.values());
+}
+
+export function clientesPrecisamReenviar(consolidadas = [], nuvem = []) {
+  const mapaNuvem = new Map((nuvem || []).map(c => [String(c && c.id), c]));
+  if ((consolidadas || []).length !== (nuvem || []).length) return true;
+  return (consolidadas || []).some(c => {
+    const outro = mapaNuvem.get(String(c && c.id));
+    if (!outro) return true;
+    const docLocal = String(c.cpfCnpj || '').replace(/\D/g, '');
+    const docNuvem = String(outro.cpfCnpj || '').replace(/\D/g, '');
+    return Boolean(docLocal) && docLocal !== docNuvem;
+  });
+}
+
+export function documentosDoCliente(cliente) {
+  if (!cliente) return [];
+  const vistos = new Set();
+  const docs = [];
+  [cliente.cpfCnpj, cliente.cpf, cliente.cnpj, cliente.documento].forEach(valor => {
+    const digitos = String(valor || '').replace(/\D/g, '');
+    if (!digitos || vistos.has(digitos)) return;
+    vistos.add(digitos);
+    docs.push(digitos);
+  });
+  return docs;
+}
+
+export function encontrarClientePorDocumento(clientes, documento) {
+  const alvo = String(documento || '').replace(/\D/g, '');
+  if (alvo.length !== 11 && alvo.length !== 14) return null;
+  const lista = Array.isArray(clientes) ? clientes : [];
+  return lista.find(c => documentosDoCliente(c).some(doc => {
+    if (doc === alvo) return true;
+    if (alvo.length === 11 && doc.length <= 11) {
+      return doc.padStart(11, '0') === alvo.padStart(11, '0');
+    }
+    return false;
+  })) || null;
+}
+
 function ehContaPaga(conta) {
   return String(conta && conta.status || '').toLowerCase() === 'pago';
 }

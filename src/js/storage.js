@@ -515,7 +515,16 @@ export const StorageService = {
   },
 
   saveClientes(clientes) {
-    localStorage.setItem('adega_clientes', JSON.stringify(clientes));
+    let anteriores = [];
+    try {
+      const saved = localStorage.getItem('adega_clientes');
+      anteriores = saved ? JSON.parse(saved) : [];
+      if (!Array.isArray(anteriores)) anteriores = [];
+    } catch (e) {
+      anteriores = [];
+    }
+    const carimbados = carimbarAlterados(Array.isArray(clientes) ? clientes : [], anteriores);
+    localStorage.setItem('adega_clientes', JSON.stringify(carimbados));
   },
 
   // Contas a Pagar (Módulo Financeiro)

@@ -6,6 +6,7 @@ import { StorageService } from './storage.js';
 import { AuthModule } from './auth.js';
 import { ThermalPrintModule } from './thermal-print.js';
 import { AuditModule } from './audit.js';
+import { encontrarClientePorDocumento } from './merge-core.js';
 
 export const PdvModule = {
   carrinho: [],
@@ -3189,11 +3190,11 @@ export const PdvModule = {
       modal.classList.add('active');
       const cpfInput = document.getElementById('clube-cpf-input');
       if (cpfInput) {
-        cpfInput.value = this.formatarCpfClube(this.clienteClubeAtivo ? (this.clienteClubeAtivo.cpfCnpj || '') : '');
+        cpfInput.value = this.formatarCpfCnpj(this.clienteClubeAtivo ? (this.clienteClubeAtivo.cpfCnpj || '') : '');
         if (!cpfInput.dataset.hasMask) {
           cpfInput.dataset.hasMask = 'true';
           cpfInput.addEventListener('input', () => {
-            cpfInput.value = this.formatarCpfClube(cpfInput.value);
+            cpfInput.value = this.formatarCpfCnpj(cpfInput.value);
           });
         }
       }
@@ -3220,11 +3221,7 @@ export const PdvModule = {
   },
 
   formatarCpfClube(valor) {
-    let numeros = String(valor || '').replace(/\D/g, '').slice(0, 11);
-    numeros = numeros.replace(/(\d{3})(\d)/, '$1.$2');
-    numeros = numeros.replace(/(\d{3})(\d)/, '$1.$2');
-    numeros = numeros.replace(/(\d{3})(\d{1,2})$/, '$1-$2');
-    return numeros;
+    return this.formatarCpfCnpj(valor);
   },
 
   fecharModalClubeFidelidade() {
@@ -3238,13 +3235,13 @@ export const PdvModule = {
     const cpfRaw = document.getElementById('clube-cpf-input').value;
     const cpf = cpfRaw.replace(/\D/g, '');
     
-    if (cpf.length < 11) {
+    if (cpf.length !== 11 && cpf.length !== 14) {
       window.App.showToast('CPF/CNPJ invalido!', 'warning');
       return;
     }
 
     const clientes = StorageService.getClientes() || [];
-    const cliente = clientes.find(c => (c.cpfCnpj || '').replace(/\D/g, '') === cpf);
+    const cliente = encontrarClientePorDocumento(clientes, cpf);
 
     const infoBox = document.getElementById('clube-fidelidade-info');
     const infoNome = document.getElementById('clube-fidelidade-nome');

@@ -7,6 +7,8 @@ import { StorageService } from './storage.js';
 import { db, doc, getDoc, getDocs, collection, setDoc, updateDoc, deleteDoc, deleteField, onSnapshot, query, where, orderBy, limit, garantirSessaoLoja, encerrarSessaoLoja } from './firebase-config.js';
 import {
   mesclarItensPorId,
+  mesclarClientes,
+  clientesPrecisamReenviar,
   mesclarContasPagar,
   contasPagarPrecisamReenviar,
   mesclarComandas,
@@ -597,7 +599,7 @@ export const CloudSyncModule = {
         // Combina o que está na nuvem com o que foi feito localmente (ex: XML, cadastros novos)
         const produtosConsolidados = this.mesclarProdutosComEstoque(cloudProds, produtosLocais, cloudData.movimentosEstoque);
         const contasConsolidadas = mesclarContasPagar(cloudContas, contasLocais);
-        const clientesConsolidados = this.mesclarItensPorId(cloudClientes, clientesLocais);
+        const clientesConsolidados = mesclarClientes(cloudClientes, clientesLocais);
         const vendasConsolidadas = this.mesclarItensPorId(cloudVendas, vendasLocais);
 
         StorageService.saveProdutos(produtosConsolidados);
@@ -627,7 +629,7 @@ export const CloudSyncModule = {
         this.aplicarInventariosRecebidos(cloudData.inventarios);
 
         // Se tínhamos itens locais novos (como notas XML ou produtos recém-criados), enviamos a base unificada de volta para a nuvem
-        if (produtosConsolidados.length > cloudProds.length || contasConsolidadas.length > cloudContas.length || contasPagarPrecisamReenviar(contasConsolidadas, cloudContas) || clientesConsolidados.length > cloudClientes.length || vendasConsolidadas.length > cloudVendas.length || categoriasConsolidadas.length > (cloudData.categorias || []).length) {
+        if (produtosConsolidados.length > cloudProds.length || contasConsolidadas.length > cloudContas.length || contasPagarPrecisamReenviar(contasConsolidadas, cloudContas) || clientesPrecisamReenviar(clientesConsolidados, cloudClientes) || vendasConsolidadas.length > cloudVendas.length || categoriasConsolidadas.length > (cloudData.categorias || []).length) {
           console.log('[CloudSync] Consolidando novos itens locais para a nuvem...');
           this.enviarAlteracaoNuvem('consolidacao_unificada');
         }
@@ -989,9 +991,9 @@ export const CloudSyncModule = {
 
       // 4. Sincronizar Clientes / Fiado
       if (Array.isArray(cloudData.clientes)) {
-        const clientesConsolidados = this.mesclarItensPorId(cloudData.clientes, StorageService.getClientes());
+        const clientesConsolidados = mesclarClientes(cloudData.clientes, StorageService.getClientes());
         StorageService.saveClientes(clientesConsolidados);
-        precisaReenviarBaseConsolidada = precisaReenviarBaseConsolidada || clientesConsolidados.length > cloudData.clientes.length;
+        precisaReenviarBaseConsolidada = precisaReenviarBaseConsolidada || clientesPrecisamReenviar(clientesConsolidados, cloudData.clientes);
         houveAlteracao = true;
         if (window.ClientesModule && typeof window.ClientesModule.renderTabela === 'function') {
           window.ClientesModule.renderTabela();

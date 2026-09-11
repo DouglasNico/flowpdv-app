@@ -51,6 +51,9 @@ global.window = {};
 const core = require(saida);
 const {
   mesclarItensPorId,
+  mesclarClientes,
+  clientesPrecisamReenviar,
+  encontrarClientePorDocumento,
   mesclarContasPagar,
   contasPagarPrecisamReenviar,
   mesclarComandas,
@@ -90,6 +93,29 @@ teste('produto novo de um caixa não some por causa do outro', () => {
 
   const ids = mesclarItensPorId(nuvem, local).map(p => p.id).sort();
   assert.deepStrictEqual(ids, ['P1', 'P2']);
+});
+
+teste('CPF do cliente na nuvem nao some no notebook sem documento', () => {
+  const nuvem = [{ id: 'CLI-1', nome: 'Maria', cpfCnpj: '123.456.789-09', atualizadoEm: emMinutos(0) }];
+  const local = [{ id: 'CLI-1', nome: 'Maria', cpfCnpj: '', telefone: '11999999999' }];
+  const [item] = mesclarClientes(nuvem, local);
+  assert.strictEqual(String(item.cpfCnpj).replace(/\D/g, ''), '12345678909');
+  assert.strictEqual(item.telefone, '11999999999');
+});
+
+teste('clube acha cliente pelo CPF mesmo com pontuacao', () => {
+  const clientes = [{ id: 'CLI-1', nome: 'Maria', cpfCnpj: '123.456.789-09' }];
+  const achado = encontrarClientePorDocumento(clientes, '12345678909');
+  assert.ok(achado);
+  assert.strictEqual(achado.nome, 'Maria');
+  assert.strictEqual(encontrarClientePorDocumento(clientes, '000'), null);
+});
+
+teste('cliente com CPF recuperado precisa voltar para a nuvem', () => {
+  const nuvem = [{ id: 'CLI-1', nome: 'Maria', cpfCnpj: '' }];
+  const local = [{ id: 'CLI-1', nome: 'Maria', cpfCnpj: '123.456.789-09' }];
+  assert.strictEqual(clientesPrecisamReenviar(local, nuvem), true);
+  assert.strictEqual(clientesPrecisamReenviar(nuvem, nuvem), false);
 });
 
 teste('conta paga na nuvem não volta a vencida no outro caixa', () => {
