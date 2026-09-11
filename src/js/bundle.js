@@ -23898,6 +23898,27 @@
     });
     return mapa;
   }
+  function recuarIso(iso, ms = 12e4) {
+    const t = Date.parse(iso || "");
+    if (!Number.isFinite(t)) return iso || "";
+    return new Date(Math.max(0, t - ms)).toISOString();
+  }
+  function juntarMovimentosPorId(...listas) {
+    const mapa = /* @__PURE__ */ new Map();
+    listas.forEach((lista) => {
+      (lista || []).forEach((m) => {
+        if (m && m.id) mapa.set(String(m.id), m);
+      });
+    });
+    return Array.from(mapa.values());
+  }
+  function ultimoAtMovimentos(lista) {
+    let max = "";
+    (lista || []).forEach((m) => {
+      if (m && m.at && String(m.at) > max) max = String(m.at);
+    });
+    return max;
+  }
   function mesclarConfigLoja(nuvem, local) {
     if (!nuvem || typeof nuvem !== "object") return local && typeof local === "object" ? local : {};
     if (!local || typeof local !== "object") return nuvem;
@@ -58226,8 +58247,12 @@ ${base}`;
         if (window.App && typeof window.App.showToast === "function") {
           window.App.showToast("\u{1F310} Conex\xE3o restabelecida! Sincronizando dados com a nuvem...", "info");
         }
-        setTimeout(() => {
-          this.sincronizacaoInicialAuto();
+        setTimeout(async () => {
+          try {
+            await this.sincronizacaoInicialAuto();
+          } catch (e) {
+            console.warn("[CloudSync] Falha ao baixar da nuvem no retorno da conex\xE3o:", e);
+          }
           this.iniciarOuvinteTempoReal();
           this.enviarAlteracaoNuvem("retorno_conexao");
           if (window.AuditModule && typeof window.AuditModule.descarregarPendentes === "function") {
@@ -58411,15 +58436,17 @@ ${base}`;
         envio[nome] = deleteField();
       }
       envio.movimentosEstoque = deleteField();
+      const movimentosAte = ultimoAtMovimentos(movimentosEstoque);
+      if (movimentosAte) envio.movimentosAte = movimentosAte;
       if (Object.keys(manifesto).length > 0) {
         envio.partes = manifesto;
         this.salvarManifesto(chave, manifesto);
       }
+      await this.enviarMovimentosPendentes(chave, movimentosEstoque);
       await setDoc(doc(db, COLECAO_BACKUPS, chave), envio, { merge: true });
       if (devePatchTurno && meuDevId) {
         await this.atualizarTurnoAtivoDoTerminal(chave, meuDevId, meuTurno === void 0 ? null : meuTurno);
       }
-      await this.enviarMovimentosPendentes(chave, movimentosEstoque);
       await this.enviarInventariosPendentes(chave);
       await this.enviarCheckpointEstoque(chave);
     },
@@ -58489,7 +58516,7 @@ ${base}`;
         StorageService.saveCheckpointEstoque(checkpoint);
       }
       completo.checkpointEstoque = checkpoint;
-      completo.movimentosEstoque = await this.baixarMovimentosNovos(chave, completo.movimentosEstoque);
+      completo.movimentosEstoque = await this.baixarMovimentosNovos(chave, completo.movimentosEstoque, { recuperar: true });
       completo.inventarios = await this.baixarInventariosNuvem(chave);
       return completo;
     },
@@ -58515,28 +58542,54 @@ ${base}`;
       pendentes.forEach((m) => enviados.add(m.id));
       localStorage.setItem(CHAVE_MOV_ENVIADOS, JSON.stringify(Array.from(enviados).slice(-4e3)));
     },
-    async baixarMovimentosNovos(chave, movimentosLegado = null) {
+    async baixarMovimentosNovos(chave, movimentosLegado = null, opts = {}) {
       const cp = StorageService.getCheckpointEstoque ? StorageService.getCheckpointEstoque() : null;
       const janelaDias = cp && cp.ultimoMovAt ? 30 : 3;
-      const desde = localStorage.getItem(CHAVE_MOV_RECEBIDOS) || cp && cp.ultimoMovAt || new Date(Date.now() - janelaDias * 24 * 60 * 60 * 1e3).toISOString();
-      try {
-        const consulta = query(
-          collection(db, COLECAO_BACKUPS, chave, "movimentos"),
-          where("at", ">", desde),
-          orderBy("at"),
-          limit(2e3)
-        );
+      const marcaAtual = localStorage.getItem(CHAVE_MOV_RECEBIDOS) || cp && cp.ultimoMovAt || new Date(Date.now() - janelaDias * 24 * 60 * 60 * 1e3).toISOString();
+      const desde = recuarIso(marcaAtual, 12e4);
+      const lerSnap = async (consulta) => {
         const snap = await getDocs(consulta);
         const lista = [];
-        let marcaDagua = desde;
         snap.forEach((d) => {
           const mov = d.data();
-          if (!mov || !mov.id) return;
-          if (mov.at && mov.at > marcaDagua) marcaDagua = mov.at;
-          lista.push(mov);
+          if (mov && mov.id) lista.push(mov);
+        });
+        return lista;
+      };
+      try {
+        const col = collection(db, COLECAO_BACKUPS, chave, "movimentos");
+        const consultarNovos = () => lerSnap(query(col, where("at", ">=", desde), orderBy("at"), limit(2e3)));
+        let novos = [];
+        try {
+          novos = await consultarNovos();
+        } catch (e) {
+          console.warn("[CloudSync] Consulta incremental de movimentos falhou:", e);
+        }
+        if (opts.esperarNovos) {
+          const alvo = String(opts.movimentosAte || "");
+          const chegouAte = ultimoAtMovimentos(novos);
+          if (alvo && chegouAte < alvo) {
+            await new Promise((resolve) => setTimeout(resolve, 500));
+            try {
+              novos = juntarMovimentosPorId(novos, await consultarNovos());
+            } catch (e) {
+            }
+          }
+        }
+        let recentes = [];
+        if (opts.recuperar) {
+          try {
+            recentes = await lerSnap(query(col, orderBy("at", "desc"), limit(150)));
+          } catch (e) {
+            console.warn("[CloudSync] Recupera\xE7\xE3o dos \xFAltimos movimentos falhou:", e);
+          }
+        }
+        const lista = juntarMovimentosPorId(novos, recentes, normalizarMovimentos(movimentosLegado));
+        let marcaDagua = marcaAtual;
+        lista.forEach((mov) => {
+          if (mov.at && String(mov.at) > marcaDagua) marcaDagua = String(mov.at);
         });
         this.marcaDaguaMovimentos = marcaDagua;
-        if (lista.length === 0) return normalizarMovimentos(movimentosLegado);
         return lista;
       } catch (e) {
         console.warn("[CloudSync] N\xE3o foi poss\xEDvel ler os movimentos de estoque:", e);
@@ -58734,7 +58787,10 @@ ${base}`;
           let cloudData = resumo;
           try {
             cloudData = await this.completarPacote(chave, resumo);
-            cloudData.movimentosEstoque = await this.baixarMovimentosNovos(chave, resumo.movimentosEstoque);
+            cloudData.movimentosEstoque = await this.baixarMovimentosNovos(chave, resumo.movimentosEstoque, {
+              esperarNovos: true,
+              movimentosAte: resumo.movimentosAte || ""
+            });
             cloudData.inventarios = await this.baixarInventariosNuvem(chave);
             if (!cloudData.checkpointEstoque) {
               cloudData.checkpointEstoque = await this.baixarCheckpointEstoque(chave);

@@ -55,6 +55,9 @@ const {
   clientesPrecisamReenviar,
   encontrarClientePorDocumento,
   totalAuditoriaVisivel,
+  recuarIso,
+  juntarMovimentosPorId,
+  ultimoAtMovimentos,
   mesclarContasPagar,
   contasPagarPrecisamReenviar,
   mesclarComandas,
@@ -215,6 +218,39 @@ teste('3 PDVs Coca 10 cada um vende 1 ficam 7', () => {
   assert.strictEqual(a.produtos[0].estoque, 7);
   assert.strictEqual(b.produtos[0].estoque, 7);
   assert.strictEqual(c.produtos[0].estoque, 7);
+});
+
+teste('dois caixas vendem offline e ao juntar os movimentos ficam 10', () => {
+  const movA = { id: 'MA', produtoId: 'P1', delta: -3, at: emMinutos(1), terminalId: 'A' };
+  const movB = { id: 'MB', produtoId: 'P1', delta: -2, at: emMinutos(2), terminalId: 'B' };
+  const prod = (estoque) => [{ id: 'P1', nome: 'Teste', estoque, controlarEstoque: true }];
+
+  const a = consolidarProdutosComMovimentos({
+    produtosNuvem: prod(15),
+    produtosLocais: prod(12),
+    movimentosNuvem: [movA, movB],
+    movimentosLocais: [movA]
+  });
+  const b = consolidarProdutosComMovimentos({
+    produtosNuvem: prod(15),
+    produtosLocais: prod(13),
+    movimentosNuvem: [movA, movB],
+    movimentosLocais: [movB]
+  });
+  assert.strictEqual(a.produtos[0].estoque, 10);
+  assert.strictEqual(b.produtos[0].estoque, 10);
+});
+
+teste('consulta de movimento recua a marca d agua para nao perder venda do outro caixa', () => {
+  const marca = emMinutos(5);
+  const desde = recuarIso(marca, 120000);
+  assert.ok(Date.parse(desde) < Date.parse(marca));
+  const juntos = juntarMovimentosPorId(
+    [{ id: 'MA', delta: -3 }],
+    [{ id: 'MB', delta: -2 }, { id: 'MA', delta: -3 }]
+  );
+  assert.strictEqual(juntos.length, 2);
+  assert.strictEqual(ultimoAtMovimentos([{ at: emMinutos(1) }, { at: emMinutos(3) }]), emMinutos(3));
 });
 
 teste('3 PDVs Coca offline depois trocam movimentos ficam 7', () => {

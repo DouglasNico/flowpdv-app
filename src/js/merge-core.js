@@ -248,6 +248,30 @@ export function mapearMovimentosPorId(lista) {
   return mapa;
 }
 
+export function recuarIso(iso, ms = 120000) {
+  const t = Date.parse(iso || '');
+  if (!Number.isFinite(t)) return iso || '';
+  return new Date(Math.max(0, t - ms)).toISOString();
+}
+
+export function juntarMovimentosPorId(...listas) {
+  const mapa = new Map();
+  listas.forEach(lista => {
+    (lista || []).forEach(m => {
+      if (m && m.id) mapa.set(String(m.id), m);
+    });
+  });
+  return Array.from(mapa.values());
+}
+
+export function ultimoAtMovimentos(lista) {
+  let max = '';
+  (lista || []).forEach(m => {
+    if (m && m.at && String(m.at) > max) max = String(m.at);
+  });
+  return max;
+}
+
 /**
  * Consolida o catálogo entre nuvem e terminal local e reaplica apenas os
  * movimentos de estoque que este terminal ainda não conhece. É o que impede um
