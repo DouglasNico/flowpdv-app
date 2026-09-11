@@ -2219,8 +2219,9 @@ export const GerenciaModule = {
     StorageService.registrarMovimentoEstoque({
       produtoId: p.id,
       delta: novoEstoque - estoqueAnterior,
-      origem: 'ajuste_gerencia',
-      refId: tipoOperacao
+      origem: tipoOperacao === 'definir' ? 'definir' : 'ajuste_gerencia',
+      refId: tipoOperacao,
+      ...(tipoOperacao === 'definir' ? { saldoPara: novoEstoque } : {})
     });
 
     // Registrar evento oficial na auditoria

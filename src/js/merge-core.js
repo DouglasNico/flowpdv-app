@@ -335,7 +335,10 @@ export function consolidarProdutosComMovimentos({
 
   const idsConhecidos = new Set((movimentosLocais || []).map(m => m && m.id).filter(Boolean));
   const corteCheckpoint = checkpoint && checkpoint.ultimoMovAt ? Date.parse(checkpoint.ultimoMovAt) : 0;
-  const novosMovimentos = normalizarMovimentos(movimentosNuvem).filter(m => m && m.id && !idsConhecidos.has(m.id));
+  const novosMovimentos = normalizarMovimentos(movimentosNuvem)
+    .filter(m => m && m.id && !idsConhecidos.has(m.id))
+    .slice()
+    .sort((a, b) => String(a.at || '').localeCompare(String(b.at || '')));
 
   novosMovimentos.forEach(mov => {
     const produto = produtos.find(p =>
@@ -355,6 +358,10 @@ export function consolidarProdutosComMovimentos({
       }
     }
 
+    if (mov.saldoPara != null && mov.saldoPara !== '') {
+      produto.estoque = Math.max(0, parseFloat(mov.saldoPara) || 0);
+      return;
+    }
     produto.estoque = Math.max(0, (parseFloat(produto.estoque) || 0) + (parseFloat(mov.delta) || 0));
   });
 

@@ -241,6 +241,29 @@ teste('dois caixas vendem offline e ao juntar os movimentos ficam 10', () => {
   assert.strictEqual(b.produtos[0].estoque, 10);
 });
 
+teste('definir saldo 15 nos dois caixas nao vira 18', () => {
+  const vendaA = { id: 'VA', produtoId: 'P1', delta: -3, at: emMinutos(1) };
+  const vendaB = { id: 'VB', produtoId: 'P1', delta: -2, at: emMinutos(2) };
+  const set15 = { id: 'SET', produtoId: 'P1', delta: 5, saldoPara: 15, at: emMinutos(10), origem: 'definir' };
+  const prod = (estoque) => [{ id: 'P1', nome: 'Teste', estoque, controlarEstoque: true }];
+
+  const b = consolidarProdutosComMovimentos({
+    produtosNuvem: prod(10),
+    produtosLocais: prod(13),
+    movimentosNuvem: [vendaA, set15],
+    movimentosLocais: [vendaB]
+  });
+  assert.strictEqual(b.produtos[0].estoque, 15);
+
+  const a = consolidarProdutosComMovimentos({
+    produtosNuvem: prod(13),
+    produtosLocais: prod(10),
+    movimentosNuvem: [vendaB, set15],
+    movimentosLocais: [vendaA, vendaB]
+  });
+  assert.strictEqual(a.produtos[0].estoque, 15);
+});
+
 teste('consulta de movimento recua a marca d agua para nao perder venda do outro caixa', () => {
   const marca = emMinutos(5);
   const desde = recuarIso(marca, 120000);

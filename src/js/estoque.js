@@ -1631,8 +1631,9 @@ export const EstoqueModule = {
           StorageService.registrarMovimentoEstoque({
             produtoId: this.produtoEditandoId,
             delta: deltaEstoque,
-            origem: 'cadastro',
-            refId: this.produtoEditandoId
+            origem: 'definir',
+            refId: this.produtoEditandoId,
+            saldoPara: estoque
           });
         }
       }
@@ -1829,8 +1830,9 @@ export const EstoqueModule = {
     StorageService.registrarMovimentoEstoque({
       produtoId: p.id,
       delta,
-      origem: 'ajuste',
-      refId: tipo
+      origem: tipo === 'balanco' ? 'definir' : 'ajuste',
+      refId: tipo,
+      ...(tipo === 'balanco' ? { saldoPara: qtd } : {})
     });
 
     StorageService.saveProdutos(produtos);

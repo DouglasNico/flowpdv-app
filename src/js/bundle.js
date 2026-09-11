@@ -23972,7 +23972,7 @@
     });
     const idsConhecidos = new Set((movimentosLocais || []).map((m) => m && m.id).filter(Boolean));
     const corteCheckpoint = checkpoint && checkpoint.ultimoMovAt ? Date.parse(checkpoint.ultimoMovAt) : 0;
-    const novosMovimentos = normalizarMovimentos(movimentosNuvem).filter((m) => m && m.id && !idsConhecidos.has(m.id));
+    const novosMovimentos = normalizarMovimentos(movimentosNuvem).filter((m) => m && m.id && !idsConhecidos.has(m.id)).slice().sort((a, b) => String(a.at || "").localeCompare(String(b.at || "")));
     novosMovimentos.forEach((mov) => {
       const produto = produtos.find(
         (p) => String(p.id) === String(mov.produtoId) || String(p.codigoBarras || "") === String(mov.produtoId)
@@ -23988,6 +23988,10 @@
           const saldoDoCatalogo = new Date(nuvem && nuvem.atualizadoEm || 0).getTime();
           if (!(dataDoMovimento > saldoDoCatalogo)) return;
         }
+      }
+      if (mov.saldoPara != null && mov.saldoPara !== "") {
+        produto.estoque = Math.max(0, parseFloat(mov.saldoPara) || 0);
+        return;
       }
       produto.estoque = Math.max(0, (parseFloat(produto.estoque) || 0) + (parseFloat(mov.delta) || 0));
     });
@@ -24924,7 +24928,7 @@
         }
       }
     },
-    registrarMovimentoEstoque({ produtoId, delta, origem, refId }) {
+    registrarMovimentoEstoque({ produtoId, delta, origem, refId, saldoPara }) {
       const qtd = parseFloat(delta);
       if (!produtoId || !qtd) return null;
       const mov = {
@@ -24936,6 +24940,9 @@
         terminalId: this.getDeviceId(),
         at: (/* @__PURE__ */ new Date()).toISOString()
       };
+      if (saldoPara != null && saldoPara !== "") {
+        mov.saldoPara = Math.max(0, parseFloat(saldoPara) || 0);
+      }
       const lista = this.getMovimentosEstoque();
       lista.push(mov);
       this.saveMovimentosEstoque(lista);
@@ -53082,8 +53089,9 @@ Venda bloqueada no PDV!`);
             StorageService.registrarMovimentoEstoque({
               produtoId: this.produtoEditandoId,
               delta: deltaEstoque,
-              origem: "cadastro",
-              refId: this.produtoEditandoId
+              origem: "definir",
+              refId: this.produtoEditandoId,
+              saldoPara: estoque
             });
           }
         }
@@ -53258,8 +53266,9 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       StorageService.registrarMovimentoEstoque({
         produtoId: p.id,
         delta,
-        origem: "ajuste",
-        refId: tipo
+        origem: tipo === "balanco" ? "definir" : "ajuste",
+        refId: tipo,
+        ...tipo === "balanco" ? { saldoPara: qtd } : {}
       });
       StorageService.saveProdutos(produtos);
       if (window.CloudSyncModule && typeof window.CloudSyncModule.enviarAlteracaoNuvem === "function") {
@@ -61403,8 +61412,9 @@ ${base}`;
       StorageService.registrarMovimentoEstoque({
         produtoId: p.id,
         delta: novoEstoque - estoqueAnterior,
-        origem: "ajuste_gerencia",
-        refId: tipoOperacao
+        origem: tipoOperacao === "definir" ? "definir" : "ajuste_gerencia",
+        refId: tipoOperacao,
+        ...tipoOperacao === "definir" ? { saldoPara: novoEstoque } : {}
       });
       AuditModule.registrarLog("ajuste_estoque", `Ajuste manual de estoque no item "${p.nome}": ${estoqueAnterior} \u2794 ${novoEstoque} (${tipoAjuste})`, {
         produtoId: p.id,

@@ -855,7 +855,7 @@ export const StorageService = {
     }
   },
 
-  registrarMovimentoEstoque({ produtoId, delta, origem, refId }) {
+  registrarMovimentoEstoque({ produtoId, delta, origem, refId, saldoPara }) {
     const qtd = parseFloat(delta);
     if (!produtoId || !qtd) return null;
     const mov = {
@@ -867,6 +867,9 @@ export const StorageService = {
       terminalId: this.getDeviceId(),
       at: new Date().toISOString()
     };
+    if (saldoPara != null && saldoPara !== '') {
+      mov.saldoPara = Math.max(0, parseFloat(saldoPara) || 0);
+    }
     const lista = this.getMovimentosEstoque();
     lista.push(mov);
     this.saveMovimentosEstoque(lista);
