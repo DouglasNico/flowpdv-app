@@ -38,6 +38,7 @@
     "esbuild": "^0.25.0",
     "exceljs": "^4.4.0",
     "firebase": "^11.4.0",
+    "qrcode-generator": "^1.5.2",
     "xlsx": "^0.18.5"
   },
   "build": {

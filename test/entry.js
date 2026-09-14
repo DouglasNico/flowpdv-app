@@ -2,3 +2,4 @@
 // para o Node conseguir carregá-los sem Electron e sem Firebase.
 export * from '../src/js/merge-core.js';
 export { StorageService } from '../src/js/storage.js';
+export * from '../src/js/fiscal-core.js';

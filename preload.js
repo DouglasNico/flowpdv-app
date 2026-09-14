@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   definirTelaCheiaOperador: (ativa) => ipcRenderer.invoke('definir-tela-cheia-operador', Boolean(ativa)),
   manterTelaAcordada: (ativa) => ipcRenderer.invoke('manter-tela-acordada', Boolean(ativa)),
   getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
+  // Chamadas HTTP à Focus NFe saem pelo processo principal (sem CORS).
+  fiscalHttp: (req) => ipcRenderer.invoke('fiscal-http', req),
   openExternal: (url) => shell.openExternal(url),
   salvarLicencaArquivo: (lic) => ipcRenderer.invoke('salvar-licenca-arquivo', lic),
   carregarLicencaArquivo: () => ipcRenderer.invoke('carregar-licenca-arquivo'),

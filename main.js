@@ -564,6 +564,58 @@ if (!gotTheLock) {
     }
   });
 
+  // IPC Handler: HTTP para a API Focus NFe (NFC-e). Só aceita os hosts da Focus.
+  ipcMain.handle('fiscal-http', (_event, req) => {
+    return new Promise((resolve) => {
+      try {
+        const https = require('https');
+        const url = new URL(String(req && req.url || ''));
+        const hostsPermitidos = ['api.focusnfe.com.br', 'homologacao.focusnfe.com.br'];
+        if (url.protocol !== 'https:' || !hostsPermitidos.includes(url.hostname)) {
+          resolve({ status: 0, body: { codigo: 'host_nao_permitido', mensagem: 'Host não permitido: ' + url.hostname } });
+          return;
+        }
+
+        const corpo = req.body != null ? JSON.stringify(req.body) : null;
+        const auth = Buffer.from(String(req.token || '') + ':').toString('base64');
+        const opcoes = {
+          method: String(req.method || 'GET').toUpperCase(),
+          headers: {
+            'Authorization': 'Basic ' + auth,
+            'Accept': 'application/json',
+            'User-Agent': 'FlowPDV/' + app.getVersion()
+          },
+          timeout: Number(req.timeoutMs) || 45000
+        };
+        if (corpo) {
+          opcoes.headers['Content-Type'] = 'application/json';
+          opcoes.headers['Content-Length'] = Buffer.byteLength(corpo);
+        }
+
+        const r = https.request(url, opcoes, (res) => {
+          let dados = '';
+          res.setEncoding('utf8');
+          res.on('data', (c) => { dados += c; });
+          res.on('end', () => {
+            let body = null;
+            try { body = dados ? JSON.parse(dados) : null; } catch (e) { body = { mensagem: dados.slice(0, 500) }; }
+            resolve({ status: res.statusCode || 0, body });
+          });
+        });
+        r.on('timeout', () => {
+          r.destroy(new Error('timeout'));
+        });
+        r.on('error', (err) => {
+          resolve({ status: 0, body: { codigo: 'erro_rede', mensagem: err.message } });
+        });
+        if (corpo) r.write(corpo);
+        r.end();
+      } catch (err) {
+        resolve({ status: 0, body: { codigo: 'erro_rede', mensagem: err.message } });
+      }
+    });
+  });
+
   // IPC Handler: Informações do Sistema do Computador (Hostname, Usuário, etc.)
   ipcMain.handle('get-system-info', async () => {
     try {

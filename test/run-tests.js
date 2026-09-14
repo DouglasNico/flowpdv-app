@@ -71,7 +71,12 @@ const {
   logCaiuNaExclusao,
   vendaPertenceAoTurno,
   dinheiroLiquidoVenda,
-  StorageService
+  StorageService,
+  montarPayloadNFCe,
+  interpretarRespostaFocus,
+  podeCancelarNFCe,
+  codigoSefazPagamento,
+  refDaVenda
 } = core;
 
 const testes = [];
@@ -603,6 +608,89 @@ teste('fila de pendentes nao ressuscita log ja apagado por id', () => {
   const exclusao = { apagarTudo: false, em: '2026-09-10T12:00:00.000Z', ids: ['LOG-X'], corteMs: 0 };
   assert.strictEqual(logCaiuNaExclusao({ id: 'LOG-X' }, exclusao, Date.parse('2026-09-10T11:00:00.000Z')), true);
   assert.strictEqual(logCaiuNaExclusao({ id: 'LOG-Y' }, exclusao, Date.parse('2026-09-10T11:00:00.000Z')), false);
+});
+
+// ---------------------------------------------------------------------------
+// NFC-e (Focus NFe)
+// ---------------------------------------------------------------------------
+
+const cfgFiscal = { cnpjEmitente: '12.345.678/0001-23', cfopPadrao: '5102', ncmPadrao: '22030000', csosnPadrao: '102', serieNfce: 1 };
+
+teste('payload da NFC-e fecha itens, desconto e pagamentos com o total da venda', () => {
+  const venda = {
+    id: 'V-1', numeroVenda: 12, total: 27.5, desconto: 2.5, formaPagamento: 'Dinheiro', cpfCliente: '123.456.789-09',
+    itens: [
+      { id: 'P1', nome: 'Cerveja', codigoBarras: '7891000100', precoUnitario: 10, quantidade: 2 },
+      { id: 'P2', nome: 'Queijo', precoUnitario: 40, quantidade: 0.25, permiteFracionado: true, unidade: 'kg' }
+    ]
+  };
+  const produtos = new Map([['P2', { id: 'P2', ncm: '04061010', cfop: '5405', csosn: '500' }]]);
+  const p = montarPayloadNFCe(venda, cfgFiscal, produtos, new Date('2026-09-14T12:00:00'));
+
+  assert.strictEqual(p.cnpj_emitente, '12345678000123');
+  assert.strictEqual(p.cpf_destinatario, '12345678909');
+  assert.strictEqual(p.serie, '1');
+  assert.strictEqual(p.items.length, 2);
+  assert.strictEqual(p.items[0].valor_bruto, 20);
+  assert.strictEqual(p.items[0].codigo_ncm, '22030000');
+  assert.strictEqual(p.items[1].codigo_ncm, '04061010');
+  assert.strictEqual(p.items[1].cfop, '5405');
+  assert.strictEqual(p.items[1].icms_situacao_tributaria, '500');
+  assert.strictEqual(p.items[1].unidade_comercial, 'KG');
+  assert.strictEqual(p.items[1].valor_bruto, 10);
+  const desc = p.items.reduce((a, i) => a + (i.valor_desconto || 0), 0);
+  assert.strictEqual(Math.round(desc * 100) / 100, 2.5);
+  assert.strictEqual(p.formas_pagamento.length, 1);
+  assert.strictEqual(p.formas_pagamento[0].forma_pagamento, '01');
+  assert.strictEqual(p.formas_pagamento[0].valor_pagamento, 27.5);
+  assert.ok(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/.test(p.data_emissao));
+});
+
+teste('payload da NFC-e usa os pagamentos liquidos da venda dividida', () => {
+  const venda = {
+    id: 'V-2', total: 50, pagamentoDividido: true,
+    pagamentos: [{ forma: 'Dinheiro', valor: 20, valorEntregue: 50 }, { forma: 'Cartão de Crédito', valor: 30 }],
+    itens: [{ id: 'P1', nome: 'X', precoUnitario: 50, quantidade: 1 }]
+  };
+  const p = montarPayloadNFCe(venda, cfgFiscal, new Map());
+  assert.deepStrictEqual(p.formas_pagamento.map(f => f.forma_pagamento), ['01', '03']);
+  assert.strictEqual(p.formas_pagamento.reduce((a, f) => a + f.valor_pagamento, 0), 50);
+  assert.strictEqual(codigoSefazPagamento('PIX'), '17');
+  assert.strictEqual(codigoSefazPagamento('Fiado'), '05');
+  assert.strictEqual(codigoSefazPagamento('Cartão de Débito'), '04');
+});
+
+teste('venda sem valor ou CNPJ invalido nao vira NFC-e', () => {
+  assert.throws(() => montarPayloadNFCe({ id: 'V', total: 0, itens: [{ precoUnitario: 0, quantidade: 1 }] }, cfgFiscal), /sem valor/i);
+  assert.throws(() => montarPayloadNFCe({ id: 'V', total: 10, itens: [{ precoUnitario: 10, quantidade: 1 }] }, { ...cfgFiscal, cnpjEmitente: '123' }), /CNPJ/);
+});
+
+teste('resposta da Focus e traduzida para o status da venda', () => {
+  const ok = interpretarRespostaFocus(201, {
+    status: 'autorizado', chave_nfe: 'NFe35260912345678000123650010000000121743484310', numero: '12', serie: '1',
+    protocolo: '135260000000001', qrcode_url: 'https://www.fazenda.sp.gov.br/nfce/qrcode?p=x', caminho_danfe: '/d.html'
+  });
+  assert.strictEqual(ok.estado, 'autorizada');
+  assert.strictEqual(ok.dados.chaveAcesso, '35260912345678000123650010000000121743484310');
+  assert.strictEqual(ok.dados.numeroNfce, 12);
+  assert.strictEqual(ok.dados.urlConsulta, 'www.nfce.fazenda.sp.gov.br/consulta');
+
+  assert.strictEqual(interpretarRespostaFocus(201, { status: 'erro_autorizacao', status_sefaz: '704', mensagem_sefaz: 'Rejeição: atrasada' }).estado, 'rejeitada');
+  assert.strictEqual(interpretarRespostaFocus(422, { codigo: 'already_processed' }).estado, 'ja_processada');
+  assert.strictEqual(interpretarRespostaFocus(401, null).estado, 'erro_config');
+  assert.strictEqual(interpretarRespostaFocus(0, { codigo: 'erro_rede' }).estado, 'erro_rede');
+  assert.strictEqual(interpretarRespostaFocus(503, null).estado, 'erro_rede');
+  assert.strictEqual(interpretarRespostaFocus(422, { codigo: 'empresa_nao_configurada', mensagem: 'x' }).estado, 'erro_config');
+});
+
+teste('NFC-e so cancela dentro de 30 minutos da autorizacao', () => {
+  const base = Date.parse('2026-09-14T12:00:00.000Z');
+  const v = { statusFiscal: 'autorizada', chaveNfe: '1'.repeat(44), dataAutorizacaoNfce: '2026-09-14T12:00:00.000Z' };
+  assert.strictEqual(podeCancelarNFCe(v, base + 29 * 60000), true);
+  assert.strictEqual(podeCancelarNFCe(v, base + 31 * 60000), false);
+  assert.strictEqual(podeCancelarNFCe({ ...v, statusFiscal: 'cancelada' }, base), false);
+  assert.strictEqual(podeCancelarNFCe({ ...v, statusFiscal: 'pendente', chaveNfe: '' }, base), false);
+  assert.strictEqual(refDaVenda({ id: 'V-abc.1' }), 'fp-V-abc1');
 });
 
 // ---------------------------------------------------------------------------

@@ -3723,14 +3723,13 @@
             </div>
 
             <div id="box-campos-fiscais-detalhes" style="display: none;">
+              <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 10px 12px; margin-bottom: 14px; font-size: 12px; color: #1e40af; line-height: 1.5;">
+                <strong>Como funciona:</strong> a NFC-e é emitida pela <strong>Focus NFe</strong> (focusnfe.com.br). A loja contrata o plano lá, envia o
+                <strong>certificado digital A1</strong> e o <strong>CSC</strong> no painel da Focus e copia o <strong>token</strong> aqui. O FlowPDV envia a venda e recebe
+                a nota autorizada pela SEFAZ. Sem internet a venda fica pendente e é enviada automaticamente quando a conexão voltar.
+              </div>
+
               <div class="form-grid-2" style="margin-bottom: 12px;">
-                <div class="form-group-custom">
-                  <label class="form-label-custom">Provedor / Tecnologia Fiscal</label>
-                  <select id="fiscal-provedor" class="form-input-custom">
-                    <option value="focus_nfe">☁️ Focus NFe (Emissão Nuvem via API)</option>
-                    <option value="sat">📟 SAT / MFE Físico (Equipamento Local)</option>
-                  </select>
-                </div>
                 <div class="form-group-custom">
                   <label class="form-label-custom">Ambiente de Emissão</label>
                   <select id="fiscal-ambiente" class="form-input-custom">
@@ -3738,11 +3737,19 @@
                     <option value="producao">🚀 Produção (Válido Fiscalmente)</option>
                   </select>
                 </div>
+                <div class="form-group-custom">
+                  <label class="form-label-custom">Série da NFC-e (opcional)</label>
+                  <input type="number" id="fiscal-serie" class="form-input-custom" placeholder="Em branco = a Focus define" min="1">
+                </div>
               </div>
 
               <div class="form-group-custom" style="margin-bottom: 12px;">
-                <label class="form-label-custom">Token da API Focus NFe</label>
-                <input type="text" id="fiscal-token-focus" class="form-input-custom" placeholder="Insira o Token fornecido no painel da Focus NFe" style="font-family: 'JetBrains Mono'; font-weight: 700;">
+                <label class="form-label-custom">Token Focus NFe - Produção</label>
+                <input type="text" id="fiscal-token-focus" class="form-input-custom" placeholder="Token de produção do painel da Focus NFe" style="font-family: 'JetBrains Mono'; font-weight: 700;" autocomplete="off">
+              </div>
+              <div class="form-group-custom" style="margin-bottom: 12px;">
+                <label class="form-label-custom">Token Focus NFe - Homologação (testes)</label>
+                <input type="text" id="fiscal-token-focus-homolog" class="form-input-custom" placeholder="Token de homologação (é diferente do de produção)" style="font-family: 'JetBrains Mono'; font-weight: 700;" autocomplete="off">
               </div>
 
               <div class="form-grid-2" style="margin-bottom: 12px;">
@@ -3753,28 +3760,6 @@
                 <div class="form-group-custom">
                   <label class="form-label-custom">Inscrição Estadual (IE)</label>
                   <input type="text" id="fiscal-ie-emitente" class="form-input-custom" placeholder="Ex: 123456789110" style="font-family: 'JetBrains Mono';">
-                </div>
-              </div>
-
-              <div class="form-grid-2" style="margin-bottom: 12px;">
-                <div class="form-group-custom">
-                  <label class="form-label-custom">ID do CSC (Código Segurança Contribuinte)</label>
-                  <input type="text" id="fiscal-csc-id" class="form-input-custom" value="000001" placeholder="Ex: 000001" style="font-family: 'JetBrains Mono';">
-                </div>
-                <div class="form-group-custom">
-                  <label class="form-label-custom">Token / Código do CSC</label>
-                  <input type="text" id="fiscal-csc-token" class="form-input-custom" placeholder="Código alfanumérico obtido na SEFAZ" style="font-family: 'JetBrains Mono';">
-                </div>
-              </div>
-
-              <div class="form-grid-2" style="margin-bottom: 12px;">
-                <div class="form-group-custom">
-                  <label class="form-label-custom">Série da NFC-e</label>
-                  <input type="number" id="fiscal-serie" class="form-input-custom" value="1">
-                </div>
-                <div class="form-group-custom">
-                  <label class="form-label-custom">Último Número Emitido</label>
-                  <input type="number" id="fiscal-ultimo-numero" class="form-input-custom" value="1">
                 </div>
               </div>
 
@@ -3805,9 +3790,12 @@
               </div>
 
               <div style="background: #f8fafc; border: 1px solid var(--border-card); border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between;">
-                <span style="font-size: 13px; font-weight: 700; color: var(--text-main);">Emitir NFC-e Automaticamente ao Fechar Venda</span>
+                <div>
+                  <span style="font-size: 13px; font-weight: 700; color: var(--text-main); display: block;">Emitir NFC-e Automaticamente ao Fechar Venda</span>
+                  <span style="font-size: 11px; color: var(--text-muted);">Desligado: a venda fica no histórico com o botão "Emitir NFC-e".</span>
+                </div>
                 <label class="switch-toggle">
-                  <input type="checkbox" id="fiscal-auto-emitir">
+                  <input type="checkbox" id="fiscal-auto-emitir" checked>
                   <span class="slider-toggle"></span>
                 </label>
               </div>

@@ -1572,6 +1572,8 @@ export const CaixaModule = {
           </div>
         </div>
 
+        ${window.FiscalModule && typeof window.FiscalModule.htmlBlocoFiscalVenda === 'function' ? window.FiscalModule.htmlBlocoFiscalVenda(venda) : ''}
+
         <h4 style="font-size: 13px; font-weight: 800; color: var(--text-main); margin-bottom: 8px;">📦 Itens Comprados (${(venda.itens || []).length}):</h4>
         
         <div style="border: 1px solid var(--border-card); border-radius: var(--radius-sm); overflow: hidden; margin-bottom: 14px;">

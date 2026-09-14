@@ -31,6 +31,1693 @@
     mod
   ));
 
+  // node_modules/qrcode-generator/qrcode.js
+  var require_qrcode = __commonJS({
+    "node_modules/qrcode-generator/qrcode.js"(exports, module) {
+      var qrcode2 = (function() {
+        var qrcode3 = function(typeNumber, errorCorrectionLevel) {
+          var PAD0 = 236;
+          var PAD1 = 17;
+          var _typeNumber = typeNumber;
+          var _errorCorrectionLevel = QRErrorCorrectionLevel[errorCorrectionLevel];
+          var _modules = null;
+          var _moduleCount = 0;
+          var _dataCache = null;
+          var _dataList = [];
+          var _this = {};
+          var makeImpl = function(test, maskPattern) {
+            _moduleCount = _typeNumber * 4 + 17;
+            _modules = (function(moduleCount) {
+              var modules = new Array(moduleCount);
+              for (var row = 0; row < moduleCount; row += 1) {
+                modules[row] = new Array(moduleCount);
+                for (var col = 0; col < moduleCount; col += 1) {
+                  modules[row][col] = null;
+                }
+              }
+              return modules;
+            })(_moduleCount);
+            setupPositionProbePattern(0, 0);
+            setupPositionProbePattern(_moduleCount - 7, 0);
+            setupPositionProbePattern(0, _moduleCount - 7);
+            setupPositionAdjustPattern();
+            setupTimingPattern();
+            setupTypeInfo(test, maskPattern);
+            if (_typeNumber >= 7) {
+              setupTypeNumber(test);
+            }
+            if (_dataCache == null) {
+              _dataCache = createData(_typeNumber, _errorCorrectionLevel, _dataList);
+            }
+            mapData(_dataCache, maskPattern);
+          };
+          var setupPositionProbePattern = function(row, col) {
+            for (var r = -1; r <= 7; r += 1) {
+              if (row + r <= -1 || _moduleCount <= row + r) continue;
+              for (var c = -1; c <= 7; c += 1) {
+                if (col + c <= -1 || _moduleCount <= col + c) continue;
+                if (0 <= r && r <= 6 && (c == 0 || c == 6) || 0 <= c && c <= 6 && (r == 0 || r == 6) || 2 <= r && r <= 4 && 2 <= c && c <= 4) {
+                  _modules[row + r][col + c] = true;
+                } else {
+                  _modules[row + r][col + c] = false;
+                }
+              }
+            }
+          };
+          var getBestMaskPattern = function() {
+            var minLostPoint = 0;
+            var pattern = 0;
+            for (var i = 0; i < 8; i += 1) {
+              makeImpl(true, i);
+              var lostPoint = QRUtil.getLostPoint(_this);
+              if (i == 0 || minLostPoint > lostPoint) {
+                minLostPoint = lostPoint;
+                pattern = i;
+              }
+            }
+            return pattern;
+          };
+          var setupTimingPattern = function() {
+            for (var r = 8; r < _moduleCount - 8; r += 1) {
+              if (_modules[r][6] != null) {
+                continue;
+              }
+              _modules[r][6] = r % 2 == 0;
+            }
+            for (var c = 8; c < _moduleCount - 8; c += 1) {
+              if (_modules[6][c] != null) {
+                continue;
+              }
+              _modules[6][c] = c % 2 == 0;
+            }
+          };
+          var setupPositionAdjustPattern = function() {
+            var pos = QRUtil.getPatternPosition(_typeNumber);
+            for (var i = 0; i < pos.length; i += 1) {
+              for (var j2 = 0; j2 < pos.length; j2 += 1) {
+                var row = pos[i];
+                var col = pos[j2];
+                if (_modules[row][col] != null) {
+                  continue;
+                }
+                for (var r = -2; r <= 2; r += 1) {
+                  for (var c = -2; c <= 2; c += 1) {
+                    if (r == -2 || r == 2 || c == -2 || c == 2 || r == 0 && c == 0) {
+                      _modules[row + r][col + c] = true;
+                    } else {
+                      _modules[row + r][col + c] = false;
+                    }
+                  }
+                }
+              }
+            }
+          };
+          var setupTypeNumber = function(test) {
+            var bits = QRUtil.getBCHTypeNumber(_typeNumber);
+            for (var i = 0; i < 18; i += 1) {
+              var mod = !test && (bits >> i & 1) == 1;
+              _modules[Math.floor(i / 3)][i % 3 + _moduleCount - 8 - 3] = mod;
+            }
+            for (var i = 0; i < 18; i += 1) {
+              var mod = !test && (bits >> i & 1) == 1;
+              _modules[i % 3 + _moduleCount - 8 - 3][Math.floor(i / 3)] = mod;
+            }
+          };
+          var setupTypeInfo = function(test, maskPattern) {
+            var data = _errorCorrectionLevel << 3 | maskPattern;
+            var bits = QRUtil.getBCHTypeInfo(data);
+            for (var i = 0; i < 15; i += 1) {
+              var mod = !test && (bits >> i & 1) == 1;
+              if (i < 6) {
+                _modules[i][8] = mod;
+              } else if (i < 8) {
+                _modules[i + 1][8] = mod;
+              } else {
+                _modules[_moduleCount - 15 + i][8] = mod;
+              }
+            }
+            for (var i = 0; i < 15; i += 1) {
+              var mod = !test && (bits >> i & 1) == 1;
+              if (i < 8) {
+                _modules[8][_moduleCount - i - 1] = mod;
+              } else if (i < 9) {
+                _modules[8][15 - i - 1 + 1] = mod;
+              } else {
+                _modules[8][15 - i - 1] = mod;
+              }
+            }
+            _modules[_moduleCount - 8][8] = !test;
+          };
+          var mapData = function(data, maskPattern) {
+            var inc = -1;
+            var row = _moduleCount - 1;
+            var bitIndex = 7;
+            var byteIndex = 0;
+            var maskFunc = QRUtil.getMaskFunction(maskPattern);
+            for (var col = _moduleCount - 1; col > 0; col -= 2) {
+              if (col == 6) col -= 1;
+              while (true) {
+                for (var c = 0; c < 2; c += 1) {
+                  if (_modules[row][col - c] == null) {
+                    var dark = false;
+                    if (byteIndex < data.length) {
+                      dark = (data[byteIndex] >>> bitIndex & 1) == 1;
+                    }
+                    var mask = maskFunc(row, col - c);
+                    if (mask) {
+                      dark = !dark;
+                    }
+                    _modules[row][col - c] = dark;
+                    bitIndex -= 1;
+                    if (bitIndex == -1) {
+                      byteIndex += 1;
+                      bitIndex = 7;
+                    }
+                  }
+                }
+                row += inc;
+                if (row < 0 || _moduleCount <= row) {
+                  row -= inc;
+                  inc = -inc;
+                  break;
+                }
+              }
+            }
+          };
+          var createBytes = function(buffer, rsBlocks) {
+            var offset = 0;
+            var maxDcCount = 0;
+            var maxEcCount = 0;
+            var dcdata = new Array(rsBlocks.length);
+            var ecdata = new Array(rsBlocks.length);
+            for (var r = 0; r < rsBlocks.length; r += 1) {
+              var dcCount = rsBlocks[r].dataCount;
+              var ecCount = rsBlocks[r].totalCount - dcCount;
+              maxDcCount = Math.max(maxDcCount, dcCount);
+              maxEcCount = Math.max(maxEcCount, ecCount);
+              dcdata[r] = new Array(dcCount);
+              for (var i = 0; i < dcdata[r].length; i += 1) {
+                dcdata[r][i] = 255 & buffer.getBuffer()[i + offset];
+              }
+              offset += dcCount;
+              var rsPoly = QRUtil.getErrorCorrectPolynomial(ecCount);
+              var rawPoly = qrPolynomial(dcdata[r], rsPoly.getLength() - 1);
+              var modPoly = rawPoly.mod(rsPoly);
+              ecdata[r] = new Array(rsPoly.getLength() - 1);
+              for (var i = 0; i < ecdata[r].length; i += 1) {
+                var modIndex = i + modPoly.getLength() - ecdata[r].length;
+                ecdata[r][i] = modIndex >= 0 ? modPoly.getAt(modIndex) : 0;
+              }
+            }
+            var totalCodeCount = 0;
+            for (var i = 0; i < rsBlocks.length; i += 1) {
+              totalCodeCount += rsBlocks[i].totalCount;
+            }
+            var data = new Array(totalCodeCount);
+            var index = 0;
+            for (var i = 0; i < maxDcCount; i += 1) {
+              for (var r = 0; r < rsBlocks.length; r += 1) {
+                if (i < dcdata[r].length) {
+                  data[index] = dcdata[r][i];
+                  index += 1;
+                }
+              }
+            }
+            for (var i = 0; i < maxEcCount; i += 1) {
+              for (var r = 0; r < rsBlocks.length; r += 1) {
+                if (i < ecdata[r].length) {
+                  data[index] = ecdata[r][i];
+                  index += 1;
+                }
+              }
+            }
+            return data;
+          };
+          var createData = function(typeNumber2, errorCorrectionLevel2, dataList) {
+            var rsBlocks = QRRSBlock.getRSBlocks(typeNumber2, errorCorrectionLevel2);
+            var buffer = qrBitBuffer();
+            for (var i = 0; i < dataList.length; i += 1) {
+              var data = dataList[i];
+              buffer.put(data.getMode(), 4);
+              buffer.put(data.getLength(), QRUtil.getLengthInBits(data.getMode(), typeNumber2));
+              data.write(buffer);
+            }
+            var totalDataCount = 0;
+            for (var i = 0; i < rsBlocks.length; i += 1) {
+              totalDataCount += rsBlocks[i].dataCount;
+            }
+            if (buffer.getLengthInBits() > totalDataCount * 8) {
+              throw "code length overflow. (" + buffer.getLengthInBits() + ">" + totalDataCount * 8 + ")";
+            }
+            if (buffer.getLengthInBits() + 4 <= totalDataCount * 8) {
+              buffer.put(0, 4);
+            }
+            while (buffer.getLengthInBits() % 8 != 0) {
+              buffer.putBit(false);
+            }
+            while (true) {
+              if (buffer.getLengthInBits() >= totalDataCount * 8) {
+                break;
+              }
+              buffer.put(PAD0, 8);
+              if (buffer.getLengthInBits() >= totalDataCount * 8) {
+                break;
+              }
+              buffer.put(PAD1, 8);
+            }
+            return createBytes(buffer, rsBlocks);
+          };
+          _this.addData = function(data, mode) {
+            mode = mode || "Byte";
+            var newData = null;
+            switch (mode) {
+              case "Numeric":
+                newData = qrNumber(data);
+                break;
+              case "Alphanumeric":
+                newData = qrAlphaNum(data);
+                break;
+              case "Byte":
+                newData = qr8BitByte(data);
+                break;
+              case "Kanji":
+                newData = qrKanji(data);
+                break;
+              default:
+                throw "mode:" + mode;
+            }
+            _dataList.push(newData);
+            _dataCache = null;
+          };
+          _this.isDark = function(row, col) {
+            if (row < 0 || _moduleCount <= row || col < 0 || _moduleCount <= col) {
+              throw row + "," + col;
+            }
+            return _modules[row][col];
+          };
+          _this.getModuleCount = function() {
+            return _moduleCount;
+          };
+          _this.make = function() {
+            if (_typeNumber < 1) {
+              var typeNumber2 = 1;
+              for (; typeNumber2 < 40; typeNumber2++) {
+                var rsBlocks = QRRSBlock.getRSBlocks(typeNumber2, _errorCorrectionLevel);
+                var buffer = qrBitBuffer();
+                for (var i = 0; i < _dataList.length; i++) {
+                  var data = _dataList[i];
+                  buffer.put(data.getMode(), 4);
+                  buffer.put(data.getLength(), QRUtil.getLengthInBits(data.getMode(), typeNumber2));
+                  data.write(buffer);
+                }
+                var totalDataCount = 0;
+                for (var i = 0; i < rsBlocks.length; i++) {
+                  totalDataCount += rsBlocks[i].dataCount;
+                }
+                if (buffer.getLengthInBits() <= totalDataCount * 8) {
+                  break;
+                }
+              }
+              _typeNumber = typeNumber2;
+            }
+            makeImpl(false, getBestMaskPattern());
+          };
+          _this.createTableTag = function(cellSize, margin) {
+            cellSize = cellSize || 2;
+            margin = typeof margin == "undefined" ? cellSize * 4 : margin;
+            var qrHtml = "";
+            qrHtml += '<table style="';
+            qrHtml += " border-width: 0px; border-style: none;";
+            qrHtml += " border-collapse: collapse;";
+            qrHtml += " padding: 0px; margin: " + margin + "px;";
+            qrHtml += '">';
+            qrHtml += "<tbody>";
+            for (var r = 0; r < _this.getModuleCount(); r += 1) {
+              qrHtml += "<tr>";
+              for (var c = 0; c < _this.getModuleCount(); c += 1) {
+                qrHtml += '<td style="';
+                qrHtml += " border-width: 0px; border-style: none;";
+                qrHtml += " border-collapse: collapse;";
+                qrHtml += " padding: 0px; margin: 0px;";
+                qrHtml += " width: " + cellSize + "px;";
+                qrHtml += " height: " + cellSize + "px;";
+                qrHtml += " background-color: ";
+                qrHtml += _this.isDark(r, c) ? "#000000" : "#ffffff";
+                qrHtml += ";";
+                qrHtml += '"/>';
+              }
+              qrHtml += "</tr>";
+            }
+            qrHtml += "</tbody>";
+            qrHtml += "</table>";
+            return qrHtml;
+          };
+          _this.createSvgTag = function(cellSize, margin, alt, title) {
+            var opts = {};
+            if (typeof arguments[0] == "object") {
+              opts = arguments[0];
+              cellSize = opts.cellSize;
+              margin = opts.margin;
+              alt = opts.alt;
+              title = opts.title;
+            }
+            cellSize = cellSize || 2;
+            margin = typeof margin == "undefined" ? cellSize * 4 : margin;
+            alt = typeof alt === "string" ? { text: alt } : alt || {};
+            alt.text = alt.text || null;
+            alt.id = alt.text ? alt.id || "qrcode-description" : null;
+            title = typeof title === "string" ? { text: title } : title || {};
+            title.text = title.text || null;
+            title.id = title.text ? title.id || "qrcode-title" : null;
+            var size = _this.getModuleCount() * cellSize + margin * 2;
+            var c, mc, r, mr, qrSvg = "", rect;
+            rect = "l" + cellSize + ",0 0," + cellSize + " -" + cellSize + ",0 0,-" + cellSize + "z ";
+            qrSvg += '<svg version="1.1" xmlns="http://www.w3.org/2000/svg"';
+            qrSvg += !opts.scalable ? ' width="' + size + 'px" height="' + size + 'px"' : "";
+            qrSvg += ' viewBox="0 0 ' + size + " " + size + '" ';
+            qrSvg += ' preserveAspectRatio="xMinYMin meet"';
+            qrSvg += title.text || alt.text ? ' role="img" aria-labelledby="' + escapeXml([title.id, alt.id].join(" ").trim()) + '"' : "";
+            qrSvg += ">";
+            qrSvg += title.text ? '<title id="' + escapeXml(title.id) + '">' + escapeXml(title.text) + "</title>" : "";
+            qrSvg += alt.text ? '<description id="' + escapeXml(alt.id) + '">' + escapeXml(alt.text) + "</description>" : "";
+            qrSvg += '<rect width="100%" height="100%" fill="white" cx="0" cy="0"/>';
+            qrSvg += '<path d="';
+            for (r = 0; r < _this.getModuleCount(); r += 1) {
+              mr = r * cellSize + margin;
+              for (c = 0; c < _this.getModuleCount(); c += 1) {
+                if (_this.isDark(r, c)) {
+                  mc = c * cellSize + margin;
+                  qrSvg += "M" + mc + "," + mr + rect;
+                }
+              }
+            }
+            qrSvg += '" stroke="transparent" fill="black"/>';
+            qrSvg += "</svg>";
+            return qrSvg;
+          };
+          _this.createDataURL = function(cellSize, margin) {
+            cellSize = cellSize || 2;
+            margin = typeof margin == "undefined" ? cellSize * 4 : margin;
+            var size = _this.getModuleCount() * cellSize + margin * 2;
+            var min = margin;
+            var max = size - margin;
+            return createDataURL(size, size, function(x2, y) {
+              if (min <= x2 && x2 < max && min <= y && y < max) {
+                var c = Math.floor((x2 - min) / cellSize);
+                var r = Math.floor((y - min) / cellSize);
+                return _this.isDark(r, c) ? 0 : 1;
+              } else {
+                return 1;
+              }
+            });
+          };
+          _this.createImgTag = function(cellSize, margin, alt) {
+            cellSize = cellSize || 2;
+            margin = typeof margin == "undefined" ? cellSize * 4 : margin;
+            var size = _this.getModuleCount() * cellSize + margin * 2;
+            var img = "";
+            img += "<img";
+            img += ' src="';
+            img += _this.createDataURL(cellSize, margin);
+            img += '"';
+            img += ' width="';
+            img += size;
+            img += '"';
+            img += ' height="';
+            img += size;
+            img += '"';
+            if (alt) {
+              img += ' alt="';
+              img += escapeXml(alt);
+              img += '"';
+            }
+            img += "/>";
+            return img;
+          };
+          var escapeXml = function(s) {
+            var escaped = "";
+            for (var i = 0; i < s.length; i += 1) {
+              var c = s.charAt(i);
+              switch (c) {
+                case "<":
+                  escaped += "&lt;";
+                  break;
+                case ">":
+                  escaped += "&gt;";
+                  break;
+                case "&":
+                  escaped += "&amp;";
+                  break;
+                case '"':
+                  escaped += "&quot;";
+                  break;
+                default:
+                  escaped += c;
+                  break;
+              }
+            }
+            return escaped;
+          };
+          var _createHalfASCII = function(margin) {
+            var cellSize = 1;
+            margin = typeof margin == "undefined" ? cellSize * 2 : margin;
+            var size = _this.getModuleCount() * cellSize + margin * 2;
+            var min = margin;
+            var max = size - margin;
+            var y, x2, r1, r2, p;
+            var blocks = {
+              "\u2588\u2588": "\u2588",
+              "\u2588 ": "\u2580",
+              " \u2588": "\u2584",
+              "  ": " "
+            };
+            var blocksLastLineNoMargin = {
+              "\u2588\u2588": "\u2580",
+              "\u2588 ": "\u2580",
+              " \u2588": " ",
+              "  ": " "
+            };
+            var ascii = "";
+            for (y = 0; y < size; y += 2) {
+              r1 = Math.floor((y - min) / cellSize);
+              r2 = Math.floor((y + 1 - min) / cellSize);
+              for (x2 = 0; x2 < size; x2 += 1) {
+                p = "\u2588";
+                if (min <= x2 && x2 < max && min <= y && y < max && _this.isDark(r1, Math.floor((x2 - min) / cellSize))) {
+                  p = " ";
+                }
+                if (min <= x2 && x2 < max && min <= y + 1 && y + 1 < max && _this.isDark(r2, Math.floor((x2 - min) / cellSize))) {
+                  p += " ";
+                } else {
+                  p += "\u2588";
+                }
+                ascii += margin < 1 && y + 1 >= max ? blocksLastLineNoMargin[p] : blocks[p];
+              }
+              ascii += "\n";
+            }
+            if (size % 2 && margin > 0) {
+              return ascii.substring(0, ascii.length - size - 1) + Array(size + 1).join("\u2580");
+            }
+            return ascii.substring(0, ascii.length - 1);
+          };
+          _this.createASCII = function(cellSize, margin) {
+            cellSize = cellSize || 1;
+            if (cellSize < 2) {
+              return _createHalfASCII(margin);
+            }
+            cellSize -= 1;
+            margin = typeof margin == "undefined" ? cellSize * 2 : margin;
+            var size = _this.getModuleCount() * cellSize + margin * 2;
+            var min = margin;
+            var max = size - margin;
+            var y, x2, r, p;
+            var white = Array(cellSize + 1).join("\u2588\u2588");
+            var black = Array(cellSize + 1).join("  ");
+            var ascii = "";
+            var line = "";
+            for (y = 0; y < size; y += 1) {
+              r = Math.floor((y - min) / cellSize);
+              line = "";
+              for (x2 = 0; x2 < size; x2 += 1) {
+                p = 1;
+                if (min <= x2 && x2 < max && min <= y && y < max && _this.isDark(r, Math.floor((x2 - min) / cellSize))) {
+                  p = 0;
+                }
+                line += p ? white : black;
+              }
+              for (r = 0; r < cellSize; r += 1) {
+                ascii += line + "\n";
+              }
+            }
+            return ascii.substring(0, ascii.length - 1);
+          };
+          _this.renderTo2dContext = function(context, cellSize) {
+            cellSize = cellSize || 2;
+            var length = _this.getModuleCount();
+            for (var row = 0; row < length; row++) {
+              for (var col = 0; col < length; col++) {
+                context.fillStyle = _this.isDark(row, col) ? "black" : "white";
+                context.fillRect(row * cellSize, col * cellSize, cellSize, cellSize);
+              }
+            }
+          };
+          return _this;
+        };
+        qrcode3.stringToBytesFuncs = {
+          "default": function(s) {
+            var bytes = [];
+            for (var i = 0; i < s.length; i += 1) {
+              var c = s.charCodeAt(i);
+              bytes.push(c & 255);
+            }
+            return bytes;
+          }
+        };
+        qrcode3.stringToBytes = qrcode3.stringToBytesFuncs["default"];
+        qrcode3.createStringToBytes = function(unicodeData, numChars) {
+          var unicodeMap = (function() {
+            var bin = base64DecodeInputStream(unicodeData);
+            var read = function() {
+              var b = bin.read();
+              if (b == -1) throw "eof";
+              return b;
+            };
+            var count2 = 0;
+            var unicodeMap2 = {};
+            while (true) {
+              var b0 = bin.read();
+              if (b0 == -1) break;
+              var b1 = read();
+              var b2 = read();
+              var b3 = read();
+              var k2 = String.fromCharCode(b0 << 8 | b1);
+              var v = b2 << 8 | b3;
+              unicodeMap2[k2] = v;
+              count2 += 1;
+            }
+            if (count2 != numChars) {
+              throw count2 + " != " + numChars;
+            }
+            return unicodeMap2;
+          })();
+          var unknownChar = "?".charCodeAt(0);
+          return function(s) {
+            var bytes = [];
+            for (var i = 0; i < s.length; i += 1) {
+              var c = s.charCodeAt(i);
+              if (c < 128) {
+                bytes.push(c);
+              } else {
+                var b = unicodeMap[s.charAt(i)];
+                if (typeof b == "number") {
+                  if ((b & 255) == b) {
+                    bytes.push(b);
+                  } else {
+                    bytes.push(b >>> 8);
+                    bytes.push(b & 255);
+                  }
+                } else {
+                  bytes.push(unknownChar);
+                }
+              }
+            }
+            return bytes;
+          };
+        };
+        var QRMode = {
+          MODE_NUMBER: 1 << 0,
+          MODE_ALPHA_NUM: 1 << 1,
+          MODE_8BIT_BYTE: 1 << 2,
+          MODE_KANJI: 1 << 3
+        };
+        var QRErrorCorrectionLevel = {
+          L: 1,
+          M: 0,
+          Q: 3,
+          H: 2
+        };
+        var QRMaskPattern = {
+          PATTERN000: 0,
+          PATTERN001: 1,
+          PATTERN010: 2,
+          PATTERN011: 3,
+          PATTERN100: 4,
+          PATTERN101: 5,
+          PATTERN110: 6,
+          PATTERN111: 7
+        };
+        var QRUtil = (function() {
+          var PATTERN_POSITION_TABLE = [
+            [],
+            [6, 18],
+            [6, 22],
+            [6, 26],
+            [6, 30],
+            [6, 34],
+            [6, 22, 38],
+            [6, 24, 42],
+            [6, 26, 46],
+            [6, 28, 50],
+            [6, 30, 54],
+            [6, 32, 58],
+            [6, 34, 62],
+            [6, 26, 46, 66],
+            [6, 26, 48, 70],
+            [6, 26, 50, 74],
+            [6, 30, 54, 78],
+            [6, 30, 56, 82],
+            [6, 30, 58, 86],
+            [6, 34, 62, 90],
+            [6, 28, 50, 72, 94],
+            [6, 26, 50, 74, 98],
+            [6, 30, 54, 78, 102],
+            [6, 28, 54, 80, 106],
+            [6, 32, 58, 84, 110],
+            [6, 30, 58, 86, 114],
+            [6, 34, 62, 90, 118],
+            [6, 26, 50, 74, 98, 122],
+            [6, 30, 54, 78, 102, 126],
+            [6, 26, 52, 78, 104, 130],
+            [6, 30, 56, 82, 108, 134],
+            [6, 34, 60, 86, 112, 138],
+            [6, 30, 58, 86, 114, 142],
+            [6, 34, 62, 90, 118, 146],
+            [6, 30, 54, 78, 102, 126, 150],
+            [6, 24, 50, 76, 102, 128, 154],
+            [6, 28, 54, 80, 106, 132, 158],
+            [6, 32, 58, 84, 110, 136, 162],
+            [6, 26, 54, 82, 110, 138, 166],
+            [6, 30, 58, 86, 114, 142, 170]
+          ];
+          var G15 = 1 << 10 | 1 << 8 | 1 << 5 | 1 << 4 | 1 << 2 | 1 << 1 | 1 << 0;
+          var G18 = 1 << 12 | 1 << 11 | 1 << 10 | 1 << 9 | 1 << 8 | 1 << 5 | 1 << 2 | 1 << 0;
+          var G15_MASK = 1 << 14 | 1 << 12 | 1 << 10 | 1 << 4 | 1 << 1;
+          var _this = {};
+          var getBCHDigit = function(data) {
+            var digit = 0;
+            while (data != 0) {
+              digit += 1;
+              data >>>= 1;
+            }
+            return digit;
+          };
+          _this.getBCHTypeInfo = function(data) {
+            var d = data << 10;
+            while (getBCHDigit(d) - getBCHDigit(G15) >= 0) {
+              d ^= G15 << getBCHDigit(d) - getBCHDigit(G15);
+            }
+            return (data << 10 | d) ^ G15_MASK;
+          };
+          _this.getBCHTypeNumber = function(data) {
+            var d = data << 12;
+            while (getBCHDigit(d) - getBCHDigit(G18) >= 0) {
+              d ^= G18 << getBCHDigit(d) - getBCHDigit(G18);
+            }
+            return data << 12 | d;
+          };
+          _this.getPatternPosition = function(typeNumber) {
+            return PATTERN_POSITION_TABLE[typeNumber - 1];
+          };
+          _this.getMaskFunction = function(maskPattern) {
+            switch (maskPattern) {
+              case QRMaskPattern.PATTERN000:
+                return function(i, j2) {
+                  return (i + j2) % 2 == 0;
+                };
+              case QRMaskPattern.PATTERN001:
+                return function(i, j2) {
+                  return i % 2 == 0;
+                };
+              case QRMaskPattern.PATTERN010:
+                return function(i, j2) {
+                  return j2 % 3 == 0;
+                };
+              case QRMaskPattern.PATTERN011:
+                return function(i, j2) {
+                  return (i + j2) % 3 == 0;
+                };
+              case QRMaskPattern.PATTERN100:
+                return function(i, j2) {
+                  return (Math.floor(i / 2) + Math.floor(j2 / 3)) % 2 == 0;
+                };
+              case QRMaskPattern.PATTERN101:
+                return function(i, j2) {
+                  return i * j2 % 2 + i * j2 % 3 == 0;
+                };
+              case QRMaskPattern.PATTERN110:
+                return function(i, j2) {
+                  return (i * j2 % 2 + i * j2 % 3) % 2 == 0;
+                };
+              case QRMaskPattern.PATTERN111:
+                return function(i, j2) {
+                  return (i * j2 % 3 + (i + j2) % 2) % 2 == 0;
+                };
+              default:
+                throw "bad maskPattern:" + maskPattern;
+            }
+          };
+          _this.getErrorCorrectPolynomial = function(errorCorrectLength) {
+            var a = qrPolynomial([1], 0);
+            for (var i = 0; i < errorCorrectLength; i += 1) {
+              a = a.multiply(qrPolynomial([1, QRMath.gexp(i)], 0));
+            }
+            return a;
+          };
+          _this.getLengthInBits = function(mode, type) {
+            if (1 <= type && type < 10) {
+              switch (mode) {
+                case QRMode.MODE_NUMBER:
+                  return 10;
+                case QRMode.MODE_ALPHA_NUM:
+                  return 9;
+                case QRMode.MODE_8BIT_BYTE:
+                  return 8;
+                case QRMode.MODE_KANJI:
+                  return 8;
+                default:
+                  throw "mode:" + mode;
+              }
+            } else if (type < 27) {
+              switch (mode) {
+                case QRMode.MODE_NUMBER:
+                  return 12;
+                case QRMode.MODE_ALPHA_NUM:
+                  return 11;
+                case QRMode.MODE_8BIT_BYTE:
+                  return 16;
+                case QRMode.MODE_KANJI:
+                  return 10;
+                default:
+                  throw "mode:" + mode;
+              }
+            } else if (type < 41) {
+              switch (mode) {
+                case QRMode.MODE_NUMBER:
+                  return 14;
+                case QRMode.MODE_ALPHA_NUM:
+                  return 13;
+                case QRMode.MODE_8BIT_BYTE:
+                  return 16;
+                case QRMode.MODE_KANJI:
+                  return 12;
+                default:
+                  throw "mode:" + mode;
+              }
+            } else {
+              throw "type:" + type;
+            }
+          };
+          _this.getLostPoint = function(qrcode4) {
+            var moduleCount = qrcode4.getModuleCount();
+            var lostPoint = 0;
+            for (var row = 0; row < moduleCount; row += 1) {
+              for (var col = 0; col < moduleCount; col += 1) {
+                var sameCount = 0;
+                var dark = qrcode4.isDark(row, col);
+                for (var r = -1; r <= 1; r += 1) {
+                  if (row + r < 0 || moduleCount <= row + r) {
+                    continue;
+                  }
+                  for (var c = -1; c <= 1; c += 1) {
+                    if (col + c < 0 || moduleCount <= col + c) {
+                      continue;
+                    }
+                    if (r == 0 && c == 0) {
+                      continue;
+                    }
+                    if (dark == qrcode4.isDark(row + r, col + c)) {
+                      sameCount += 1;
+                    }
+                  }
+                }
+                if (sameCount > 5) {
+                  lostPoint += 3 + sameCount - 5;
+                }
+              }
+            }
+            ;
+            for (var row = 0; row < moduleCount - 1; row += 1) {
+              for (var col = 0; col < moduleCount - 1; col += 1) {
+                var count2 = 0;
+                if (qrcode4.isDark(row, col)) count2 += 1;
+                if (qrcode4.isDark(row + 1, col)) count2 += 1;
+                if (qrcode4.isDark(row, col + 1)) count2 += 1;
+                if (qrcode4.isDark(row + 1, col + 1)) count2 += 1;
+                if (count2 == 0 || count2 == 4) {
+                  lostPoint += 3;
+                }
+              }
+            }
+            for (var row = 0; row < moduleCount; row += 1) {
+              for (var col = 0; col < moduleCount - 6; col += 1) {
+                if (qrcode4.isDark(row, col) && !qrcode4.isDark(row, col + 1) && qrcode4.isDark(row, col + 2) && qrcode4.isDark(row, col + 3) && qrcode4.isDark(row, col + 4) && !qrcode4.isDark(row, col + 5) && qrcode4.isDark(row, col + 6)) {
+                  lostPoint += 40;
+                }
+              }
+            }
+            for (var col = 0; col < moduleCount; col += 1) {
+              for (var row = 0; row < moduleCount - 6; row += 1) {
+                if (qrcode4.isDark(row, col) && !qrcode4.isDark(row + 1, col) && qrcode4.isDark(row + 2, col) && qrcode4.isDark(row + 3, col) && qrcode4.isDark(row + 4, col) && !qrcode4.isDark(row + 5, col) && qrcode4.isDark(row + 6, col)) {
+                  lostPoint += 40;
+                }
+              }
+            }
+            var darkCount = 0;
+            for (var col = 0; col < moduleCount; col += 1) {
+              for (var row = 0; row < moduleCount; row += 1) {
+                if (qrcode4.isDark(row, col)) {
+                  darkCount += 1;
+                }
+              }
+            }
+            var ratio = Math.abs(100 * darkCount / moduleCount / moduleCount - 50) / 5;
+            lostPoint += ratio * 10;
+            return lostPoint;
+          };
+          return _this;
+        })();
+        var QRMath = (function() {
+          var EXP_TABLE = new Array(256);
+          var LOG_TABLE = new Array(256);
+          for (var i = 0; i < 8; i += 1) {
+            EXP_TABLE[i] = 1 << i;
+          }
+          for (var i = 8; i < 256; i += 1) {
+            EXP_TABLE[i] = EXP_TABLE[i - 4] ^ EXP_TABLE[i - 5] ^ EXP_TABLE[i - 6] ^ EXP_TABLE[i - 8];
+          }
+          for (var i = 0; i < 255; i += 1) {
+            LOG_TABLE[EXP_TABLE[i]] = i;
+          }
+          var _this = {};
+          _this.glog = function(n) {
+            if (n < 1) {
+              throw "glog(" + n + ")";
+            }
+            return LOG_TABLE[n];
+          };
+          _this.gexp = function(n) {
+            while (n < 0) {
+              n += 255;
+            }
+            while (n >= 256) {
+              n -= 255;
+            }
+            return EXP_TABLE[n];
+          };
+          return _this;
+        })();
+        function qrPolynomial(num, shift) {
+          if (typeof num.length == "undefined") {
+            throw num.length + "/" + shift;
+          }
+          var _num = (function() {
+            var offset = 0;
+            while (offset < num.length && num[offset] == 0) {
+              offset += 1;
+            }
+            var _num2 = new Array(num.length - offset + shift);
+            for (var i = 0; i < num.length - offset; i += 1) {
+              _num2[i] = num[i + offset];
+            }
+            return _num2;
+          })();
+          var _this = {};
+          _this.getAt = function(index) {
+            return _num[index];
+          };
+          _this.getLength = function() {
+            return _num.length;
+          };
+          _this.multiply = function(e) {
+            var num2 = new Array(_this.getLength() + e.getLength() - 1);
+            for (var i = 0; i < _this.getLength(); i += 1) {
+              for (var j2 = 0; j2 < e.getLength(); j2 += 1) {
+                num2[i + j2] ^= QRMath.gexp(QRMath.glog(_this.getAt(i)) + QRMath.glog(e.getAt(j2)));
+              }
+            }
+            return qrPolynomial(num2, 0);
+          };
+          _this.mod = function(e) {
+            if (_this.getLength() - e.getLength() < 0) {
+              return _this;
+            }
+            var ratio = QRMath.glog(_this.getAt(0)) - QRMath.glog(e.getAt(0));
+            var num2 = new Array(_this.getLength());
+            for (var i = 0; i < _this.getLength(); i += 1) {
+              num2[i] = _this.getAt(i);
+            }
+            for (var i = 0; i < e.getLength(); i += 1) {
+              num2[i] ^= QRMath.gexp(QRMath.glog(e.getAt(i)) + ratio);
+            }
+            return qrPolynomial(num2, 0).mod(e);
+          };
+          return _this;
+        }
+        ;
+        var QRRSBlock = (function() {
+          var RS_BLOCK_TABLE = [
+            // L
+            // M
+            // Q
+            // H
+            // 1
+            [1, 26, 19],
+            [1, 26, 16],
+            [1, 26, 13],
+            [1, 26, 9],
+            // 2
+            [1, 44, 34],
+            [1, 44, 28],
+            [1, 44, 22],
+            [1, 44, 16],
+            // 3
+            [1, 70, 55],
+            [1, 70, 44],
+            [2, 35, 17],
+            [2, 35, 13],
+            // 4
+            [1, 100, 80],
+            [2, 50, 32],
+            [2, 50, 24],
+            [4, 25, 9],
+            // 5
+            [1, 134, 108],
+            [2, 67, 43],
+            [2, 33, 15, 2, 34, 16],
+            [2, 33, 11, 2, 34, 12],
+            // 6
+            [2, 86, 68],
+            [4, 43, 27],
+            [4, 43, 19],
+            [4, 43, 15],
+            // 7
+            [2, 98, 78],
+            [4, 49, 31],
+            [2, 32, 14, 4, 33, 15],
+            [4, 39, 13, 1, 40, 14],
+            // 8
+            [2, 121, 97],
+            [2, 60, 38, 2, 61, 39],
+            [4, 40, 18, 2, 41, 19],
+            [4, 40, 14, 2, 41, 15],
+            // 9
+            [2, 146, 116],
+            [3, 58, 36, 2, 59, 37],
+            [4, 36, 16, 4, 37, 17],
+            [4, 36, 12, 4, 37, 13],
+            // 10
+            [2, 86, 68, 2, 87, 69],
+            [4, 69, 43, 1, 70, 44],
+            [6, 43, 19, 2, 44, 20],
+            [6, 43, 15, 2, 44, 16],
+            // 11
+            [4, 101, 81],
+            [1, 80, 50, 4, 81, 51],
+            [4, 50, 22, 4, 51, 23],
+            [3, 36, 12, 8, 37, 13],
+            // 12
+            [2, 116, 92, 2, 117, 93],
+            [6, 58, 36, 2, 59, 37],
+            [4, 46, 20, 6, 47, 21],
+            [7, 42, 14, 4, 43, 15],
+            // 13
+            [4, 133, 107],
+            [8, 59, 37, 1, 60, 38],
+            [8, 44, 20, 4, 45, 21],
+            [12, 33, 11, 4, 34, 12],
+            // 14
+            [3, 145, 115, 1, 146, 116],
+            [4, 64, 40, 5, 65, 41],
+            [11, 36, 16, 5, 37, 17],
+            [11, 36, 12, 5, 37, 13],
+            // 15
+            [5, 109, 87, 1, 110, 88],
+            [5, 65, 41, 5, 66, 42],
+            [5, 54, 24, 7, 55, 25],
+            [11, 36, 12, 7, 37, 13],
+            // 16
+            [5, 122, 98, 1, 123, 99],
+            [7, 73, 45, 3, 74, 46],
+            [15, 43, 19, 2, 44, 20],
+            [3, 45, 15, 13, 46, 16],
+            // 17
+            [1, 135, 107, 5, 136, 108],
+            [10, 74, 46, 1, 75, 47],
+            [1, 50, 22, 15, 51, 23],
+            [2, 42, 14, 17, 43, 15],
+            // 18
+            [5, 150, 120, 1, 151, 121],
+            [9, 69, 43, 4, 70, 44],
+            [17, 50, 22, 1, 51, 23],
+            [2, 42, 14, 19, 43, 15],
+            // 19
+            [3, 141, 113, 4, 142, 114],
+            [3, 70, 44, 11, 71, 45],
+            [17, 47, 21, 4, 48, 22],
+            [9, 39, 13, 16, 40, 14],
+            // 20
+            [3, 135, 107, 5, 136, 108],
+            [3, 67, 41, 13, 68, 42],
+            [15, 54, 24, 5, 55, 25],
+            [15, 43, 15, 10, 44, 16],
+            // 21
+            [4, 144, 116, 4, 145, 117],
+            [17, 68, 42],
+            [17, 50, 22, 6, 51, 23],
+            [19, 46, 16, 6, 47, 17],
+            // 22
+            [2, 139, 111, 7, 140, 112],
+            [17, 74, 46],
+            [7, 54, 24, 16, 55, 25],
+            [34, 37, 13],
+            // 23
+            [4, 151, 121, 5, 152, 122],
+            [4, 75, 47, 14, 76, 48],
+            [11, 54, 24, 14, 55, 25],
+            [16, 45, 15, 14, 46, 16],
+            // 24
+            [6, 147, 117, 4, 148, 118],
+            [6, 73, 45, 14, 74, 46],
+            [11, 54, 24, 16, 55, 25],
+            [30, 46, 16, 2, 47, 17],
+            // 25
+            [8, 132, 106, 4, 133, 107],
+            [8, 75, 47, 13, 76, 48],
+            [7, 54, 24, 22, 55, 25],
+            [22, 45, 15, 13, 46, 16],
+            // 26
+            [10, 142, 114, 2, 143, 115],
+            [19, 74, 46, 4, 75, 47],
+            [28, 50, 22, 6, 51, 23],
+            [33, 46, 16, 4, 47, 17],
+            // 27
+            [8, 152, 122, 4, 153, 123],
+            [22, 73, 45, 3, 74, 46],
+            [8, 53, 23, 26, 54, 24],
+            [12, 45, 15, 28, 46, 16],
+            // 28
+            [3, 147, 117, 10, 148, 118],
+            [3, 73, 45, 23, 74, 46],
+            [4, 54, 24, 31, 55, 25],
+            [11, 45, 15, 31, 46, 16],
+            // 29
+            [7, 146, 116, 7, 147, 117],
+            [21, 73, 45, 7, 74, 46],
+            [1, 53, 23, 37, 54, 24],
+            [19, 45, 15, 26, 46, 16],
+            // 30
+            [5, 145, 115, 10, 146, 116],
+            [19, 75, 47, 10, 76, 48],
+            [15, 54, 24, 25, 55, 25],
+            [23, 45, 15, 25, 46, 16],
+            // 31
+            [13, 145, 115, 3, 146, 116],
+            [2, 74, 46, 29, 75, 47],
+            [42, 54, 24, 1, 55, 25],
+            [23, 45, 15, 28, 46, 16],
+            // 32
+            [17, 145, 115],
+            [10, 74, 46, 23, 75, 47],
+            [10, 54, 24, 35, 55, 25],
+            [19, 45, 15, 35, 46, 16],
+            // 33
+            [17, 145, 115, 1, 146, 116],
+            [14, 74, 46, 21, 75, 47],
+            [29, 54, 24, 19, 55, 25],
+            [11, 45, 15, 46, 46, 16],
+            // 34
+            [13, 145, 115, 6, 146, 116],
+            [14, 74, 46, 23, 75, 47],
+            [44, 54, 24, 7, 55, 25],
+            [59, 46, 16, 1, 47, 17],
+            // 35
+            [12, 151, 121, 7, 152, 122],
+            [12, 75, 47, 26, 76, 48],
+            [39, 54, 24, 14, 55, 25],
+            [22, 45, 15, 41, 46, 16],
+            // 36
+            [6, 151, 121, 14, 152, 122],
+            [6, 75, 47, 34, 76, 48],
+            [46, 54, 24, 10, 55, 25],
+            [2, 45, 15, 64, 46, 16],
+            // 37
+            [17, 152, 122, 4, 153, 123],
+            [29, 74, 46, 14, 75, 47],
+            [49, 54, 24, 10, 55, 25],
+            [24, 45, 15, 46, 46, 16],
+            // 38
+            [4, 152, 122, 18, 153, 123],
+            [13, 74, 46, 32, 75, 47],
+            [48, 54, 24, 14, 55, 25],
+            [42, 45, 15, 32, 46, 16],
+            // 39
+            [20, 147, 117, 4, 148, 118],
+            [40, 75, 47, 7, 76, 48],
+            [43, 54, 24, 22, 55, 25],
+            [10, 45, 15, 67, 46, 16],
+            // 40
+            [19, 148, 118, 6, 149, 119],
+            [18, 75, 47, 31, 76, 48],
+            [34, 54, 24, 34, 55, 25],
+            [20, 45, 15, 61, 46, 16]
+          ];
+          var qrRSBlock = function(totalCount, dataCount) {
+            var _this2 = {};
+            _this2.totalCount = totalCount;
+            _this2.dataCount = dataCount;
+            return _this2;
+          };
+          var _this = {};
+          var getRsBlockTable = function(typeNumber, errorCorrectionLevel) {
+            switch (errorCorrectionLevel) {
+              case QRErrorCorrectionLevel.L:
+                return RS_BLOCK_TABLE[(typeNumber - 1) * 4 + 0];
+              case QRErrorCorrectionLevel.M:
+                return RS_BLOCK_TABLE[(typeNumber - 1) * 4 + 1];
+              case QRErrorCorrectionLevel.Q:
+                return RS_BLOCK_TABLE[(typeNumber - 1) * 4 + 2];
+              case QRErrorCorrectionLevel.H:
+                return RS_BLOCK_TABLE[(typeNumber - 1) * 4 + 3];
+              default:
+                return void 0;
+            }
+          };
+          _this.getRSBlocks = function(typeNumber, errorCorrectionLevel) {
+            var rsBlock = getRsBlockTable(typeNumber, errorCorrectionLevel);
+            if (typeof rsBlock == "undefined") {
+              throw "bad rs block @ typeNumber:" + typeNumber + "/errorCorrectionLevel:" + errorCorrectionLevel;
+            }
+            var length = rsBlock.length / 3;
+            var list = [];
+            for (var i = 0; i < length; i += 1) {
+              var count2 = rsBlock[i * 3 + 0];
+              var totalCount = rsBlock[i * 3 + 1];
+              var dataCount = rsBlock[i * 3 + 2];
+              for (var j2 = 0; j2 < count2; j2 += 1) {
+                list.push(qrRSBlock(totalCount, dataCount));
+              }
+            }
+            return list;
+          };
+          return _this;
+        })();
+        var qrBitBuffer = function() {
+          var _buffer = [];
+          var _length = 0;
+          var _this = {};
+          _this.getBuffer = function() {
+            return _buffer;
+          };
+          _this.getAt = function(index) {
+            var bufIndex = Math.floor(index / 8);
+            return (_buffer[bufIndex] >>> 7 - index % 8 & 1) == 1;
+          };
+          _this.put = function(num, length) {
+            for (var i = 0; i < length; i += 1) {
+              _this.putBit((num >>> length - i - 1 & 1) == 1);
+            }
+          };
+          _this.getLengthInBits = function() {
+            return _length;
+          };
+          _this.putBit = function(bit) {
+            var bufIndex = Math.floor(_length / 8);
+            if (_buffer.length <= bufIndex) {
+              _buffer.push(0);
+            }
+            if (bit) {
+              _buffer[bufIndex] |= 128 >>> _length % 8;
+            }
+            _length += 1;
+          };
+          return _this;
+        };
+        var qrNumber = function(data) {
+          var _mode = QRMode.MODE_NUMBER;
+          var _data = data;
+          var _this = {};
+          _this.getMode = function() {
+            return _mode;
+          };
+          _this.getLength = function(buffer) {
+            return _data.length;
+          };
+          _this.write = function(buffer) {
+            var data2 = _data;
+            var i = 0;
+            while (i + 2 < data2.length) {
+              buffer.put(strToNum(data2.substring(i, i + 3)), 10);
+              i += 3;
+            }
+            if (i < data2.length) {
+              if (data2.length - i == 1) {
+                buffer.put(strToNum(data2.substring(i, i + 1)), 4);
+              } else if (data2.length - i == 2) {
+                buffer.put(strToNum(data2.substring(i, i + 2)), 7);
+              }
+            }
+          };
+          var strToNum = function(s) {
+            var num = 0;
+            for (var i = 0; i < s.length; i += 1) {
+              num = num * 10 + chatToNum(s.charAt(i));
+            }
+            return num;
+          };
+          var chatToNum = function(c) {
+            if ("0" <= c && c <= "9") {
+              return c.charCodeAt(0) - "0".charCodeAt(0);
+            }
+            throw "illegal char :" + c;
+          };
+          return _this;
+        };
+        var qrAlphaNum = function(data) {
+          var _mode = QRMode.MODE_ALPHA_NUM;
+          var _data = data;
+          var _this = {};
+          _this.getMode = function() {
+            return _mode;
+          };
+          _this.getLength = function(buffer) {
+            return _data.length;
+          };
+          _this.write = function(buffer) {
+            var s = _data;
+            var i = 0;
+            while (i + 1 < s.length) {
+              buffer.put(
+                getCode(s.charAt(i)) * 45 + getCode(s.charAt(i + 1)),
+                11
+              );
+              i += 2;
+            }
+            if (i < s.length) {
+              buffer.put(getCode(s.charAt(i)), 6);
+            }
+          };
+          var getCode = function(c) {
+            if ("0" <= c && c <= "9") {
+              return c.charCodeAt(0) - "0".charCodeAt(0);
+            } else if ("A" <= c && c <= "Z") {
+              return c.charCodeAt(0) - "A".charCodeAt(0) + 10;
+            } else {
+              switch (c) {
+                case " ":
+                  return 36;
+                case "$":
+                  return 37;
+                case "%":
+                  return 38;
+                case "*":
+                  return 39;
+                case "+":
+                  return 40;
+                case "-":
+                  return 41;
+                case ".":
+                  return 42;
+                case "/":
+                  return 43;
+                case ":":
+                  return 44;
+                default:
+                  throw "illegal char :" + c;
+              }
+            }
+          };
+          return _this;
+        };
+        var qr8BitByte = function(data) {
+          var _mode = QRMode.MODE_8BIT_BYTE;
+          var _data = data;
+          var _bytes = qrcode3.stringToBytes(data);
+          var _this = {};
+          _this.getMode = function() {
+            return _mode;
+          };
+          _this.getLength = function(buffer) {
+            return _bytes.length;
+          };
+          _this.write = function(buffer) {
+            for (var i = 0; i < _bytes.length; i += 1) {
+              buffer.put(_bytes[i], 8);
+            }
+          };
+          return _this;
+        };
+        var qrKanji = function(data) {
+          var _mode = QRMode.MODE_KANJI;
+          var _data = data;
+          var stringToBytes = qrcode3.stringToBytesFuncs["SJIS"];
+          if (!stringToBytes) {
+            throw "sjis not supported.";
+          }
+          !(function(c, code) {
+            var test = stringToBytes(c);
+            if (test.length != 2 || (test[0] << 8 | test[1]) != code) {
+              throw "sjis not supported.";
+            }
+          })("\u53CB", 38726);
+          var _bytes = stringToBytes(data);
+          var _this = {};
+          _this.getMode = function() {
+            return _mode;
+          };
+          _this.getLength = function(buffer) {
+            return ~~(_bytes.length / 2);
+          };
+          _this.write = function(buffer) {
+            var data2 = _bytes;
+            var i = 0;
+            while (i + 1 < data2.length) {
+              var c = (255 & data2[i]) << 8 | 255 & data2[i + 1];
+              if (33088 <= c && c <= 40956) {
+                c -= 33088;
+              } else if (57408 <= c && c <= 60351) {
+                c -= 49472;
+              } else {
+                throw "illegal char at " + (i + 1) + "/" + c;
+              }
+              c = (c >>> 8 & 255) * 192 + (c & 255);
+              buffer.put(c, 13);
+              i += 2;
+            }
+            if (i < data2.length) {
+              throw "illegal char at " + (i + 1);
+            }
+          };
+          return _this;
+        };
+        var byteArrayOutputStream = function() {
+          var _bytes = [];
+          var _this = {};
+          _this.writeByte = function(b) {
+            _bytes.push(b & 255);
+          };
+          _this.writeShort = function(i) {
+            _this.writeByte(i);
+            _this.writeByte(i >>> 8);
+          };
+          _this.writeBytes = function(b, off, len) {
+            off = off || 0;
+            len = len || b.length;
+            for (var i = 0; i < len; i += 1) {
+              _this.writeByte(b[i + off]);
+            }
+          };
+          _this.writeString = function(s) {
+            for (var i = 0; i < s.length; i += 1) {
+              _this.writeByte(s.charCodeAt(i));
+            }
+          };
+          _this.toByteArray = function() {
+            return _bytes;
+          };
+          _this.toString = function() {
+            var s = "";
+            s += "[";
+            for (var i = 0; i < _bytes.length; i += 1) {
+              if (i > 0) {
+                s += ",";
+              }
+              s += _bytes[i];
+            }
+            s += "]";
+            return s;
+          };
+          return _this;
+        };
+        var base64EncodeOutputStream = function() {
+          var _buffer = 0;
+          var _buflen = 0;
+          var _length = 0;
+          var _base64 = "";
+          var _this = {};
+          var writeEncoded = function(b) {
+            _base64 += String.fromCharCode(encode2(b & 63));
+          };
+          var encode2 = function(n) {
+            if (n < 0) {
+            } else if (n < 26) {
+              return 65 + n;
+            } else if (n < 52) {
+              return 97 + (n - 26);
+            } else if (n < 62) {
+              return 48 + (n - 52);
+            } else if (n == 62) {
+              return 43;
+            } else if (n == 63) {
+              return 47;
+            }
+            throw "n:" + n;
+          };
+          _this.writeByte = function(n) {
+            _buffer = _buffer << 8 | n & 255;
+            _buflen += 8;
+            _length += 1;
+            while (_buflen >= 6) {
+              writeEncoded(_buffer >>> _buflen - 6);
+              _buflen -= 6;
+            }
+          };
+          _this.flush = function() {
+            if (_buflen > 0) {
+              writeEncoded(_buffer << 6 - _buflen);
+              _buffer = 0;
+              _buflen = 0;
+            }
+            if (_length % 3 != 0) {
+              var padlen = 3 - _length % 3;
+              for (var i = 0; i < padlen; i += 1) {
+                _base64 += "=";
+              }
+            }
+          };
+          _this.toString = function() {
+            return _base64;
+          };
+          return _this;
+        };
+        var base64DecodeInputStream = function(str) {
+          var _str = str;
+          var _pos = 0;
+          var _buffer = 0;
+          var _buflen = 0;
+          var _this = {};
+          _this.read = function() {
+            while (_buflen < 8) {
+              if (_pos >= _str.length) {
+                if (_buflen == 0) {
+                  return -1;
+                }
+                throw "unexpected end of file./" + _buflen;
+              }
+              var c = _str.charAt(_pos);
+              _pos += 1;
+              if (c == "=") {
+                _buflen = 0;
+                return -1;
+              } else if (c.match(/^\s$/)) {
+                continue;
+              }
+              _buffer = _buffer << 6 | decode2(c.charCodeAt(0));
+              _buflen += 6;
+            }
+            var n = _buffer >>> _buflen - 8 & 255;
+            _buflen -= 8;
+            return n;
+          };
+          var decode2 = function(c) {
+            if (65 <= c && c <= 90) {
+              return c - 65;
+            } else if (97 <= c && c <= 122) {
+              return c - 97 + 26;
+            } else if (48 <= c && c <= 57) {
+              return c - 48 + 52;
+            } else if (c == 43) {
+              return 62;
+            } else if (c == 47) {
+              return 63;
+            } else {
+              throw "c:" + c;
+            }
+          };
+          return _this;
+        };
+        var gifImage = function(width, height) {
+          var _width = width;
+          var _height = height;
+          var _data = new Array(width * height);
+          var _this = {};
+          _this.setPixel = function(x2, y, pixel) {
+            _data[y * _width + x2] = pixel;
+          };
+          _this.write = function(out) {
+            out.writeString("GIF87a");
+            out.writeShort(_width);
+            out.writeShort(_height);
+            out.writeByte(128);
+            out.writeByte(0);
+            out.writeByte(0);
+            out.writeByte(0);
+            out.writeByte(0);
+            out.writeByte(0);
+            out.writeByte(255);
+            out.writeByte(255);
+            out.writeByte(255);
+            out.writeString(",");
+            out.writeShort(0);
+            out.writeShort(0);
+            out.writeShort(_width);
+            out.writeShort(_height);
+            out.writeByte(0);
+            var lzwMinCodeSize = 2;
+            var raster = getLZWRaster(lzwMinCodeSize);
+            out.writeByte(lzwMinCodeSize);
+            var offset = 0;
+            while (raster.length - offset > 255) {
+              out.writeByte(255);
+              out.writeBytes(raster, offset, 255);
+              offset += 255;
+            }
+            out.writeByte(raster.length - offset);
+            out.writeBytes(raster, offset, raster.length - offset);
+            out.writeByte(0);
+            out.writeString(";");
+          };
+          var bitOutputStream = function(out) {
+            var _out = out;
+            var _bitLength = 0;
+            var _bitBuffer = 0;
+            var _this2 = {};
+            _this2.write = function(data, length) {
+              if (data >>> length != 0) {
+                throw "length over";
+              }
+              while (_bitLength + length >= 8) {
+                _out.writeByte(255 & (data << _bitLength | _bitBuffer));
+                length -= 8 - _bitLength;
+                data >>>= 8 - _bitLength;
+                _bitBuffer = 0;
+                _bitLength = 0;
+              }
+              _bitBuffer = data << _bitLength | _bitBuffer;
+              _bitLength = _bitLength + length;
+            };
+            _this2.flush = function() {
+              if (_bitLength > 0) {
+                _out.writeByte(_bitBuffer);
+              }
+            };
+            return _this2;
+          };
+          var getLZWRaster = function(lzwMinCodeSize) {
+            var clearCode = 1 << lzwMinCodeSize;
+            var endCode = (1 << lzwMinCodeSize) + 1;
+            var bitLength = lzwMinCodeSize + 1;
+            var table = lzwTable();
+            for (var i = 0; i < clearCode; i += 1) {
+              table.add(String.fromCharCode(i));
+            }
+            table.add(String.fromCharCode(clearCode));
+            table.add(String.fromCharCode(endCode));
+            var byteOut = byteArrayOutputStream();
+            var bitOut = bitOutputStream(byteOut);
+            bitOut.write(clearCode, bitLength);
+            var dataIndex = 0;
+            var s = String.fromCharCode(_data[dataIndex]);
+            dataIndex += 1;
+            while (dataIndex < _data.length) {
+              var c = String.fromCharCode(_data[dataIndex]);
+              dataIndex += 1;
+              if (table.contains(s + c)) {
+                s = s + c;
+              } else {
+                bitOut.write(table.indexOf(s), bitLength);
+                if (table.size() < 4095) {
+                  if (table.size() == 1 << bitLength) {
+                    bitLength += 1;
+                  }
+                  table.add(s + c);
+                }
+                s = c;
+              }
+            }
+            bitOut.write(table.indexOf(s), bitLength);
+            bitOut.write(endCode, bitLength);
+            bitOut.flush();
+            return byteOut.toByteArray();
+          };
+          var lzwTable = function() {
+            var _map = {};
+            var _size = 0;
+            var _this2 = {};
+            _this2.add = function(key) {
+              if (_this2.contains(key)) {
+                throw "dup key:" + key;
+              }
+              _map[key] = _size;
+              _size += 1;
+            };
+            _this2.size = function() {
+              return _size;
+            };
+            _this2.indexOf = function(key) {
+              return _map[key];
+            };
+            _this2.contains = function(key) {
+              return typeof _map[key] != "undefined";
+            };
+            return _this2;
+          };
+          return _this;
+        };
+        var createDataURL = function(width, height, getPixel) {
+          var gif = gifImage(width, height);
+          for (var y = 0; y < height; y += 1) {
+            for (var x2 = 0; x2 < width; x2 += 1) {
+              gif.setPixel(x2, y, getPixel(x2, y));
+            }
+          }
+          var b = byteArrayOutputStream();
+          gif.write(b);
+          var base642 = base64EncodeOutputStream();
+          var bytes = b.toByteArray();
+          for (var i = 0; i < bytes.length; i += 1) {
+            base642.writeByte(bytes[i]);
+          }
+          base642.flush();
+          return "data:image/gif;base64," + base642;
+        };
+        return qrcode3;
+      })();
+      !(function() {
+        qrcode2.stringToBytesFuncs["UTF-8"] = function(s) {
+          function toUTF8Array(str) {
+            var utf8 = [];
+            for (var i = 0; i < str.length; i++) {
+              var charcode = str.charCodeAt(i);
+              if (charcode < 128) utf8.push(charcode);
+              else if (charcode < 2048) {
+                utf8.push(
+                  192 | charcode >> 6,
+                  128 | charcode & 63
+                );
+              } else if (charcode < 55296 || charcode >= 57344) {
+                utf8.push(
+                  224 | charcode >> 12,
+                  128 | charcode >> 6 & 63,
+                  128 | charcode & 63
+                );
+              } else {
+                i++;
+                charcode = 65536 + ((charcode & 1023) << 10 | str.charCodeAt(i) & 1023);
+                utf8.push(
+                  240 | charcode >> 18,
+                  128 | charcode >> 12 & 63,
+                  128 | charcode >> 6 & 63,
+                  128 | charcode & 63
+                );
+              }
+            }
+            return utf8;
+          }
+          return toUTF8Array(s);
+        };
+      })();
+      (function(factory) {
+        if (typeof define === "function" && define.amd) {
+          define([], factory);
+        } else if (typeof exports === "object") {
+          module.exports = factory();
+        }
+      })(function() {
+        return qrcode2;
+      });
+    }
+  });
+
   // node_modules/exceljs/dist/exceljs.min.js
   var require_exceljs_min = __commonJS({
     "node_modules/exceljs/dist/exceljs.min.js"(exports, module) {
@@ -24817,12 +26504,11 @@
         provedor: "focus_nfe",
         ambiente: "homologacao",
         tokenFocus: "",
+        tokenFocusHomolog: "",
         cnpjEmitente: "",
         inscricaoEstadual: "",
-        cscId: "000001",
-        cscToken: "",
-        serieNfce: 1,
-        ultimoNumeroNfce: 1,
+        serieNfce: 0,
+        autoEmitirAoFinalizar: true,
         regimeTributario: "1",
         cfopPadrao: "5102",
         ncmPadrao: "22030000",
@@ -25909,8 +27595,28 @@
   };
 
   // src/js/thermal-print.js
+  var import_qrcode_generator = __toESM(require_qrcode());
   var ThermalPrintModule = {
     init() {
+    },
+    // QR Code da NFC-e (conteúdo = qrcode_url devolvida pela SEFAZ) em SVG.
+    svgQrCode(texto, tamanhoPx = 110) {
+      if (!texto) return "";
+      try {
+        const qr = (0, import_qrcode_generator.default)(0, "M");
+        qr.addData(String(texto));
+        qr.make();
+        const modulos = qr.getModuleCount();
+        const cell = Math.max(1, Math.floor(tamanhoPx / modulos));
+        return qr.createSvgTag({ cellSize: cell, margin: 0, scalable: false });
+      } catch (e) {
+        console.warn("[ThermalPrint] Falha ao gerar QR Code:", e);
+        return "";
+      }
+    },
+    // Cupom fiscal só quando a SEFAZ autorizou (ou a nota foi cancelada depois).
+    vendaTemNfce(venda) {
+      return Boolean(venda && venda.chaveNfe && (venda.statusFiscal === "autorizada" || venda.statusFiscal === "cancelada"));
     },
     rotuloFormaCupom(forma) {
       return String(forma || "Dinheiro").replace(/\s*-\s*/g, " ").replace(/-/g, " ").replace(/\s+/g, " ").trim();
@@ -26035,7 +27741,7 @@
       if (teveDinheiro) {
         this.abrirGavetaDinheiro();
       }
-      const isNfce = Boolean(venda.chaveNfe || venda.statusFiscal === "autorizada");
+      const isNfce = this.vendaTemNfce(venda);
       const chaveFormatada = (venda.chaveNfe || "").replace(/(.{4})/g, "$1 ").trim();
       const qtdeItens = (venda.itens || []).reduce((acc, item) => {
         if (this.itemEhPeso(item)) return acc + 1;
@@ -26097,6 +27803,7 @@
           <div class="text-center bold">Documento Auxiliar da Nota Fiscal</div>
           <div class="text-center bold">de Consumidor Eletr\xF4nica</div>
           ${venda.ambiente === "homologacao" ? '<div class="text-center bold" style="font-size: 9.5px; margin-top: 2px;">EMITIDA EM HOMOLOGA\xC7\xC3O - SEM VALOR FISCAL</div>' : ""}
+          ${venda.statusFiscal === "cancelada" ? '<div class="text-center bold" style="font-size: 10px; margin-top: 2px;">*** NFC-e CANCELADA ***</div>' : ""}
         ` : `
           <div class="text-center bold">CUPOM N\xC3O FISCAL</div>
         `}
@@ -26118,20 +27825,26 @@
         ${isNfce ? `
           <div class="divider"></div>
           <div class="text-center" style="font-size: 9.5px;">Consulte pela chave de acesso em</div>
-          <div class="text-center" style="font-size: 9px;"><strong>www.nfce.fazenda.sp.gov.br/consulta</strong></div>
+          <div class="text-center" style="font-size: 9px;"><strong>${this.escCupom(venda.urlConsultaNfce || "www.nfe.fazenda.gov.br/portal")}</strong></div>
           <div class="text-center chave" style="margin-top: 4px;">${this.escCupom(chaveFormatada)}</div>
           <div class="text-center" style="font-size: 9.5px; margin-top: 6px;">
-            ${venda.cpfCliente ? `CONSUMIDOR CPF: ${this.escCupom(venda.cpfCliente)}` : "N\xC3O IDENTIFICADO"}
+            ${venda.cpfCliente ? `CONSUMIDOR CPF: ${this.escCupom(venda.cpfCliente)}` : "CONSUMIDOR N\xC3O IDENTIFICADO"}
           </div>
           <div class="text-center" style="font-size: 9.5px; margin-top: 4px;">
-            NFC-e numero ${venda.numeroNfce || 1}<br>
-            Serie ${venda.serieNfce || 1} ${new Date(venda.data).toLocaleString("pt-BR")}<br>
+            NFC-e n. ${venda.numeroNfce || "-"} Serie ${venda.serieNfce || "-"}<br>
+            ${new Date(venda.dataAutorizacaoNfce || venda.data).toLocaleString("pt-BR")}<br>
             Protocolo de autorizacao: ${this.escCupom(venda.protocoloNfe || "")}
           </div>
-          <div class="text-center" style="font-size: 8.5px; margin-top: 5px;">
-            Valor aproximado dos tributos deste cupom ${this.formatarMoedaCupom(venda.tributosAproximados || Number(venda.total || 0) * 0.184)}
-            (Conf. Lei Fed. 12.741/2012)
-          </div>
+          ${venda.qrcodeUrl ? `
+            <div class="text-center" style="margin-top: 6px;">${this.svgQrCode(venda.qrcodeUrl, largura === "72mm" ? 150 : 110)}</div>
+            <div class="text-center" style="font-size: 8.5px; margin-top: 2px;">Consulta via leitor de QR Code</div>
+          ` : ""}
+          ${venda.tributosAproximados ? `
+            <div class="text-center" style="font-size: 8.5px; margin-top: 5px;">
+              Valor aproximado dos tributos deste cupom ${this.formatarMoedaCupom(venda.tributosAproximados)}
+              (Conf. Lei Fed. 12.741/2012)
+            </div>
+          ` : ""}
         ` : `
           <div>Venda: #${StorageService.formatarNumeroVenda(venda)}</div>
           <div>Data: ${new Date(venda.data).toLocaleString("pt-BR")}</div>
@@ -26287,7 +28000,7 @@
     imprimirA4Venda(venda) {
       if (!venda) return;
       const config = StorageService.getConfig() || {};
-      const isNfce = Boolean(venda.chaveNfe || venda.statusFiscal === "autorizada");
+      const isNfce = this.vendaTemNfce(venda);
       const chaveFormatada = (venda.chaveNfe || "").replace(/(.{4})/g, "$1 ").trim();
       const clienteCpf = venda.cpfCliente || venda.cpfCnpj || "";
       const html = `
@@ -26457,13 +28170,21 @@
         ${isNfce ? `
           <div class="fiscal-box">
             <div style="font-weight: 800; color: #166534; margin-bottom: 6px; font-size: 13px;">
-              \u{1F3DB}\uFE0F DADOS FISCAIS SEFAZ \u2014 NFC-e N\xBA ${venda.numeroNfce || 1} &bull; S\xE9rie ${venda.serieNfce || 1}
+              \u{1F3DB}\uFE0F DADOS FISCAIS SEFAZ \u2014 NFC-e N\xBA ${venda.numeroNfce || "-"} &bull; S\xE9rie ${venda.serieNfce || "-"}${venda.statusFiscal === "cancelada" ? ' &bull; <span style="color:#b91c1c;">CANCELADA</span>' : ""}${venda.ambiente === "homologacao" ? " &bull; HOMOLOGA\xC7\xC3O (SEM VALOR FISCAL)" : ""}
             </div>
-            <div style="font-size: 12px; color: #14532d; font-family: monospace; word-break: break-all; margin-bottom: 6px;">
-              <strong>Chave de Acesso:</strong> ${chaveFormatada}
-            </div>
-            <div style="font-size: 11.5px; color: #166534;">
-              Protocolo de Autoriza\xE7\xE3o: <strong>${venda.protocoloNfe || "135260000000000"}</strong> &bull; Tributos Incidentes: R$ ${venda.tributosAproximados || (venda.total * 0.184).toFixed(2)}
+            <div style="display: flex; gap: 14px; align-items: flex-start;">
+              <div style="flex: 1;">
+                <div style="font-size: 12px; color: #14532d; font-family: monospace; word-break: break-all; margin-bottom: 6px;">
+                  <strong>Chave de Acesso:</strong> ${chaveFormatada}
+                </div>
+                <div style="font-size: 11.5px; color: #166534;">
+                  Protocolo de Autoriza\xE7\xE3o: <strong>${this.escCupom(venda.protocoloNfe || "")}</strong>${venda.dataAutorizacaoNfce ? " em " + new Date(venda.dataAutorizacaoNfce).toLocaleString("pt-BR") : ""}
+                </div>
+                <div style="font-size: 11px; color: #166534; margin-top: 4px;">
+                  Consulte em: <strong>${this.escCupom(venda.urlConsultaNfce || "www.nfe.fazenda.gov.br/portal")}</strong>
+                </div>
+              </div>
+              ${venda.qrcodeUrl ? `<div>${this.svgQrCode(venda.qrcodeUrl, 120)}</div>` : ""}
             </div>
           </div>
         ` : ""}
@@ -51268,35 +52989,49 @@ Venda bloqueada no PDV!`);
     },
     agendarEmissaoFiscal(venda, deveEmitir) {
       if (!deveEmitir || !window.FiscalModule || typeof window.FiscalModule.emitirNFCe !== "function") return;
-      window.FiscalModule.emitirNFCe(venda).then((resFiscal) => {
-        if (resFiscal && resFiscal.sucesso) {
-          venda.chaveNfe = resFiscal.chaveAcesso;
-          venda.protocoloNfe = resFiscal.protocoloAutorizacao;
-          venda.numeroNfce = resFiscal.numeroNfce;
-          venda.serieNfce = resFiscal.serieNfce;
-          venda.ambiente = resFiscal.ambiente;
-          venda.qrcodeUrl = resFiscal.qrcodeUrl;
-          venda.statusFiscal = resFiscal.status || "autorizada";
-          venda.tributosAproximados = resFiscal.tributosAproximados;
-          venda.fiscalErro = "";
-          StorageService.atualizarVenda(venda);
-        } else {
-          venda.statusFiscal = "erro";
-          venda.fiscalErro = resFiscal && (resFiscal.mensagem || resFiscal.erro) || "Falha na emiss\xE3o da NFC-e";
-          StorageService.atualizarVenda(venda);
-          if (window.App && typeof window.App.showToast === "function") {
-            window.App.showToast("Venda gravada. NFC-e pendente: " + venda.fiscalErro, "warning");
-          }
+      window.FiscalModule.emitirNFCe(venda).then((res) => {
+        if (this.ultimaVendaFinalizada && this.ultimaVendaFinalizada.id === venda.id) {
+          this.atualizarBadgeFiscalSucesso(venda);
+        }
+        if (!res || res.sucesso) return;
+        if (window.App && typeof window.App.showToast === "function") {
+          const msg = res.estado === "rejeitada" ? "NFC-e rejeitada: " + res.mensagem : "Venda gravada. NFC-e pendente: " + res.mensagem;
+          window.App.showToast(msg, "warning");
         }
       }).catch((err) => {
-        venda.statusFiscal = "erro";
+        venda.statusFiscal = "pendente";
         venda.fiscalErro = err?.message || String(err);
         StorageService.atualizarVenda(venda);
         console.warn("[Fiscal] Erro na emiss\xE3o NFC-e:", err);
         if (window.App && typeof window.App.showToast === "function") {
-          window.App.showToast("Venda gravada, mas a NFC-e n\xE3o foi autorizada. Reemita depois.", "warning");
+          window.App.showToast("Venda gravada, mas a NFC-e ficou pendente. Ser\xE1 reenviada automaticamente.", "warning");
         }
       });
+    },
+    atualizarBadgeFiscalSucesso(venda) {
+      const fiscalBadge = document.getElementById("modal-sucesso-fiscal-badge");
+      if (!fiscalBadge || !venda) return;
+      const pintar = (bg, cor, texto) => {
+        fiscalBadge.innerHTML = texto;
+        fiscalBadge.style.background = bg;
+        fiscalBadge.style.color = cor;
+      };
+      switch (venda.statusFiscal) {
+        case "autorizada": {
+          const amb = venda.ambiente === "homologacao" ? "\u{1F9EA} Homologa\xE7\xE3o" : "\u{1F7E2} Produ\xE7\xE3o";
+          pintar("#dcfce7", "#15803d", `\u{1F3DB}\uFE0F NFC-e N\xBA ${venda.numeroNfce || "-"} Autorizada (${amb})`);
+          break;
+        }
+        case "pendente":
+          pintar("#fef3c7", "#b45309", "\u23F3 NFC-e sendo enviada \xE0 SEFAZ...");
+          break;
+        case "rejeitada":
+        case "erro":
+          pintar("#fee2e2", "#b91c1c", "\u274C NFC-e rejeitada - veja no hist\xF3rico de vendas");
+          break;
+        default:
+          pintar("#f1f5f9", "#475569", "\u{1F4C4} Comprovante N\xE3o Fiscal");
+      }
     },
     confirmarPagamento() {
       this.lancarValorPagamento();
@@ -51381,9 +53116,10 @@ Venda bloqueada no PDV!`);
         if (cpfFinal) {
           venda.cpfCliente = cpfFinal;
         }
-        if (deveEmitirFiscal) venda.statusFiscal = "pendente";
+        const emitirAgora = deveEmitirFiscal && cfgFiscal.autoEmitirAoFinalizar !== false;
+        if (deveEmitirFiscal) venda.statusFiscal = emitirAgora ? "pendente" : "manual";
         StorageService.saveVenda(venda);
-        this.agendarEmissaoFiscal(venda, deveEmitirFiscal && cfgFiscal);
+        this.agendarEmissaoFiscal(venda, emitirAgora);
         if (venda.itens && venda.itens.length > 0 && venda.itens[0].comandaOrigemId && window.ComandasModule) {
           window.ComandasModule.liberarComandaAposVenda(venda.itens[0].comandaOrigemId, venda.itens);
         }
@@ -51428,19 +53164,7 @@ Venda bloqueada no PDV!`);
           if (classicTroco) classicTroco.textContent = "0,00";
         }
       }
-      if (fiscalBadge) {
-        const isNfce = Boolean(venda.chaveNfe || venda.statusFiscal === "autorizada");
-        if (isNfce) {
-          const amb = venda.ambiente === "homologacao" ? "\u{1F9EA} Homologa\xE7\xE3o" : "\u{1F7E2} Produ\xE7\xE3o";
-          fiscalBadge.innerHTML = `\u{1F3DB}\uFE0F NFC-e N\xBA ${venda.numeroNfce || 1} Emitida (${amb})`;
-          fiscalBadge.style.background = "#dcfce7";
-          fiscalBadge.style.color = "#15803d";
-        } else {
-          fiscalBadge.innerHTML = `\u{1F4C4} Comprovante N\xE3o Fiscal`;
-          fiscalBadge.style.background = "#f1f5f9";
-          fiscalBadge.style.color = "#475569";
-        }
-      }
+      if (fiscalBadge) this.atualizarBadgeFiscalSucesso(venda);
       modal.style.display = "flex";
       const btnImprimir = document.getElementById("btn-confirmar-imprimir-venda");
       if (btnImprimir) {
@@ -56469,6 +58193,8 @@ ${base}`;
             </div>
           </div>
         </div>
+
+        ${window.FiscalModule && typeof window.FiscalModule.htmlBlocoFiscalVenda === "function" ? window.FiscalModule.htmlBlocoFiscalVenda(venda) : ""}
 
         <h4 style="font-size: 13px; font-weight: 800; color: var(--text-main); margin-bottom: 8px;">\u{1F4E6} Itens Comprados (${(venda.itens || []).length}):</h4>
         
@@ -61646,16 +63372,272 @@ ${base}`;
     }
   };
 
+  // src/js/fiscal-core.js
+  var FOCUS_URLS = {
+    producao: "https://api.focusnfe.com.br",
+    homologacao: "https://homologacao.focusnfe.com.br"
+  };
+  var JANELA_CANCELAMENTO_MS = 30 * 60 * 1e3;
+  var round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+  var round4 = (n) => Math.round((Number(n) || 0) * 1e4) / 1e4;
+  function somenteDigitos(v) {
+    return String(v || "").replace(/\D/g, "");
+  }
+  function codigoSefazPagamento(forma) {
+    const f = String(forma || "").toLowerCase();
+    if (f.includes("dinheiro")) return "01";
+    if (f.includes("cheque")) return "02";
+    if (f.includes("fiado") || f.includes("cr\xE9dito loja") || f.includes("credito loja")) return "05";
+    if (f.includes("cr\xE9dito") || f.includes("credito")) return "03";
+    if (f.includes("d\xE9bito") || f.includes("debito")) return "04";
+    if (f.includes("alimenta")) return "10";
+    if (f.includes("refei")) return "11";
+    if (f.includes("vale")) return "13";
+    if (f.includes("pix")) return "17";
+    return "99";
+  }
+  function dataEmissaoISO(agora = /* @__PURE__ */ new Date()) {
+    const pad = (n) => String(n).padStart(2, "0");
+    const off = -agora.getTimezoneOffset();
+    const sinal = off >= 0 ? "+" : "-";
+    const abs = Math.abs(off);
+    return `${agora.getFullYear()}-${pad(agora.getMonth() + 1)}-${pad(agora.getDate())}T${pad(agora.getHours())}:${pad(agora.getMinutes())}:${pad(agora.getSeconds())}${sinal}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
+  }
+  function pagamentosDaVenda(venda) {
+    const lista = [];
+    if (venda.pagamentoDividido && Array.isArray(venda.pagamentos) && venda.pagamentos.length > 0) {
+      venda.pagamentos.forEach((p) => lista.push({ forma: p.forma, valor: round2(p.valor) }));
+    } else if (venda.pagamentoDividido && (venda.parcela1 || venda.parcela2)) {
+      if (venda.parcela1) lista.push({ forma: venda.parcela1.forma, valor: round2(venda.parcela1.valor) });
+      if (venda.parcela2) lista.push({ forma: venda.parcela2.forma, valor: round2(venda.parcela2.valor) });
+    } else {
+      lista.push({ forma: venda.formaPagamento || "Dinheiro", valor: round2(venda.total) });
+    }
+    return lista.filter((p) => p.valor > 0);
+  }
+  function montarPayloadNFCe(venda, cfg, produtosPorId = /* @__PURE__ */ new Map(), agora = /* @__PURE__ */ new Date()) {
+    const cnpj = somenteDigitos(cfg.cnpjEmitente);
+    if (cnpj.length !== 14) {
+      throw new Error("CNPJ do emitente inv\xE1lido na configura\xE7\xE3o fiscal.");
+    }
+    const total = round2(venda.total);
+    if (total <= 0) {
+      throw new Error("Venda sem valor (R$ 0,00) n\xE3o gera NFC-e.");
+    }
+    const itens = (venda.itens || []).filter((i) => (parseFloat(i.quantidade) || 0) > 0);
+    if (itens.length === 0) {
+      throw new Error("Venda sem itens n\xE3o gera NFC-e.");
+    }
+    const brutos = itens.map((i) => round2((parseFloat(i.precoUnitario) || 0) * (parseFloat(i.quantidade) || 0)));
+    const somaBruta = round2(brutos.reduce((a, b) => a + b, 0));
+    const descontoTotal = Math.max(0, round2(somaBruta - total));
+    let descontoAcumulado = 0;
+    const items = itens.map((item, idx) => {
+      const prod = produtosPorId.get(item.id) || produtosPorId.get(String(item.id)) || {};
+      const ncm = somenteDigitos(item.ncm || prod.ncm || cfg.ncmPadrao) || "22030000";
+      const cfop = somenteDigitos(item.cfop || prod.cfop || cfg.cfopPadrao) || "5102";
+      const csosn = somenteDigitos(item.csosn || prod.csosn || cfg.csosnPadrao) || "102";
+      const origem = String(item.icmsOrigem ?? prod.icmsOrigem ?? "0");
+      const qtd = round4(item.quantidade);
+      const precoUnit = round2(item.precoUnitario);
+      const bruto = brutos[idx];
+      const ehKg = item.permiteFracionado === true || String(item.unidade || prod.unidade || "").toLowerCase() === "kg";
+      const unidade = ehKg ? "KG" : "UN";
+      let desconto = 0;
+      if (descontoTotal > 0 && somaBruta > 0) {
+        desconto = idx === itens.length - 1 ? round2(descontoTotal - descontoAcumulado) : round2(descontoTotal * (bruto / somaBruta));
+        desconto = Math.min(desconto, bruto);
+        descontoAcumulado = round2(descontoAcumulado + desconto);
+      }
+      const it2 = {
+        numero_item: String(idx + 1),
+        codigo_produto: String(item.codigoBarras || prod.codigoBarras || item.id || idx + 1).slice(0, 60),
+        codigo_barras_comercial: somenteDigitos(item.codigoBarras || prod.codigoBarras) || "SEM GTIN",
+        codigo_barras_tributavel: somenteDigitos(item.codigoBarras || prod.codigoBarras) || "SEM GTIN",
+        descricao: String(item.nome || "ITEM").slice(0, 120),
+        codigo_ncm: ncm,
+        cfop,
+        unidade_comercial: unidade,
+        quantidade_comercial: qtd,
+        valor_unitario_comercial: precoUnit,
+        unidade_tributavel: unidade,
+        quantidade_tributavel: qtd,
+        valor_unitario_tributavel: precoUnit,
+        valor_bruto: bruto,
+        icms_origem: origem,
+        icms_situacao_tributaria: csosn,
+        pis_situacao_tributaria: "49",
+        cofins_situacao_tributaria: "49",
+        inclui_no_total: "1"
+      };
+      if (desconto > 0) it2.valor_desconto = desconto;
+      if (prod.cest) it2.cest = somenteDigitos(prod.cest);
+      return it2;
+    });
+    const formas_pagamento = pagamentosDaVenda(venda).map((p) => ({
+      forma_pagamento: codigoSefazPagamento(p.forma),
+      valor_pagamento: p.valor
+    }));
+    const somaPag = round2(formas_pagamento.reduce((a, p) => a + p.valor_pagamento, 0));
+    if (formas_pagamento.length === 0 || Math.abs(somaPag - total) > 0.011) {
+      if (formas_pagamento.length === 0) {
+        formas_pagamento.push({ forma_pagamento: codigoSefazPagamento(venda.formaPagamento), valor_pagamento: total });
+      } else {
+        const ultimo = formas_pagamento[formas_pagamento.length - 1];
+        ultimo.valor_pagamento = round2(ultimo.valor_pagamento + (total - somaPag));
+      }
+    }
+    const payload = {
+      cnpj_emitente: cnpj,
+      data_emissao: dataEmissaoISO(agora),
+      natureza_operacao: cfg.naturezaOperacao || "VENDA AO CONSUMIDOR",
+      presenca_comprador: "1",
+      modalidade_frete: "9",
+      local_destino: "1",
+      indicador_inscricao_estadual_destinatario: "9",
+      items,
+      formas_pagamento
+    };
+    const serie = parseInt(cfg.serieNfce, 10);
+    if (serie > 0) payload.serie = String(serie);
+    const doc2 = somenteDigitos(venda.cpfCliente);
+    if (doc2.length === 11) payload.cpf_destinatario = doc2;
+    else if (doc2.length === 14) payload.cnpj_destinatario = doc2;
+    if (venda.nomeCliente && doc2) payload.nome_destinatario = String(venda.nomeCliente).slice(0, 60);
+    const obs = [];
+    if (venda.numeroVenda) obs.push(`Venda #${String(venda.numeroVenda).padStart(6, "0")}`);
+    if (venda.operadorNome || venda.operador) obs.push(`Operador: ${venda.operadorNome || venda.operador}`);
+    if (obs.length) payload.informacoes_adicionais_contribuinte = obs.join(" | ").slice(0, 2e3);
+    return payload;
+  }
+  function interpretarRespostaFocus(status, body) {
+    const b = body && typeof body === "object" ? body : {};
+    if (status === 0 || status == null) {
+      return { estado: "erro_rede", mensagem: b.mensagem || "Sem conex\xE3o com a Focus NFe.", dados: null };
+    }
+    if (status === 401) {
+      return { estado: "erro_config", mensagem: "Token da Focus NFe inv\xE1lido ou de outro ambiente.", dados: null };
+    }
+    if (status === 403 || b.codigo === "permissao_negada") {
+      return { estado: "erro_config", mensagem: b.mensagem || "CNPJ n\xE3o autorizado neste token da Focus NFe.", dados: null };
+    }
+    if (status === 404) {
+      return { estado: "nao_encontrada", mensagem: b.mensagem || "NFC-e n\xE3o encontrada.", dados: null };
+    }
+    if (status >= 500) {
+      return { estado: "erro_rede", mensagem: `Focus NFe indispon\xEDvel (HTTP ${status}).`, dados: null };
+    }
+    if (b.status === "autorizado") {
+      return { estado: "autorizada", mensagem: b.mensagem_sefaz || "Autorizado o uso da NFC-e", dados: dadosAutorizacao(b) };
+    }
+    if (b.status === "cancelado") {
+      return { estado: "cancelada", mensagem: b.mensagem_sefaz || "NFC-e cancelada", dados: dadosAutorizacao(b) };
+    }
+    if (b.status === "processando_autorizacao") {
+      return { estado: "processando", mensagem: "NFC-e em processamento na SEFAZ.", dados: null };
+    }
+    if (b.status === "erro_autorizacao" || b.status === "denegado") {
+      return {
+        estado: "rejeitada",
+        mensagem: `SEFAZ ${b.status_sefaz || ""}: ${b.mensagem_sefaz || "Rejeitada"}`.trim(),
+        dados: null
+      };
+    }
+    if (b.codigo === "already_processed") {
+      return { estado: "ja_processada", mensagem: b.mensagem || "Refer\xEAncia j\xE1 utilizada.", dados: null };
+    }
+    if (b.codigo === "pending_operation") {
+      return { estado: "processando", mensagem: b.mensagem || "Em processamento.", dados: null };
+    }
+    if (["ambiente_nao_configurado", "empresa_nao_configurada", "erro_validacao", "erro_validacao_schema", "requisicao_invalida"].includes(b.codigo)) {
+      const detalhes = Array.isArray(b.erros) ? b.erros.map((e) => e.mensagem || e).join("; ") : "";
+      return { estado: "erro_config", mensagem: [b.mensagem, detalhes].filter(Boolean).join(" - "), dados: null };
+    }
+    return {
+      estado: status >= 200 && status < 300 ? "processando" : "rejeitada",
+      mensagem: b.mensagem || b.mensagem_sefaz || `Resposta inesperada (HTTP ${status}).`,
+      dados: null
+    };
+  }
+  function dadosAutorizacao(b) {
+    const chave = String(b.chave_nfe || "").replace(/^NFe/i, "");
+    return {
+      chaveAcesso: chave,
+      protocoloAutorizacao: b.protocolo || b.numero_protocolo || b.protocolo_nota_fiscal && b.protocolo_nota_fiscal.numero_protocolo || "",
+      numeroNfce: parseInt(b.numero, 10) || null,
+      serieNfce: parseInt(b.serie, 10) || null,
+      qrcodeUrl: b.qrcode_url || "",
+      urlConsulta: b.url_consulta_nfe || urlConsultaPorUf(chave.slice(0, 2)),
+      caminhoXml: b.caminho_xml_nota_fiscal || "",
+      caminhoDanfe: b.caminho_danfe || "",
+      caminhoXmlCancelamento: b.caminho_xml_cancelamento || "",
+      dataAutorizacao: (/* @__PURE__ */ new Date()).toISOString()
+    };
+  }
+  function urlConsultaPorUf(codigoUf) {
+    const mapa = {
+      "35": "www.nfce.fazenda.sp.gov.br/consulta",
+      "33": "www.nfce.fazenda.rj.gov.br/consulta",
+      "31": "nfce.fazenda.mg.gov.br/portalnfce",
+      "41": "www.fazenda.pr.gov.br/nfce/consulta",
+      "43": "www.sefaz.rs.gov.br/nfce/consulta",
+      "42": "sat.sef.sc.gov.br/nfce/consulta",
+      "53": "www.fazenda.df.gov.br/nfce/consulta",
+      "52": "www.nfce.go.gov.br/consulta",
+      "29": "www.sefaz.ba.gov.br/nfce/consulta",
+      "26": "nfce.sefaz.pe.gov.br/consulta",
+      "23": "nfce.sefaz.ce.gov.br/consulta",
+      "32": "app.sefaz.es.gov.br/ConsultaNFCe",
+      "51": "www.sefaz.mt.gov.br/nfce/consultanfce",
+      "50": "www.dfe.ms.gov.br/nfce/consulta",
+      "13": "sistemas.sefaz.am.gov.br/nfceweb/consulta",
+      "15": "appnfc.sefa.pa.gov.br/portal/consulta",
+      "21": "www.nfce.sefaz.ma.gov.br/portal/consulta",
+      "25": "www.receita.pb.gov.br/nfce/consulta",
+      "24": "nfce.set.rn.gov.br/consulta",
+      "27": "nfce.sefaz.al.gov.br/consulta",
+      "28": "www.nfce.se.gov.br/portal/consulta",
+      "22": "www.sefaz.pi.gov.br/nfce/consulta",
+      "17": "www.sefaz.to.gov.br/nfce/consulta",
+      "11": "www.nfce.sefin.ro.gov.br/consulta",
+      "12": "www.sefaznet.ac.gov.br/nfce/consulta",
+      "14": "www.sefaz.rr.gov.br/nfce/consulta",
+      "16": "www.sefaz.ap.gov.br/nfce/consulta"
+    };
+    return mapa[codigoUf] || "www.nfe.fazenda.gov.br/portal";
+  }
+  function podeCancelarNFCe(venda, agora = Date.now()) {
+    if (!venda || venda.statusFiscal !== "autorizada" || !venda.chaveNfe) return false;
+    const base = Date.parse(venda.dataAutorizacaoNfce || venda.data || "");
+    if (!base) return false;
+    return agora - base <= JANELA_CANCELAMENTO_MS;
+  }
+  function refDaVenda(venda) {
+    return `fp-${String(venda.id).replace(/[^A-Za-z0-9_-]/g, "")}`;
+  }
+
   // src/js/fiscal.js
+  var INTERVALO_FILA_MS = 2 * 60 * 1e3;
   var FiscalModule = {
+    _processandoFila: false,
+    _emitindo: /* @__PURE__ */ new Set(),
     init() {
       this.renderStatusFiscalDisplay();
+      if (typeof window !== "undefined") {
+        window.addEventListener("online", () => this.processarFilaFiscal());
+        setInterval(() => this.processarFilaFiscal(), INTERVALO_FILA_MS);
+        setTimeout(() => this.processarFilaFiscal(), 15e3);
+      }
     },
     getFiscalConfig() {
       return StorageService.getFiscalConfig();
     },
     getTefConfig() {
       return StorageService.getTefConfig();
+    },
+    fiscalAtivo() {
+      const cfg = this.getFiscalConfig();
+      return StorageService.isModuloAtivo("fiscalNfce") && cfg && cfg.habilitado === true;
     },
     renderStatusFiscalDisplay() {
       const isFiscalLicenciado = StorageService.isModuloAtivo("fiscalNfce");
@@ -61670,7 +63652,9 @@ ${base}`;
           displayFiscal.innerHTML = `<span style="color: #64748b; font-weight: 700;">\u26AA N\xE3o Fiscal (Desativado)</span>`;
         } else {
           const ambTag = cfg.ambiente === "producao" ? '<span style="background: #dcfce7; color: #15803d; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 800;">PRODU\xC7\xC3O</span>' : '<span style="background: #fef3c7; color: #d97706; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 800;">HOMOLOGA\xC7\xC3O / TESTES</span>';
-          displayFiscal.innerHTML = `<span style="color: #0284c7; font-weight: 800;">\u{1F7E2} NFC-e Ativa (${cfg.provedor === "focus_nfe" ? "Focus NFe" : "SAT"})</span> ${ambTag}`;
+          const pendentes = this.vendasPendentesFiscal().length;
+          const pendTag = pendentes > 0 ? ` <span style="background: #fee2e2; color: #b91c1c; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 800;">${pendentes} pendente(s)</span>` : "";
+          displayFiscal.innerHTML = `<span style="color: #0284c7; font-weight: 800;">\u{1F7E2} NFC-e Ativa (Focus NFe)</span> ${ambTag}${pendTag}`;
         }
       }
       const displayTef = document.getElementById("cfg-display-tef");
@@ -61684,6 +63668,9 @@ ${base}`;
         }
       }
     },
+    // ---------------------------------------------------------------------
+    // Configuração NFC-e
+    // ---------------------------------------------------------------------
     abrirModalConfigFiscal() {
       if (!StorageService.isModuloAtivo("fiscalNfce")) {
         if (window.App && typeof window.App.showToast === "function") {
@@ -61695,21 +63682,23 @@ ${base}`;
       const cfg = this.getFiscalConfig();
       const configGeral = StorageService.getConfig();
       if (modal) {
+        const set = (id, v) => {
+          const el = document.getElementById(id);
+          if (el) el.value = v;
+        };
         document.getElementById("fiscal-habilitado").checked = cfg.habilitado === true;
-        document.getElementById("fiscal-provedor").value = cfg.provedor || "focus_nfe";
-        document.getElementById("fiscal-ambiente").value = cfg.ambiente || "homologacao";
-        document.getElementById("fiscal-token-focus").value = cfg.tokenFocus || "";
-        document.getElementById("fiscal-cnpj-emitente").value = cfg.cnpjEmitente || configGeral.cnpj || "";
-        document.getElementById("fiscal-ie-emitente").value = cfg.inscricaoEstadual || "";
-        document.getElementById("fiscal-csc-id").value = cfg.cscId || "000001";
-        document.getElementById("fiscal-csc-token").value = cfg.cscToken || "";
-        document.getElementById("fiscal-serie").value = cfg.serieNfce || 1;
-        document.getElementById("fiscal-ultimo-numero").value = cfg.ultimoNumeroNfce || 1;
-        document.getElementById("fiscal-regime").value = cfg.regimeTributario || "1";
-        document.getElementById("fiscal-cfop-padrao").value = cfg.cfopPadrao || "5102";
-        document.getElementById("fiscal-ncm-padrao").value = cfg.ncmPadrao || "22030000";
-        document.getElementById("fiscal-csosn-padrao").value = cfg.csosnPadrao || "102";
-        document.getElementById("fiscal-auto-emitir").checked = cfg.autoEmitirAoFinalizar === true;
+        set("fiscal-ambiente", cfg.ambiente || "homologacao");
+        set("fiscal-token-focus", cfg.tokenFocus || "");
+        set("fiscal-token-focus-homolog", cfg.tokenFocusHomolog || "");
+        set("fiscal-cnpj-emitente", cfg.cnpjEmitente || configGeral.cnpj || "");
+        set("fiscal-ie-emitente", cfg.inscricaoEstadual || "");
+        set("fiscal-serie", cfg.serieNfce || "");
+        set("fiscal-regime", cfg.regimeTributario || "1");
+        set("fiscal-cfop-padrao", cfg.cfopPadrao || "5102");
+        set("fiscal-ncm-padrao", cfg.ncmPadrao || "22030000");
+        set("fiscal-csosn-padrao", cfg.csosnPadrao || "102");
+        const auto = document.getElementById("fiscal-auto-emitir");
+        if (auto) auto.checked = cfg.autoEmitirAoFinalizar !== false;
         this.toggleCamposProvedorFiscal();
         modal.classList.add("active");
       }
@@ -61727,32 +63716,41 @@ ${base}`;
     },
     salvarConfigFiscal(e) {
       if (e && typeof e.preventDefault === "function") e.preventDefault();
+      const val = (id) => (document.getElementById(id)?.value || "").trim();
       const habilitado = document.getElementById("fiscal-habilitado")?.checked || false;
-      const provedor = document.getElementById("fiscal-provedor")?.value || "focus_nfe";
-      const ambiente = document.getElementById("fiscal-ambiente")?.value || "homologacao";
-      const tokenFocus = document.getElementById("fiscal-token-focus")?.value.trim() || "";
-      const cnpjEmitente = document.getElementById("fiscal-cnpj-emitente")?.value.replace(/\D/g, "") || "";
-      const inscricaoEstadual = document.getElementById("fiscal-ie-emitente")?.value.replace(/\D/g, "") || "";
-      const cscId = document.getElementById("fiscal-csc-id")?.value.trim() || "000001";
-      const cscToken = document.getElementById("fiscal-csc-token")?.value.trim() || "";
-      const serieNfce = parseInt(document.getElementById("fiscal-serie")?.value, 10) || 1;
-      const ultimoNumeroNfce = parseInt(document.getElementById("fiscal-ultimo-numero")?.value, 10) || 1;
-      const regimeTributario = document.getElementById("fiscal-regime")?.value || "1";
-      const cfopPadrao = document.getElementById("fiscal-cfop-padrao")?.value.trim() || "5102";
-      const ncmPadrao = document.getElementById("fiscal-ncm-padrao")?.value.trim() || "22030000";
-      const csosnPadrao = document.getElementById("fiscal-csosn-padrao")?.value.trim() || "102";
+      const ambiente = val("fiscal-ambiente") || "homologacao";
+      const tokenFocus = val("fiscal-token-focus");
+      const tokenFocusHomolog = val("fiscal-token-focus-homolog");
+      const cnpjEmitente = somenteDigitos(val("fiscal-cnpj-emitente"));
+      const inscricaoEstadual = somenteDigitos(val("fiscal-ie-emitente"));
+      const serieNfce = parseInt(val("fiscal-serie"), 10) || 0;
+      const regimeTributario = val("fiscal-regime") || "1";
+      const cfopPadrao = somenteDigitos(val("fiscal-cfop-padrao")) || "5102";
+      const ncmPadrao = somenteDigitos(val("fiscal-ncm-padrao")) || "22030000";
+      const csosnPadrao = somenteDigitos(val("fiscal-csosn-padrao")) || "102";
       const autoEmitirAoFinalizar = document.getElementById("fiscal-auto-emitir")?.checked || false;
+      if (habilitado) {
+        if (cnpjEmitente.length !== 14) {
+          window.App.showToast("\u274C Informe o CNPJ do emitente com 14 d\xEDgitos.", "error");
+          return;
+        }
+        const tokenDoAmbiente = ambiente === "producao" ? tokenFocus : tokenFocusHomolog || tokenFocus;
+        if (!tokenDoAmbiente) {
+          window.App.showToast(`\u274C Informe o token da Focus NFe do ambiente de ${ambiente === "producao" ? "produ\xE7\xE3o" : "homologa\xE7\xE3o"}.`, "error");
+          return;
+        }
+      }
+      const anterior = this.getFiscalConfig();
       const novoConfig = {
+        ...anterior,
         habilitado,
-        provedor,
+        provedor: "focus_nfe",
         ambiente,
         tokenFocus,
+        tokenFocusHomolog,
         cnpjEmitente,
         inscricaoEstadual,
-        cscId,
-        cscToken,
         serieNfce,
-        ultimoNumeroNfce,
         regimeTributario,
         cfopPadrao,
         ncmPadrao,
@@ -61760,16 +63758,22 @@ ${base}`;
         naturezaOperacao: "VENDA AO CONSUMIDOR",
         autoEmitirAoFinalizar
       };
+      delete novoConfig.cscId;
+      delete novoConfig.cscToken;
+      delete novoConfig.ultimoNumeroNfce;
       StorageService.saveFiscalConfig(novoConfig);
-      AuditModule.registrarLog("configuracao_fiscal", `Alterou as configura\xE7\xF5es fiscais (NFC-e ${habilitado ? "ATIVADA" : "DESATIVADA"}, Provedor: ${provedor}, Ambiente: ${ambiente})`, {
+      AuditModule.registrarLog("configuracao_fiscal", `Alterou as configura\xE7\xF5es fiscais (NFC-e ${habilitado ? "ATIVADA" : "DESATIVADA"}, Focus NFe, Ambiente: ${ambiente})`, {
         habilitado,
-        provedor,
-        ambiente
+        ambiente,
+        cnpjEmitente
       });
       this.renderStatusFiscalDisplay();
       this.fecharModalConfigFiscal();
       window.App.showToast("\u{1F3DB}\uFE0F Configura\xE7\xF5es Fiscais salvas com sucesso!", "success");
     },
+    // ---------------------------------------------------------------------
+    // Configuração TEF
+    // ---------------------------------------------------------------------
     abrirModalConfigTef() {
       if (!StorageService.isModuloAtivo("tefCartao")) {
         if (window.App && typeof window.App.showToast === "function") {
@@ -61827,25 +63831,77 @@ ${base}`;
       this.fecharModalConfigTef();
       window.App.showToast("\u{1F4B3} Configura\xE7\xF5es TEF salvas com sucesso!", "success");
     },
+    // ---------------------------------------------------------------------
+    // Comunicação com a Focus NFe
+    // ---------------------------------------------------------------------
+    _tokenDoAmbiente(cfg) {
+      if ((cfg.ambiente || "homologacao") === "producao") return cfg.tokenFocus || "";
+      return cfg.tokenFocusHomolog || cfg.tokenFocus || "";
+    },
+    _baseUrl(cfg) {
+      return FOCUS_URLS[(cfg.ambiente || "homologacao") === "producao" ? "producao" : "homologacao"];
+    },
+    /**
+     * Faz a requisição HTTP. No Electron passa pelo processo principal; no
+     * navegador usa fetch (a Focus pode bloquear por CORS, então o desktop é o
+     * caminho oficial).
+     * @returns {Promise<{status:number, body:any}>}
+     */
+    async _requisicaoFocus(metodo, caminho, body, cfgOverride) {
+      const cfg = cfgOverride || this.getFiscalConfig();
+      const token = this._tokenDoAmbiente(cfg);
+      const url = this._baseUrl(cfg) + caminho;
+      if (window.electronAPI && typeof window.electronAPI.fiscalHttp === "function") {
+        return window.electronAPI.fiscalHttp({ method: metodo, url, token, body, timeoutMs: 45e3 });
+      }
+      try {
+        const resp = await fetch(url, {
+          method: metodo,
+          headers: {
+            "Authorization": "Basic " + btoa(token + ":"),
+            "Accept": "application/json",
+            ...body ? { "Content-Type": "application/json" } : {}
+          },
+          body: body ? JSON.stringify(body) : void 0
+        });
+        let json = null;
+        try {
+          json = await resp.json();
+        } catch (e) {
+          json = null;
+        }
+        return { status: resp.status, body: json };
+      } catch (err) {
+        return { status: 0, body: { codigo: "erro_rede", mensagem: err.message } };
+      }
+    },
     async testarConexaoFocus() {
-      let token = document.getElementById("fiscal-token-focus")?.value.trim();
-      const ambiente = document.getElementById("fiscal-ambiente")?.value || "homologacao";
       const btnTestar = document.getElementById("btn-testar-focus-api");
-      if (!token) {
-        token = "DEMO_HOMOLOGACAO_FLOWPDV";
-        const tokenInput = document.getElementById("fiscal-token-focus");
-        if (tokenInput) tokenInput.value = token;
+      const ambiente = document.getElementById("fiscal-ambiente")?.value || "homologacao";
+      const cfgTeste = {
+        ambiente,
+        tokenFocus: (document.getElementById("fiscal-token-focus")?.value || "").trim(),
+        tokenFocusHomolog: (document.getElementById("fiscal-token-focus-homolog")?.value || "").trim()
+      };
+      if (!this._tokenDoAmbiente(cfgTeste)) {
+        window.App.showToast("Informe o token da Focus NFe antes de testar.", "warning");
+        return;
       }
       if (btnTestar) {
         btnTestar.disabled = true;
-        btnTestar.innerHTML = "\u23F3 Conectando aos servidores SEFAZ / Focus NFe...";
+        btnTestar.innerHTML = "\u23F3 Conectando \xE0 Focus NFe...";
       }
       try {
-        await new Promise((res) => setTimeout(res, 1e3));
-        window.App.showToast(`\u2705 Comunica\xE7\xE3o com Focus NFe (${ambiente.toUpperCase()}) estabelecida com sucesso! Ambiente pronto para emiss\xE3o.`, "success");
-      } catch (err) {
-        console.error("[FiscalModule] Falha no teste Focus:", err);
-        window.App.showToast("\u274C N\xE3o foi poss\xEDvel conectar ao servidor da Focus NFe. Verifique o Token e sua conex\xE3o de internet.", "error");
+        const r = await this._requisicaoFocus("GET", "/v2/nfce/flowpdv-teste-conexao", null, cfgTeste);
+        if (r.status === 404 || r.status >= 200 && r.status < 300) {
+          window.App.showToast(`\u2705 Focus NFe (${ambiente.toUpperCase()}) respondeu: token v\xE1lido.`, "success");
+        } else if (r.status === 401 || r.status === 403) {
+          window.App.showToast(`\u274C Token recusado pela Focus NFe (${ambiente}). Confira se \xE9 o token deste ambiente.`, "error");
+        } else if (r.status === 0) {
+          window.App.showToast("\u274C Sem resposta da Focus NFe: " + (r.body?.mensagem || "verifique a internet."), "error");
+        } else {
+          window.App.showToast(`\u26A0\uFE0F Focus NFe respondeu HTTP ${r.status}: ${r.body?.mensagem || ""}`, "warning");
+        }
       } finally {
         if (btnTestar) {
           btnTestar.disabled = false;
@@ -61853,132 +63909,286 @@ ${base}`;
         }
       }
     },
-    // Código SEFAZ para formas de pagamento na NFC-e
-    obterCodigoSefazPagamento(forma) {
-      const f = (forma || "").toLowerCase();
-      if (f.includes("dinheiro")) return "01";
-      if (f.includes("cheque")) return "02";
-      if (f.includes("cr\xE9dito") || f.includes("credito")) return "03";
-      if (f.includes("d\xE9bito") || f.includes("debito")) return "04";
-      if (f.includes("cr\xE9dito loja") || f.includes("fiado")) return "05";
-      if (f.includes("vale") || f.includes("alimenta\xE7\xE3o") || f.includes("refei\xE7\xE3o")) return "10";
-      if (f.includes("pix")) return "17";
-      return "99";
+    // ---------------------------------------------------------------------
+    // Emissão
+    // ---------------------------------------------------------------------
+    _mapaProdutos() {
+      const mapa = /* @__PURE__ */ new Map();
+      (StorageService.getProdutos() || []).forEach((p) => {
+        if (p && p.id != null) mapa.set(p.id, p);
+      });
+      return mapa;
     },
-    // Geração de Chave de Acesso Padrão SEFAZ (44 Dígitos) para Contingência/Simulação
-    gerarChaveAcessoSefaz(uf = "35", anoMes = "", cnpj = "", modelo = "65", serie = 1, numero = 1) {
-      const dataAtual = /* @__PURE__ */ new Date();
-      const aa = String(dataAtual.getFullYear()).slice(-2);
-      const mm = String(dataAtual.getMonth() + 1).padStart(2, "0");
-      const aamm = anoMes || aa + mm;
-      const cnpjLimpo = String(cnpj || "00000000000191").replace(/\D/g, "").padStart(14, "0");
-      const mod = String(modelo).padStart(2, "0");
-      const ser = String(serie).padStart(3, "0");
-      const num = String(numero).padStart(9, "0");
-      const tipoEmissao = "1";
-      const codigoAleatorio = Math.floor(1e7 + Math.random() * 9e7).toString();
-      const chaveSemDv = `${uf}${aamm}${cnpjLimpo}${mod}${ser}${num}${tipoEmissao}${codigoAleatorio}`;
-      let soma = 0;
-      let peso = 2;
-      for (let i = chaveSemDv.length - 1; i >= 0; i--) {
-        soma += parseInt(chaveSemDv.charAt(i), 10) * peso;
-        peso = peso === 9 ? 2 : peso + 1;
-      }
-      const resto = soma % 11;
-      const dv = resto === 0 || resto === 1 ? 0 : 11 - resto;
-      return chaveSemDv + dv.toString();
+    _aplicarAutorizacao(venda, dados) {
+      venda.chaveNfe = dados.chaveAcesso;
+      venda.protocoloNfe = dados.protocoloAutorizacao;
+      venda.numeroNfce = dados.numeroNfce;
+      venda.serieNfce = dados.serieNfce;
+      venda.qrcodeUrl = dados.qrcodeUrl;
+      venda.urlConsultaNfce = dados.urlConsulta;
+      venda.caminhoXmlNfce = dados.caminhoXml;
+      venda.caminhoDanfeNfce = dados.caminhoDanfe;
+      venda.dataAutorizacaoNfce = dados.dataAutorizacao;
+      venda.statusFiscal = "autorizada";
+      venda.fiscalErro = "";
     },
-    // Montagem do Payload e Emissão da NFC-e
+    /**
+     * Emite (ou reemite) a NFC-e da venda. Sempre grava o resultado na venda.
+     * @returns {Promise<{sucesso:boolean, estado:string, mensagem:string}>}
+     */
     async emitirNFCe(venda) {
+      if (!venda || !venda.id) return { sucesso: false, estado: "erro_config", mensagem: "Venda inv\xE1lida." };
+      if (this._emitindo.has(venda.id)) return { sucesso: false, estado: "processando", mensagem: "Emiss\xE3o j\xE1 em andamento." };
       const cfg = this.getFiscalConfig();
-      if (!cfg.habilitado) {
-        return { sucesso: false, motivo: "M\xF3dulo fiscal desativado." };
+      if (!this.fiscalAtivo()) {
+        return { sucesso: false, estado: "erro_config", mensagem: "M\xF3dulo fiscal desativado." };
       }
-      const configLoja = StorageService.getConfig();
-      const lic = StorageService.getLicenca();
-      const cnpj = cfg.cnpjEmitente || configLoja.cnpj || lic.cnpj || "00.000.000/0001-91";
-      const numeroNfce = (cfg.ultimoNumeroNfce || 0) + 1;
-      const serieNfce = cfg.serieNfce || 1;
-      cfg.ultimoNumeroNfce = numeroNfce;
-      StorageService.saveFiscalConfig(cfg);
-      const itensFiscais = (venda.itens || []).map((item, idx) => {
-        const ncm = item.ncm || cfg.ncmPadrao || "22030000";
-        const cfop = item.cfop || cfg.cfopPadrao || "5102";
-        const csosn = item.csosn || cfg.csosnPadrao || "102";
-        const precoUnit = parseFloat(item.precoUnitario) || 0;
-        const qtd = parseFloat(item.quantidade) || 1;
-        const subtotal = precoUnit * qtd;
-        return {
-          numero_item: idx + 1,
-          codigo_produto: item.codigoBarras || item.id,
-          descricao: item.nome,
-          codigo_ncm: ncm,
-          cfop,
-          unidade_comercial: item.unidade && item.unidade.toLowerCase() === "kg" ? "KG" : "UN",
-          quantidade_comercial: qtd,
-          valor_unitario_comercial: precoUnit,
-          valor_total_bruto: subtotal,
-          icms_origem: "0",
-          // 0 = Nacional
-          icms_situacao_tributaria: csosn,
-          pis_situacao_tributaria: "49",
-          cofins_situacao_tributaria: "49"
-        };
-      });
-      const formasPagamento = [];
-      if (venda.pagamentoDividido && Array.isArray(venda.pagamentos) && venda.pagamentos.length > 0) {
-        venda.pagamentos.forEach((p) => {
-          formasPagamento.push({
-            forma_pagamento: this.obterCodigoSefazPagamento(p.forma),
-            valor_pagamento: parseFloat(p.valor) || 0
-          });
+      if (venda.statusFiscal === "autorizada" && venda.chaveNfe) {
+        return { sucesso: true, estado: "autorizada", mensagem: "NFC-e j\xE1 autorizada." };
+      }
+      this._emitindo.add(venda.id);
+      const ref = refDaVenda(venda);
+      venda.fiscalRef = ref;
+      try {
+        let payload;
+        try {
+          payload = montarPayloadNFCe(venda, cfg, this._mapaProdutos());
+        } catch (err) {
+          venda.statusFiscal = "rejeitada";
+          venda.fiscalErro = err.message;
+          venda.ambiente = cfg.ambiente;
+          StorageService.atualizarVenda(venda);
+          return { sucesso: false, estado: "rejeitada", mensagem: err.message };
+        }
+        const resp = await this._requisicaoFocus("POST", `/v2/nfce?ref=${encodeURIComponent(ref)}`, payload);
+        let resultado = interpretarRespostaFocus(resp.status, resp.body);
+        if (resultado.estado === "ja_processada" || resultado.estado === "processando") {
+          const consulta = await this._requisicaoFocus("GET", `/v2/nfce/${encodeURIComponent(ref)}`);
+          const r2 = interpretarRespostaFocus(consulta.status, consulta.body);
+          if (r2.estado === "autorizada" || r2.estado === "cancelada" || r2.estado === "rejeitada") resultado = r2;
+        }
+        venda.ambiente = cfg.ambiente || "homologacao";
+        venda.fiscalTentativas = (venda.fiscalTentativas || 0) + 1;
+        venda.fiscalUltimaTentativa = (/* @__PURE__ */ new Date()).toISOString();
+        switch (resultado.estado) {
+          case "autorizada":
+            this._aplicarAutorizacao(venda, resultado.dados);
+            AuditModule.registrarLog("emissao_nfce", `NFC-e n\xBA ${venda.numeroNfce} s\xE9rie ${venda.serieNfce} autorizada para a venda #${StorageService.formatarNumeroVenda ? StorageService.formatarNumeroVenda(venda) : venda.id} (chave ${String(venda.chaveNfe).slice(0, 12)}...)`, {
+              vendaId: venda.id,
+              numeroNfce: venda.numeroNfce,
+              serieNfce: venda.serieNfce,
+              chaveAcesso: venda.chaveNfe,
+              protocolo: venda.protocoloNfe,
+              ambiente: venda.ambiente
+            });
+            break;
+          case "cancelada":
+            this._aplicarAutorizacao(venda, resultado.dados);
+            venda.statusFiscal = "cancelada";
+            break;
+          case "rejeitada":
+          case "erro_config":
+            venda.statusFiscal = "rejeitada";
+            venda.fiscalErro = resultado.mensagem;
+            AuditModule.registrarLog("erro_nfce", `NFC-e da venda #${venda.id} rejeitada: ${resultado.mensagem}`, { vendaId: venda.id, mensagem: resultado.mensagem });
+            break;
+          case "processando":
+            venda.statusFiscal = "pendente";
+            venda.fiscalErro = resultado.mensagem;
+            break;
+          default:
+            venda.statusFiscal = "pendente";
+            venda.fiscalErro = resultado.mensagem;
+        }
+        StorageService.atualizarVenda(venda);
+        this.renderStatusFiscalDisplay();
+        return { sucesso: resultado.estado === "autorizada", estado: resultado.estado, mensagem: resultado.mensagem, venda };
+      } finally {
+        this._emitindo.delete(venda.id);
+      }
+    },
+    vendasPendentesFiscal() {
+      if (!this.fiscalAtivo()) return [];
+      return (StorageService.getVendas() || []).filter((v) => v && v.statusFiscal === "pendente");
+    },
+    // Reenvia as vendas pendentes (sem internet na hora, Focus fora do ar).
+    async processarFilaFiscal() {
+      if (this._processandoFila) return;
+      if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+      const pendentes = this.vendasPendentesFiscal();
+      if (pendentes.length === 0) return;
+      this._processandoFila = true;
+      let autorizadas = 0;
+      try {
+        for (const v of pendentes) {
+          const r = await this.emitirNFCe(v);
+          if (r.estado === "autorizada") autorizadas++;
+          if (r.estado === "erro_rede" || r.estado === "erro_config") break;
+        }
+      } finally {
+        this._processandoFila = false;
+      }
+      if (autorizadas > 0 && window.App && typeof window.App.showToast === "function") {
+        window.App.showToast(`\u{1F3DB}\uFE0F ${autorizadas} NFC-e pendente(s) autorizada(s) com sucesso.`, "success");
+      }
+      this.renderStatusFiscalDisplay();
+    },
+    async consultarNFCe(venda) {
+      const ref = venda.fiscalRef || refDaVenda(venda);
+      const resp = await this._requisicaoFocus("GET", `/v2/nfce/${encodeURIComponent(ref)}`);
+      const r = interpretarRespostaFocus(resp.status, resp.body);
+      if (r.estado === "autorizada") {
+        this._aplicarAutorizacao(venda, r.dados);
+        StorageService.atualizarVenda(venda);
+      } else if (r.estado === "cancelada") {
+        this._aplicarAutorizacao(venda, r.dados);
+        venda.statusFiscal = "cancelada";
+        StorageService.atualizarVenda(venda);
+      }
+      return r;
+    },
+    podeCancelar(venda) {
+      return podeCancelarNFCe(venda);
+    },
+    /**
+     * Cancela a NFC-e autorizada (até 30 min). A venda continua registrada no
+     * caixa; só o documento fiscal é cancelado.
+     */
+    async cancelarNFCe(venda, justificativa) {
+      const just = String(justificativa || "").trim();
+      if (just.length < 15) return { sucesso: false, mensagem: "A justificativa precisa ter no m\xEDnimo 15 caracteres." };
+      if (!podeCancelarNFCe(venda)) return { sucesso: false, mensagem: "Esta NFC-e n\xE3o pode mais ser cancelada (prazo de 30 minutos ou nota n\xE3o autorizada)." };
+      const ref = venda.fiscalRef || refDaVenda(venda);
+      const resp = await this._requisicaoFocus("DELETE", `/v2/nfce/${encodeURIComponent(ref)}`, { justificativa: just.slice(0, 255) });
+      const b = resp.body || {};
+      if (resp.status >= 200 && resp.status < 300 && b.status === "cancelado") {
+        venda.statusFiscal = "cancelada";
+        venda.protocoloCancelamentoNfce = b.numero_protocolo || "";
+        venda.caminhoXmlCancelamentoNfce = b.caminho_xml_cancelamento || "";
+        venda.dataCancelamentoNfce = (/* @__PURE__ */ new Date()).toISOString();
+        venda.justificativaCancelamentoNfce = just;
+        StorageService.atualizarVenda(venda);
+        AuditModule.registrarLog("cancelamento_nfce", `NFC-e n\xBA ${venda.numeroNfce} cancelada na SEFAZ. Motivo: ${just}`, {
+          vendaId: venda.id,
+          chaveAcesso: venda.chaveNfe,
+          protocolo: venda.protocoloCancelamentoNfce
         });
-      } else if (venda.pagamentoDividido && (venda.parcela1 || venda.parcela2)) {
-        if (venda.parcela1) {
-          formasPagamento.push({
-            forma_pagamento: this.obterCodigoSefazPagamento(venda.parcela1.forma),
-            valor_pagamento: parseFloat(venda.parcela1.valor) || 0
-          });
-        }
-        if (venda.parcela2) {
-          formasPagamento.push({
-            forma_pagamento: this.obterCodigoSefazPagamento(venda.parcela2.forma),
-            valor_pagamento: parseFloat(venda.parcela2.valor) || 0
-          });
-        }
+        return { sucesso: true, mensagem: "NFC-e cancelada na SEFAZ." };
+      }
+      if (b.codigo === "already_processed") {
+        venda.statusFiscal = "cancelada";
+        StorageService.atualizarVenda(venda);
+        return { sucesso: true, mensagem: "A NFC-e j\xE1 estava cancelada." };
+      }
+      const msg = b.mensagem_sefaz || b.mensagem || (resp.status === 0 ? "Sem conex\xE3o com a Focus NFe." : `HTTP ${resp.status}`);
+      return { sucesso: false, mensagem: msg };
+    },
+    urlDanfe(venda) {
+      if (!venda || !venda.caminhoDanfeNfce) return "";
+      const cfg = { ambiente: venda.ambiente || this.getFiscalConfig().ambiente };
+      return this._baseUrl(cfg) + venda.caminhoDanfeNfce;
+    },
+    urlXml(venda) {
+      if (!venda || !venda.caminhoXmlNfce) return "";
+      const cfg = { ambiente: venda.ambiente || this.getFiscalConfig().ambiente };
+      return this._baseUrl(cfg) + venda.caminhoXmlNfce;
+    },
+    abrirDanfe(venda) {
+      const url = this.urlDanfe(venda);
+      if (!url) {
+        window.App.showToast("Esta venda n\xE3o tem DANFE dispon\xEDvel.", "info");
+        return;
+      }
+      if (window.electronAPI && typeof window.electronAPI.openExternal === "function") window.electronAPI.openExternal(url);
+      else window.open(url, "_blank");
+    },
+    // ---------------------------------------------------------------------
+    // Ações do histórico de vendas
+    // ---------------------------------------------------------------------
+    rotuloStatusFiscal(venda) {
+      if (!venda) return "";
+      switch (venda.statusFiscal) {
+        case "autorizada":
+          return `<span style="display:inline-block;background:#dcfce7;color:#15803d;font-weight:800;font-size:11px;padding:2px 8px;border-radius:4px;">\u{1F3DB}\uFE0F NFC-e N\xBA ${venda.numeroNfce || "-"} AUTORIZADA${venda.ambiente === "homologacao" ? " (HOMOLOG.)" : ""}</span>`;
+        case "cancelada":
+          return `<span style="display:inline-block;background:#fee2e2;color:#b91c1c;font-weight:800;font-size:11px;padding:2px 8px;border-radius:4px;">\u{1F3DB}\uFE0F NFC-e N\xBA ${venda.numeroNfce || "-"} CANCELADA</span>`;
+        case "pendente":
+          return `<span style="display:inline-block;background:#fef3c7;color:#b45309;font-weight:800;font-size:11px;padding:2px 8px;border-radius:4px;">\u23F3 NFC-e PENDENTE (aguardando envio)</span>`;
+        case "manual":
+          return `<span style="display:inline-block;background:#e0f2fe;color:#0369a1;font-weight:800;font-size:11px;padding:2px 8px;border-radius:4px;">\u{1F9FE} NFC-e N\xC3O EMITIDA (emiss\xE3o manual)</span>`;
+        case "rejeitada":
+        case "erro":
+          return `<span style="display:inline-block;background:#fee2e2;color:#b91c1c;font-weight:800;font-size:11px;padding:2px 8px;border-radius:4px;">\u274C NFC-e REJEITADA</span>`;
+        default:
+          return "";
+      }
+    },
+    htmlBlocoFiscalVenda(venda) {
+      if (!venda || !venda.statusFiscal) return "";
+      const esc = (s) => String(s || "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+      const botoes = [];
+      if (venda.statusFiscal === "manual") {
+        botoes.push(`<button type="button" class="btn-primary-action" style="height:34px;font-size:12px;background:#0284c7;color:#fff;" onclick="FiscalModule.reemitirVendaSelecionada()">\u{1F3DB}\uFE0F Emitir NFC-e</button>`);
+      } else if (venda.statusFiscal === "pendente" || venda.statusFiscal === "rejeitada" || venda.statusFiscal === "erro") {
+        botoes.push(`<button type="button" class="btn-primary-action" style="height:34px;font-size:12px;background:#0284c7;color:#fff;" onclick="FiscalModule.reemitirVendaSelecionada()">\u{1F501} Reemitir NFC-e</button>`);
+      }
+      if (venda.statusFiscal === "autorizada" || venda.statusFiscal === "cancelada") {
+        if (venda.caminhoDanfeNfce) botoes.push(`<button type="button" class="btn-primary-action" style="height:34px;font-size:12px;background:#f1f5f9;color:var(--text-main);border:1px solid #cbd5e1;" onclick="FiscalModule.abrirDanfeVendaSelecionada()">\u{1F4C4} Abrir DANFE</button>`);
+        botoes.push(`<button type="button" class="btn-primary-action" style="height:34px;font-size:12px;background:#f1f5f9;color:var(--text-main);border:1px solid #cbd5e1;" onclick="FiscalModule.consultarVendaSelecionada()">\u{1F50E} Consultar na SEFAZ</button>`);
+      }
+      if (podeCancelarNFCe(venda)) {
+        botoes.push(`<button type="button" class="btn-primary-action" style="height:34px;font-size:12px;background:#fee2e2;color:#b91c1c;border:1px solid #fca5a5;" onclick="FiscalModule.cancelarNfceVendaSelecionada()">\u{1F6AB} Cancelar NFC-e</button>`);
+      }
+      return `
+      <div style="background:#f8fafc;border:1px solid var(--border-card);border-radius:var(--radius-md);padding:12px;margin-bottom:14px;font-size:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+          <div>${this.rotuloStatusFiscal(venda)}</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">${botoes.join("")}</div>
+        </div>
+        ${venda.chaveNfe ? `<div style="margin-top:8px;font-family:'JetBrains Mono';font-size:11px;color:var(--text-dim);word-break:break-all;">Chave: ${esc(venda.chaveNfe)}</div>` : ""}
+        ${venda.protocoloNfe ? `<div style="font-size:11px;color:var(--text-dim);">Protocolo: ${esc(venda.protocoloNfe)}${venda.dataAutorizacaoNfce ? " em " + new Date(venda.dataAutorizacaoNfce).toLocaleString("pt-BR") : ""}</div>` : ""}
+        ${venda.statusFiscal === "cancelada" && venda.justificativaCancelamentoNfce ? `<div style="font-size:11px;color:#b91c1c;margin-top:4px;">Cancelamento: ${esc(venda.justificativaCancelamentoNfce)}</div>` : ""}
+        ${(venda.statusFiscal === "rejeitada" || venda.statusFiscal === "erro" || venda.statusFiscal === "pendente") && venda.fiscalErro ? `<div style="margin-top:6px;color:#b91c1c;font-weight:700;">${esc(venda.fiscalErro)}</div>` : ""}
+      </div>`;
+    },
+    _vendaSelecionada() {
+      return window.CaixaModule && window.CaixaModule.vendaDetalheSelecionada;
+    },
+    async reemitirVendaSelecionada() {
+      const venda = this._vendaSelecionada();
+      if (!venda) return;
+      window.App.showToast("\u23F3 Enviando NFC-e para a SEFAZ...", "info");
+      const r = await this.emitirNFCe(venda);
+      window.App.showToast(r.sucesso ? "\u2705 NFC-e autorizada!" : "\u274C " + r.mensagem, r.sucesso ? "success" : "error");
+      if (window.CaixaModule && typeof window.CaixaModule.abrirDetalhesVenda === "function") window.CaixaModule.abrirDetalhesVenda(venda.id);
+    },
+    async consultarVendaSelecionada() {
+      const venda = this._vendaSelecionada();
+      if (!venda) return;
+      const r = await this.consultarNFCe(venda);
+      window.App.showToast(`SEFAZ: ${r.estado} - ${r.mensagem}`, r.estado === "autorizada" ? "success" : "info");
+      if (window.CaixaModule && typeof window.CaixaModule.abrirDetalhesVenda === "function") window.CaixaModule.abrirDetalhesVenda(venda.id);
+    },
+    abrirDanfeVendaSelecionada() {
+      const venda = this._vendaSelecionada();
+      if (venda) this.abrirDanfe(venda);
+    },
+    cancelarNfceVendaSelecionada() {
+      const venda = this._vendaSelecionada();
+      if (!venda) return;
+      const executar = async () => {
+        const just = window.prompt("Justificativa do cancelamento da NFC-e (m\xEDnimo 15 caracteres):", "Cancelamento solicitado pelo cliente no caixa");
+        if (just == null) return;
+        window.App.showToast("\u23F3 Cancelando NFC-e na SEFAZ...", "info");
+        const r = await this.cancelarNFCe(venda, just);
+        window.App.showToast((r.sucesso ? "\u2705 " : "\u274C ") + r.mensagem, r.sucesso ? "success" : "error");
+        if (window.CaixaModule && typeof window.CaixaModule.abrirDetalhesVenda === "function") window.CaixaModule.abrirDetalhesVenda(venda.id);
+      };
+      if (window.AuthModule && typeof window.AuthModule.executarComPermissaoOuPin === "function") {
+        window.AuthModule.executarComPermissaoOuPin("cancelarVenda", executar, "Autoriza\xE7\xE3o: Cancelar NFC-e");
       } else {
-        formasPagamento.push({
-          forma_pagamento: this.obterCodigoSefazPagamento(venda.formaPagamento),
-          valor_pagamento: parseFloat(venda.total) || 0
-        });
+        executar();
       }
-      const chaveAcesso = this.gerarChaveAcessoSefaz("35", "", cnpj, "65", serieNfce, numeroNfce);
-      const protocolo = "135" + Date.now().toString().slice(-12);
-      const qrcodeUrl = `https://www.fazenda.sp.gov.br/nfce/qrcode?p=${chaveAcesso}|2|1|1|${protocolo}`;
-      const dadosFiscais = {
-        chaveAcesso,
-        protocoloAutorizacao: protocolo,
-        numeroNfce,
-        serieNfce,
-        dataAutorizacao: (/* @__PURE__ */ new Date()).toISOString(),
-        ambiente: cfg.ambiente || "homologacao",
-        qrcodeUrl,
-        status: "autorizada",
-        itensFiscais,
-        tributosAproximados: (parseFloat(venda.total) * 0.184).toFixed(2)
-        // Estimativa Lei 12.741/2012
-      };
-      AuditModule.registrarLog("emissao_nfce", `NFC-e #${numeroNfce} S\xE9rie ${serieNfce} emitida com sucesso para a venda #${venda.id} (Chave: ${chaveAcesso.substring(0, 15)}...)`, {
-        vendaId: venda.id,
-        numeroNfce,
-        serieNfce,
-        chaveAcesso,
-        protocolo
-      });
-      return {
-        sucesso: true,
-        ...dadosFiscais
-      };
     }
   };
 

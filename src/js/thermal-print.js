@@ -3,9 +3,31 @@
  */
 
 import { StorageService } from './storage.js';
+import qrcode from 'qrcode-generator';
 
 export const ThermalPrintModule = {
   init() {},
+
+  // QR Code da NFC-e (conteúdo = qrcode_url devolvida pela SEFAZ) em SVG.
+  svgQrCode(texto, tamanhoPx = 110) {
+    if (!texto) return '';
+    try {
+      const qr = qrcode(0, 'M');
+      qr.addData(String(texto));
+      qr.make();
+      const modulos = qr.getModuleCount();
+      const cell = Math.max(1, Math.floor(tamanhoPx / modulos));
+      return qr.createSvgTag({ cellSize: cell, margin: 0, scalable: false });
+    } catch (e) {
+      console.warn('[ThermalPrint] Falha ao gerar QR Code:', e);
+      return '';
+    }
+  },
+
+  // Cupom fiscal só quando a SEFAZ autorizou (ou a nota foi cancelada depois).
+  vendaTemNfce(venda) {
+    return Boolean(venda && venda.chaveNfe && (venda.statusFiscal === 'autorizada' || venda.statusFiscal === 'cancelada'));
+  },
 
   rotuloFormaCupom(forma) {
     return String(forma || 'Dinheiro')
@@ -159,7 +181,7 @@ export const ThermalPrintModule = {
       this.abrirGavetaDinheiro();
     }
 
-    const isNfce = Boolean(venda.chaveNfe || venda.statusFiscal === 'autorizada');
+    const isNfce = this.vendaTemNfce(venda);
     const chaveFormatada = (venda.chaveNfe || '').replace(/(.{4})/g, '$1 ').trim();
     const qtdeItens = (venda.itens || []).reduce((acc, item) => {
       if (this.itemEhPeso(item)) return acc + 1;
@@ -222,6 +244,7 @@ export const ThermalPrintModule = {
           <div class="text-center bold">Documento Auxiliar da Nota Fiscal</div>
           <div class="text-center bold">de Consumidor Eletrônica</div>
           ${venda.ambiente === 'homologacao' ? '<div class="text-center bold" style="font-size: 9.5px; margin-top: 2px;">EMITIDA EM HOMOLOGAÇÃO - SEM VALOR FISCAL</div>' : ''}
+          ${venda.statusFiscal === 'cancelada' ? '<div class="text-center bold" style="font-size: 10px; margin-top: 2px;">*** NFC-e CANCELADA ***</div>' : ''}
         ` : `
           <div class="text-center bold">CUPOM NÃO FISCAL</div>
         `}
@@ -243,20 +266,26 @@ export const ThermalPrintModule = {
         ${isNfce ? `
           <div class="divider"></div>
           <div class="text-center" style="font-size: 9.5px;">Consulte pela chave de acesso em</div>
-          <div class="text-center" style="font-size: 9px;"><strong>www.nfce.fazenda.sp.gov.br/consulta</strong></div>
+          <div class="text-center" style="font-size: 9px;"><strong>${this.escCupom(venda.urlConsultaNfce || 'www.nfe.fazenda.gov.br/portal')}</strong></div>
           <div class="text-center chave" style="margin-top: 4px;">${this.escCupom(chaveFormatada)}</div>
           <div class="text-center" style="font-size: 9.5px; margin-top: 6px;">
-            ${venda.cpfCliente ? `CONSUMIDOR CPF: ${this.escCupom(venda.cpfCliente)}` : 'NÃO IDENTIFICADO'}
+            ${venda.cpfCliente ? `CONSUMIDOR CPF: ${this.escCupom(venda.cpfCliente)}` : 'CONSUMIDOR NÃO IDENTIFICADO'}
           </div>
           <div class="text-center" style="font-size: 9.5px; margin-top: 4px;">
-            NFC-e numero ${venda.numeroNfce || 1}<br>
-            Serie ${venda.serieNfce || 1} ${new Date(venda.data).toLocaleString('pt-BR')}<br>
+            NFC-e n. ${venda.numeroNfce || '-'} Serie ${venda.serieNfce || '-'}<br>
+            ${new Date(venda.dataAutorizacaoNfce || venda.data).toLocaleString('pt-BR')}<br>
             Protocolo de autorizacao: ${this.escCupom(venda.protocoloNfe || '')}
           </div>
-          <div class="text-center" style="font-size: 8.5px; margin-top: 5px;">
-            Valor aproximado dos tributos deste cupom ${this.formatarMoedaCupom(venda.tributosAproximados || (Number(venda.total || 0) * 0.184))}
-            (Conf. Lei Fed. 12.741/2012)
-          </div>
+          ${venda.qrcodeUrl ? `
+            <div class="text-center" style="margin-top: 6px;">${this.svgQrCode(venda.qrcodeUrl, largura === '72mm' ? 150 : 110)}</div>
+            <div class="text-center" style="font-size: 8.5px; margin-top: 2px;">Consulta via leitor de QR Code</div>
+          ` : ''}
+          ${venda.tributosAproximados ? `
+            <div class="text-center" style="font-size: 8.5px; margin-top: 5px;">
+              Valor aproximado dos tributos deste cupom ${this.formatarMoedaCupom(venda.tributosAproximados)}
+              (Conf. Lei Fed. 12.741/2012)
+            </div>
+          ` : ''}
         ` : `
           <div>Venda: #${StorageService.formatarNumeroVenda(venda)}</div>
           <div>Data: ${new Date(venda.data).toLocaleString('pt-BR')}</div>
@@ -420,7 +449,7 @@ export const ThermalPrintModule = {
   imprimirA4Venda(venda) {
     if (!venda) return;
     const config = StorageService.getConfig() || {};
-    const isNfce = Boolean(venda.chaveNfe || venda.statusFiscal === 'autorizada');
+    const isNfce = this.vendaTemNfce(venda);
     const chaveFormatada = (venda.chaveNfe || '').replace(/(.{4})/g, '$1 ').trim();
     const clienteCpf = venda.cpfCliente || venda.cpfCnpj || '';
 
@@ -591,13 +620,21 @@ export const ThermalPrintModule = {
         ${isNfce ? `
           <div class="fiscal-box">
             <div style="font-weight: 800; color: #166534; margin-bottom: 6px; font-size: 13px;">
-              🏛️ DADOS FISCAIS SEFAZ — NFC-e Nº ${venda.numeroNfce || 1} &bull; Série ${venda.serieNfce || 1}
+              🏛️ DADOS FISCAIS SEFAZ — NFC-e Nº ${venda.numeroNfce || '-'} &bull; Série ${venda.serieNfce || '-'}${venda.statusFiscal === 'cancelada' ? ' &bull; <span style="color:#b91c1c;">CANCELADA</span>' : ''}${venda.ambiente === 'homologacao' ? ' &bull; HOMOLOGAÇÃO (SEM VALOR FISCAL)' : ''}
             </div>
-            <div style="font-size: 12px; color: #14532d; font-family: monospace; word-break: break-all; margin-bottom: 6px;">
-              <strong>Chave de Acesso:</strong> ${chaveFormatada}
-            </div>
-            <div style="font-size: 11.5px; color: #166534;">
-              Protocolo de Autorização: <strong>${venda.protocoloNfe || '135260000000000'}</strong> &bull; Tributos Incidentes: R$ ${(venda.tributosAproximados || (venda.total * 0.184).toFixed(2))}
+            <div style="display: flex; gap: 14px; align-items: flex-start;">
+              <div style="flex: 1;">
+                <div style="font-size: 12px; color: #14532d; font-family: monospace; word-break: break-all; margin-bottom: 6px;">
+                  <strong>Chave de Acesso:</strong> ${chaveFormatada}
+                </div>
+                <div style="font-size: 11.5px; color: #166534;">
+                  Protocolo de Autorização: <strong>${this.escCupom(venda.protocoloNfe || '')}</strong>${venda.dataAutorizacaoNfce ? ' em ' + new Date(venda.dataAutorizacaoNfce).toLocaleString('pt-BR') : ''}
+                </div>
+                <div style="font-size: 11px; color: #166534; margin-top: 4px;">
+                  Consulte em: <strong>${this.escCupom(venda.urlConsultaNfce || 'www.nfe.fazenda.gov.br/portal')}</strong>
+                </div>
+              </div>
+              ${venda.qrcodeUrl ? `<div>${this.svgQrCode(venda.qrcodeUrl, 120)}</div>` : ''}
             </div>
           </div>
         ` : ''}

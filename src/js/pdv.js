@@ -2714,35 +2714,53 @@ export const PdvModule = {
   agendarEmissaoFiscal(venda, deveEmitir) {
     if (!deveEmitir || !window.FiscalModule || typeof window.FiscalModule.emitirNFCe !== 'function') return;
 
-    window.FiscalModule.emitirNFCe(venda).then(resFiscal => {
-      if (resFiscal && resFiscal.sucesso) {
-        venda.chaveNfe = resFiscal.chaveAcesso;
-        venda.protocoloNfe = resFiscal.protocoloAutorizacao;
-        venda.numeroNfce = resFiscal.numeroNfce;
-        venda.serieNfce = resFiscal.serieNfce;
-        venda.ambiente = resFiscal.ambiente;
-        venda.qrcodeUrl = resFiscal.qrcodeUrl;
-        venda.statusFiscal = resFiscal.status || 'autorizada';
-        venda.tributosAproximados = resFiscal.tributosAproximados;
-        venda.fiscalErro = '';
-        StorageService.atualizarVenda(venda);
-      } else {
-        venda.statusFiscal = 'erro';
-        venda.fiscalErro = (resFiscal && (resFiscal.mensagem || resFiscal.erro)) || 'Falha na emissão da NFC-e';
-        StorageService.atualizarVenda(venda);
-        if (window.App && typeof window.App.showToast === 'function') {
-          window.App.showToast('Venda gravada. NFC-e pendente: ' + venda.fiscalErro, 'warning');
-        }
+    // emitirNFCe grava o resultado (chave, protocolo, status) na própria venda.
+    window.FiscalModule.emitirNFCe(venda).then(res => {
+      if (this.ultimaVendaFinalizada && this.ultimaVendaFinalizada.id === venda.id) {
+        this.atualizarBadgeFiscalSucesso(venda);
+      }
+      if (!res || res.sucesso) return;
+      if (window.App && typeof window.App.showToast === 'function') {
+        const msg = res.estado === 'rejeitada'
+          ? 'NFC-e rejeitada: ' + res.mensagem
+          : 'Venda gravada. NFC-e pendente: ' + res.mensagem;
+        window.App.showToast(msg, 'warning');
       }
     }).catch(err => {
-      venda.statusFiscal = 'erro';
+      venda.statusFiscal = 'pendente';
       venda.fiscalErro = err?.message || String(err);
       StorageService.atualizarVenda(venda);
       console.warn('[Fiscal] Erro na emissão NFC-e:', err);
       if (window.App && typeof window.App.showToast === 'function') {
-        window.App.showToast('Venda gravada, mas a NFC-e não foi autorizada. Reemita depois.', 'warning');
+        window.App.showToast('Venda gravada, mas a NFC-e ficou pendente. Será reenviada automaticamente.', 'warning');
       }
     });
+  },
+
+  atualizarBadgeFiscalSucesso(venda) {
+    const fiscalBadge = document.getElementById('modal-sucesso-fiscal-badge');
+    if (!fiscalBadge || !venda) return;
+    const pintar = (bg, cor, texto) => {
+      fiscalBadge.innerHTML = texto;
+      fiscalBadge.style.background = bg;
+      fiscalBadge.style.color = cor;
+    };
+    switch (venda.statusFiscal) {
+      case 'autorizada': {
+        const amb = venda.ambiente === 'homologacao' ? '🧪 Homologação' : '🟢 Produção';
+        pintar('#dcfce7', '#15803d', `🏛️ NFC-e Nº ${venda.numeroNfce || '-'} Autorizada (${amb})`);
+        break;
+      }
+      case 'pendente':
+        pintar('#fef3c7', '#b45309', '⏳ NFC-e sendo enviada à SEFAZ...');
+        break;
+      case 'rejeitada':
+      case 'erro':
+        pintar('#fee2e2', '#b91c1c', '❌ NFC-e rejeitada - veja no histórico de vendas');
+        break;
+      default:
+        pintar('#f1f5f9', '#475569', '📄 Comprovante Não Fiscal');
+    }
   },
 
   confirmarPagamento() {
@@ -2843,10 +2861,13 @@ export const PdvModule = {
       if (cpfFinal) {
         venda.cpfCliente = cpfFinal;
       }
-      if (deveEmitirFiscal) venda.statusFiscal = 'pendente';
+      // Com "emitir automaticamente" desligado a venda fica aguardando o
+      // operador clicar em "Emitir NFC-e" no histórico.
+      const emitirAgora = deveEmitirFiscal && cfgFiscal.autoEmitirAoFinalizar !== false;
+      if (deveEmitirFiscal) venda.statusFiscal = emitirAgora ? 'pendente' : 'manual';
 
       StorageService.saveVenda(venda);
-      this.agendarEmissaoFiscal(venda, deveEmitirFiscal && cfgFiscal);
+      this.agendarEmissaoFiscal(venda, emitirAgora);
 
       if (venda.itens && venda.itens.length > 0 && venda.itens[0].comandaOrigemId && window.ComandasModule) {
         window.ComandasModule.liberarComandaAposVenda(venda.itens[0].comandaOrigemId, venda.itens);
@@ -2899,19 +2920,7 @@ export const PdvModule = {
       }
     }
 
-    if (fiscalBadge) {
-      const isNfce = Boolean(venda.chaveNfe || venda.statusFiscal === 'autorizada');
-      if (isNfce) {
-        const amb = venda.ambiente === 'homologacao' ? '🧪 Homologação' : '🟢 Produção';
-        fiscalBadge.innerHTML = `🏛️ NFC-e Nº ${venda.numeroNfce || 1} Emitida (${amb})`;
-        fiscalBadge.style.background = '#dcfce7';
-        fiscalBadge.style.color = '#15803d';
-      } else {
-        fiscalBadge.innerHTML = `📄 Comprovante Não Fiscal`;
-        fiscalBadge.style.background = '#f1f5f9';
-        fiscalBadge.style.color = '#475569';
-      }
-    }
+    if (fiscalBadge) this.atualizarBadgeFiscalSucesso(venda);
 
     modal.style.display = 'flex';
     const btnImprimir = document.getElementById('btn-confirmar-imprimir-venda');
