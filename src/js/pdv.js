@@ -2382,7 +2382,10 @@ export const PdvModule = {
         window.App.showToast(`📟 Enviando R$ ${valorAplicado.toFixed(2).replace('.', ',')} ao Pinpad...`, 'info');
         window.TefModule.iniciarTransacao({
           valor: valorAplicado,
-          tipo: forma
+          tipo: forma,
+          parcelas: 1,
+          itens: this.carrinho,
+          descricao: `FlowPDV ${StorageService.getConfig()?.nomeEmpresa || ''}`.trim()
         }).then(resTef => {
           this.pagamentosLancados.push({
             id: 'PAG-' + Date.now(),

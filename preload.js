@@ -16,7 +16,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   manterTelaAcordada: (ativa) => ipcRenderer.invoke('manter-tela-acordada', Boolean(ativa)),
   getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
   // Chamadas HTTP à Focus NFe saem pelo processo principal (sem CORS).
-  fiscalHttp: (req) => ipcRenderer.invoke('fiscal-http', req),
+  fiscalHttp: (req) => ipcRenderer.invoke('http-json', req),
+  httpJson: (req) => ipcRenderer.invoke('http-json', req),
+  // TEF SiTef (CliSiTef via DLL no processo principal)
+  sitefConfigurar: (cfg) => ipcRenderer.invoke('sitef-configurar', cfg),
+  sitefExecutar: (params) => ipcRenderer.invoke('sitef-executar', params),
+  sitefResponder: (resposta) => ipcRenderer.invoke('sitef-responder', resposta),
+  sitefCancelar: () => ipcRenderer.invoke('sitef-cancelar'),
+  sitefFinalizar: (params) => ipcRenderer.invoke('sitef-finalizar', params),
+  sitefPinpadPresente: () => ipcRenderer.invoke('sitef-pinpad-presente'),
+  onSitefEvento: (callback) => {
+    ipcRenderer.on('sitef-evento', (_event, data) => callback(data));
+  },
   openExternal: (url) => shell.openExternal(url),
   salvarLicencaArquivo: (lic) => ipcRenderer.invoke('salvar-licenca-arquivo', lic),
   carregarLicencaArquivo: () => ipcRenderer.invoke('carregar-licenca-arquivo'),

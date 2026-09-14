@@ -80,7 +80,10 @@ export const FiscalModule = {
       } else if (!tefCfg.habilitado) {
         displayTef.innerHTML = `<span style="color: #64748b; font-weight: 700;">⚪ TEF Desativado</span>`;
       } else {
-        displayTef.innerHTML = `<span style="color: #10b981; font-weight: 800;">🟢 TEF Ativo (${(tefCfg.provedor || 'PayGo').toUpperCase()})</span>`;
+        const nomes = { stone: 'Stone Connect', sitef: 'SiTef', simulador: 'SIMULADOR - sem maquininha real' };
+        const prov = tefCfg.provedor || 'simulador';
+        const cor = prov === 'simulador' ? '#d97706' : '#10b981';
+        displayTef.innerHTML = `<span style="color: ${cor}; font-weight: 800;">${prov === 'simulador' ? '🧪' : '🟢'} TEF Ativo (${nomes[prov] || prov.toUpperCase()})</span>`;
       }
     }
   },
@@ -214,18 +217,36 @@ export const FiscalModule = {
     const modal = document.getElementById('modal-config-tef');
     const cfg = this.getTefConfig();
     if (modal) {
+      const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v == null ? '' : v; };
       document.getElementById('tef-habilitado').checked = cfg.habilitado === true;
-      document.getElementById('tef-provedor').value = cfg.provedor || 'paygo';
-      document.getElementById('tef-ip-servidor').value = cfg.ipServidor || '127.0.0.1';
-      document.getElementById('tef-porta').value = cfg.porta || '60906';
-      document.getElementById('tef-codigo-empresa').value = cfg.codigoEmpresa || '';
-      document.getElementById('tef-codigo-terminal').value = cfg.codigoTerminal || '0001';
+      set('tef-provedor', cfg.provedor || 'simulador');
+      set('tef-stone-sk', cfg.stoneSecretKey || '');
+      set('tef-stone-serial', cfg.stoneSerial || '');
+      set('tef-stone-recipient', cfg.stoneRecipientId || '');
+      set('tef-stone-referer', cfg.stoneServiceRefererName || '');
+      const imp = document.getElementById('tef-stone-imprimir');
+      if (imp) imp.checked = cfg.stoneImprimirNaMaquininha !== false;
+      set('tef-sitef-dll', cfg.sitefCaminhoDll || 'C:\\CliSiTef\\CliSiTefI.dll');
+      set('tef-sitef-ip', cfg.sitefIp || '127.0.0.1');
+      set('tef-sitef-loja', cfg.sitefLoja || '00000000');
+      set('tef-sitef-terminal', cfg.sitefTerminal || 'FP000001');
+      set('tef-sitef-parametros', cfg.sitefParametros || '');
 
       const boxTef = document.getElementById('box-campos-tef-detalhes');
       if (boxTef) boxTef.style.display = cfg.habilitado ? 'block' : 'none';
+      this.toggleCamposProvedorTef();
 
       modal.classList.add('active');
     }
+  },
+
+  // Mostra só os campos do provedor escolhido.
+  toggleCamposProvedorTef() {
+    const provedor = document.getElementById('tef-provedor')?.value || 'simulador';
+    ['simulador', 'stone', 'sitef'].forEach(p => {
+      const box = document.getElementById(`box-tef-${p}`);
+      if (box) box.style.display = p === provedor ? 'block' : 'none';
+    });
   },
 
   fecharModalConfigTef() {
@@ -244,23 +265,42 @@ export const FiscalModule = {
   salvarConfigTef(e) {
     if (e && typeof e.preventDefault === 'function') e.preventDefault();
 
+    const val = (id) => (document.getElementById(id)?.value || '').trim();
     const habilitado = document.getElementById('tef-habilitado')?.checked || false;
-    const provedor = document.getElementById('tef-provedor')?.value || 'paygo';
-    const ipServidor = document.getElementById('tef-ip-servidor')?.value.trim() || '127.0.0.1';
-    const porta = document.getElementById('tef-porta')?.value.trim() || '60906';
-    const codigoEmpresa = document.getElementById('tef-codigo-empresa')?.value.trim() || '';
-    const codigoTerminal = document.getElementById('tef-codigo-terminal')?.value.trim() || '0001';
+    const provedor = val('tef-provedor') || 'simulador';
 
     const novoTef = {
       habilitado,
       provedor,
-      ipServidor,
-      porta,
-      codigoEmpresa,
-      codigoTerminal
+      stoneSecretKey: val('tef-stone-sk'),
+      stoneSerial: val('tef-stone-serial'),
+      stoneRecipientId: val('tef-stone-recipient'),
+      stoneServiceRefererName: val('tef-stone-referer'),
+      stoneImprimirNaMaquininha: document.getElementById('tef-stone-imprimir')?.checked !== false,
+      sitefCaminhoDll: val('tef-sitef-dll'),
+      sitefIp: val('tef-sitef-ip'),
+      sitefLoja: val('tef-sitef-loja').replace(/\D/g, ''),
+      sitefTerminal: val('tef-sitef-terminal').toUpperCase(),
+      sitefParametros: val('tef-sitef-parametros')
     };
 
+    if (habilitado && provedor === 'stone' && !novoTef.stoneSecretKey) {
+      window.App.showToast('❌ Informe a chave secreta (sk_...) da Stone.', 'error');
+      return;
+    }
+    if (habilitado && provedor === 'sitef') {
+      if (!novoTef.sitefIp || !novoTef.sitefCaminhoDll) {
+        window.App.showToast('❌ Informe o IP do SiTef e o caminho da CliSiTefI.dll.', 'error');
+        return;
+      }
+      if (!/^[A-Z]{2}\d{6}$/.test(novoTef.sitefTerminal)) {
+        window.App.showToast('❌ Terminal SiTef deve ter 2 letras + 6 números (ex.: FP000001).', 'error');
+        return;
+      }
+    }
+
     StorageService.saveTefConfig(novoTef);
+    if (window.TefModule) window.TefModule._sitefConfigurado = false;
 
     AuditModule.registrarLog('configuracao_tef', `Alterou as configurações do TEF (${habilitado ? 'ATIVADO' : 'DESATIVADO'}, Provedor: ${provedor})`, {
       habilitado,

@@ -132,6 +132,25 @@ export const ThermalPrintModule = {
     `;
   },
 
+  // Comprovante TEF (texto puro devolvido pela adquirente/SiTef).
+  imprimirComprovanteTef(texto, titulo = '') {
+    const conteudo = String(texto || '').trim();
+    if (!conteudo) return;
+    const { largura, pageSize, fonte } = this.papelCupom();
+    const html = `
+      <!DOCTYPE html><html><head><meta charset="utf-8">
+      <style>
+        @page { margin: 0; size: ${pageSize}; }
+        body { font-family: 'Courier New', Courier, monospace; width: ${largura}; margin: 0 auto; padding: 6px 3px 10px; font-size: ${fonte}; line-height: 1.25; color: #000; }
+        pre { margin: 0; white-space: pre-wrap; word-break: break-word; font: inherit; }
+        .t { text-align: center; font-weight: bold; margin-bottom: 4px; }
+      </style></head><body>
+        ${titulo ? `<div class="t">${this.escCupom(titulo)}</div>` : ''}
+        <pre>${this.escCupom(conteudo)}</pre>
+      </body></html>`;
+    this.executarImpressao(html);
+  },
+
   executarImpressao(html) {
     const papelMm = this.papelCupom().papelMm;
     if (window.electronAPI && typeof window.electronAPI.printThermalReceipt === 'function') {

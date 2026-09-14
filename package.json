@@ -29,7 +29,8 @@
     "url": "https://github.com/DouglasNico/flowpdv.git"
   },
   "dependencies": {
-    "electron-updater": "^6.3.9"
+    "electron-updater": "^6.3.9",
+    "koffi": "^3.2.1"
   },
   "devDependencies": {
     "docx": "^9.7.1",
@@ -56,9 +57,13 @@
       "output": "C:/Users/User/AppData/Local/Temp/flowpdv_build"
     },
     "compression": "maximum",
+    "asarUnpack": [
+      "node_modules/koffi/**"
+    ],
     "files": [
       "main.js",
       "preload.js",
+      "sitef-bridge.js",
       "index.html",
       "src/**/*",
       "!src/**/*.map",

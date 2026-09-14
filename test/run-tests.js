@@ -76,7 +76,14 @@ const {
   interpretarRespostaFocus,
   podeCancelarNFCe,
   codigoSefazPagamento,
-  refDaVenda
+  refDaVenda,
+  montarPedidoStone,
+  interpretarPedidoStone,
+  parseMenuSitef,
+  interpretarCamposSitef,
+  funcaoSitef,
+  valorSitef,
+  mensagemRetornoSitef
 } = core;
 
 const testes = [];
@@ -691,6 +698,68 @@ teste('NFC-e so cancela dentro de 30 minutos da autorizacao', () => {
   assert.strictEqual(podeCancelarNFCe({ ...v, statusFiscal: 'cancelada' }, base), false);
   assert.strictEqual(podeCancelarNFCe({ ...v, statusFiscal: 'pendente', chaveNfe: '' }, base), false);
   assert.strictEqual(refDaVenda({ id: 'V-abc.1' }), 'fp-V-abc1');
+});
+
+// ---------------------------------------------------------------------------
+// TEF (Stone Connect / SiTef)
+// ---------------------------------------------------------------------------
+
+teste('pedido Stone fecha o total em centavos e respeita tipo, serial e split', () => {
+  const p = montarPedidoStone(
+    { valor: 27.5, tipo: 'Débito', parcelas: 3, itens: [{ nome: 'Cerveja', precoUnitario: 10, quantidade: 2 }, { nome: 'Queijo', precoUnitario: 40, quantidade: 0.25 }] },
+    { serialMaquininha: 'ABC123', recipientId: 're_1' }
+  );
+  assert.strictEqual(p.closed, false);
+  // Itens com peso não fecham com o total: vira item único com o valor cobrado.
+  assert.strictEqual(p.items.length, 1);
+  assert.strictEqual(p.items[0].amount, 2750);
+  assert.strictEqual(p.poi_payment_settings.payment_setup.type, 'debit');
+  assert.strictEqual(p.poi_payment_settings.payment_setup.installments, 1);
+  assert.deepStrictEqual(p.poi_payment_settings.devices_serial_number, ['ABC123']);
+  assert.strictEqual(p.poi_payment_settings.payment_setup.split[0].recipient_id, 're_1');
+
+  const c = montarPedidoStone({ valor: 20, tipo: 'Crédito', parcelas: 3, itens: [{ nome: 'X', precoUnitario: 10, quantidade: 2 }] }, {});
+  assert.strictEqual(c.items.length, 1);
+  assert.strictEqual(c.items[0].quantity, 2);
+  assert.strictEqual(c.poi_payment_settings.payment_setup.installments, 3);
+  assert.strictEqual(c.poi_payment_settings.payment_setup.split, undefined);
+  assert.throws(() => montarPedidoStone({ valor: 0, tipo: 'Crédito' }, {}), /Valor inválido/);
+});
+
+teste('pedido Stone pago vira dados de autorizacao; sem cobranca fica aguardando', () => {
+  const aguardando = interpretarPedidoStone({ id: 'or_1', status: 'pending', charges: [] });
+  assert.strictEqual(aguardando.estado, 'aguardando');
+
+  const pago = interpretarPedidoStone({
+    id: 'or_1', amount: 2750, charges: [{ id: 'ch_1', status: 'paid', paid_amount: 2750, last_transaction: { acquirer_nsu: '123456', acquirer_auth_code: 'A1B2C3', payment_method: 'debit_card', card: { brand: 'Mastercard', last_four_digits: '4321' } } }]
+  });
+  assert.strictEqual(pago.estado, 'aprovada');
+  assert.strictEqual(pago.dados.nsu, '123456');
+  assert.strictEqual(pago.dados.autorizacao, 'A1B2C3');
+  assert.strictEqual(pago.dados.bandeira, 'Mastercard');
+  assert.strictEqual(pago.dados.tipo, 'Débito');
+  assert.strictEqual(pago.dados.valor, 27.5);
+
+  const recusado = interpretarPedidoStone({ id: 'or_1', charges: [{ status: 'failed', last_transaction: { acquirer_message: 'Senha inválida' } }] });
+  assert.strictEqual(recusado.estado, 'recusada');
+  assert.strictEqual(recusado.mensagem, 'Senha inválida');
+});
+
+teste('SiTef: menu, campos de retorno e codigos traduzidos', () => {
+  assert.deepStrictEqual(parseMenuSitef('1:Credito;2:Debito;'), [{ indice: '1', texto: 'Credito' }, { indice: '2', texto: 'Debito' }]);
+  assert.deepStrictEqual(parseMenuSitef('1|1:Magnetico:1:2;2:Digitado:2:2;')[1], { indice: '2', texto: 'Digitado' });
+  assert.strictEqual(funcaoSitef('Débito'), 2);
+  assert.strictEqual(funcaoSitef('Crédito'), 3);
+  assert.strictEqual(valorSitef(10), '10,00');
+  const d = interpretarCamposSitef({ 100: '0201', 105: '20260914120000', 133: '000123', 134: '998877', 135: 'AUT001', 121: 'VIA CLIENTE', 122: 'VIA LOJA', 132: 'VISA' }, { tipo: 'Crédito', parcelas: 1, valor: 10 });
+  assert.strictEqual(d.nsu, '000123');
+  assert.strictEqual(d.autorizacao, 'AUT001');
+  assert.strictEqual(d.bandeira, 'VISA');
+  assert.strictEqual(d.comprovanteLoja, 'VIA LOJA');
+  assert.strictEqual(d.dataHora, '2026-09-14T12:00:00');
+  assert.match(mensagemRetornoSitef(-5), /Sem comunicação/);
+  assert.match(mensagemRetornoSitef(-6), /cliente/);
+  assert.match(mensagemRetornoSitef(51), /Negada/);
 });
 
 // ---------------------------------------------------------------------------

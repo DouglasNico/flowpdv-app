@@ -685,9 +685,16 @@ export const StorageService = {
     return {
       habilitado: false,
       provedor: 'simulador',
-      tempoLimiteSegundos: 45,
-      imprimirComprovanteTef: true,
-      confirmacaoAutomatica: true
+      stoneSecretKey: '',
+      stoneSerial: '',
+      stoneRecipientId: '',
+      stoneServiceRefererName: '',
+      stoneImprimirNaMaquininha: true,
+      sitefCaminhoDll: 'C:\\CliSiTef\\CliSiTefI.dll',
+      sitefIp: '127.0.0.1',
+      sitefLoja: '00000000',
+      sitefTerminal: 'FP000001',
+      sitefParametros: ''
     };
   },
 

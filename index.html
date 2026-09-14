@@ -3934,37 +3934,91 @@
 
             <div id="box-campos-tef-detalhes" style="display: none;">
               <div class="form-group-custom" style="margin-bottom: 12px;">
-                <label class="form-label-custom">Provedor / Solução TEF</label>
-                <select id="tef-provedor" class="form-input-custom">
-                  <option value="simulador">🧪 Modo Demonstração / Simulador TEF</option>
-                  <option value="paygo">PayGo (C6 / Setis / NTK)</option>
-                  <option value="sitef">SiTef (Software Express / Fiserv)</option>
-                  <option value="stone">Stone TEF / Linx</option>
-                  <option value="pagbank">PagBank (PlugPag / Moderninha Smart)</option>
-                  <option value="cielo">Cielo LIO / TEF</option>
+                <label class="form-label-custom">Maquininha / Solução TEF</label>
+                <select id="tef-provedor" class="form-input-custom" onchange="FiscalModule.toggleCamposProvedorTef()">
+                  <option value="stone">Stone Connect (maquininha Stone via internet)</option>
+                  <option value="sitef">SiTef / Fiserv (pinpad no PC: Cielo, Rede, Getnet, PagBank, etc.)</option>
+                  <option value="simulador">🧪 Simulador (demonstração, sem maquininha real)</option>
                 </select>
               </div>
 
-              <div class="form-grid-2" style="margin-bottom: 12px;">
-                <div class="form-group-custom">
-                  <label class="form-label-custom">IP do Servidor / Client</label>
-                  <input type="text" id="tef-ip-servidor" class="form-input-custom" value="127.0.0.1" style="font-family: 'JetBrains Mono';">
+              <!-- Stone Connect -->
+              <div id="box-tef-stone" style="display: none;">
+                <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; font-size: 12px; color: #1e40af; line-height: 1.5;">
+                  O FlowPDV cria o pedido na API da Stone e a maquininha abre a tela de pagamento sozinha. A loja precisa ter o
+                  <strong>Connect</strong> ativado na conta Stone e informar a <strong>chave secreta</strong> (sk_...) do painel.
+                  Sem ambiente de testes na Stone: cada teste é uma venda real (cancele na maquininha depois).
                 </div>
-                <div class="form-group-custom">
-                  <label class="form-label-custom">Porta de Comunicação</label>
-                  <input type="text" id="tef-porta" class="form-input-custom" value="60906" style="font-family: 'JetBrains Mono';">
+                <div class="form-group-custom" style="margin-bottom: 12px;">
+                  <label class="form-label-custom">Chave secreta da Stone (sk_...)</label>
+                  <input type="password" id="tef-stone-sk" class="form-input-custom" placeholder="sk_..." style="font-family: 'JetBrains Mono';" autocomplete="off">
+                </div>
+                <div class="form-grid-2" style="margin-bottom: 12px;">
+                  <div class="form-group-custom">
+                    <label class="form-label-custom">Serial da maquininha (opcional)</label>
+                    <input type="text" id="tef-stone-serial" class="form-input-custom" placeholder="Em branco = todas da conta" style="font-family: 'JetBrains Mono';">
+                  </div>
+                  <div class="form-group-custom">
+                    <label class="form-label-custom">Recipient ID (re_...) para split</label>
+                    <input type="text" id="tef-stone-recipient" class="form-input-custom" placeholder="Exigido pela Stone desde fev/26" style="font-family: 'JetBrains Mono';">
+                  </div>
+                </div>
+                <div class="form-group-custom" style="margin-bottom: 12px;">
+                  <label class="form-label-custom">ServiceRefererName (ID do parceiro, se a Stone exigir)</label>
+                  <input type="text" id="tef-stone-referer" class="form-input-custom" placeholder="Opcional" style="font-family: 'JetBrains Mono';">
+                </div>
+                <label style="display: flex; align-items: center; gap: 8px; font-size: 12.5px; margin-bottom: 12px; cursor: pointer;">
+                  <input type="checkbox" id="tef-stone-imprimir" checked> Imprimir comprovante na própria maquininha
+                </label>
+              </div>
+
+              <!-- SiTef -->
+              <div id="box-tef-sitef" style="display: none;">
+                <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; font-size: 12px; color: #1e40af; line-height: 1.5;">
+                  O SiTef é instalado pela Software Express/Fiserv (ou pela revenda) no PC ou na rede da loja, junto com o pinpad e a
+                  <strong>CliSiTefI.dll de 64 bits</strong>. Informe abaixo onde a DLL está e os dados da loja fornecidos por eles.
+                </div>
+                <div class="form-group-custom" style="margin-bottom: 12px;">
+                  <label class="form-label-custom">Caminho da CliSiTefI.dll (64 bits)</label>
+                  <input type="text" id="tef-sitef-dll" class="form-input-custom" value="C:\CliSiTef\CliSiTefI.dll" style="font-family: 'JetBrains Mono';">
+                </div>
+                <div class="form-grid-2" style="margin-bottom: 12px;">
+                  <div class="form-group-custom">
+                    <label class="form-label-custom">IP do servidor SiTef</label>
+                    <input type="text" id="tef-sitef-ip" class="form-input-custom" value="127.0.0.1" style="font-family: 'JetBrains Mono';">
+                  </div>
+                  <div class="form-group-custom">
+                    <label class="form-label-custom">Código da loja (8 dígitos)</label>
+                    <input type="text" id="tef-sitef-loja" class="form-input-custom" value="00000000" maxlength="8" style="font-family: 'JetBrains Mono';">
+                  </div>
+                </div>
+                <div class="form-grid-2" style="margin-bottom: 12px;">
+                  <div class="form-group-custom">
+                    <label class="form-label-custom">Terminal (2 letras + 6 números)</label>
+                    <input type="text" id="tef-sitef-terminal" class="form-input-custom" value="FP000001" maxlength="8" style="font-family: 'JetBrains Mono'; text-transform: uppercase;">
+                  </div>
+                  <div class="form-group-custom">
+                    <label class="form-label-custom">Parâmetros adicionais (opcional)</label>
+                    <input type="text" id="tef-sitef-parametros" class="form-input-custom" placeholder="[PortaPinPad=COM3]" style="font-family: 'JetBrains Mono';">
+                  </div>
+                </div>
+                <button type="button" class="btn-primary-action" style="width: 100%; justify-content: center; height: 38px; margin-bottom: 12px; background: #f1f5f9; color: var(--text-main); border: 1px solid #cbd5e1;" onclick="TefModule.abrirMenuAdministrativoSitef()">
+                  🛠️ Menu administrativo SiTef (cancelar venda, reimprimir, pendências)
+                </button>
+              </div>
+
+              <!-- Simulador -->
+              <div id="box-tef-simulador" style="display: none;">
+                <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; font-size: 12px; color: #92400e; line-height: 1.5;">
+                  <strong>Apenas demonstração.</strong> Nenhuma cobrança acontece: o operador clica em "Aprovado" ou "Recusado" na tela.
+                  Não use em loja real.
                 </div>
               </div>
 
-              <div class="form-grid-2" style="margin-bottom: 16px;">
-                <div class="form-group-custom">
-                  <label class="form-label-custom">Código da Empresa</label>
-                  <input type="text" id="tef-codigo-empresa" class="form-input-custom" placeholder="Ex: 00000001" style="font-family: 'JetBrains Mono';">
-                </div>
-                <div class="form-group-custom">
-                  <label class="form-label-custom">Número do Terminal</label>
-                  <input type="text" id="tef-codigo-terminal" class="form-input-custom" value="0001" style="font-family: 'JetBrains Mono';">
-                </div>
+              <div style="margin-bottom: 16px;">
+                <button type="button" id="btn-testar-tef" class="btn-primary-action" style="width: 100%; justify-content: center; height: 40px; background: #059669; color: #fff;" onclick="TefModule.testarTefConfig()">
+                  💳 Testar Conexão com Maquininha
+                </button>
               </div>
             </div>
 
@@ -4060,10 +4114,11 @@
           <div style="position: absolute; right: -15px; top: -15px; font-size: 90px; opacity: 0.08;">📟</div>
           <div style="font-size: 11px; font-weight: 800; color: #a5b4fc; text-transform: uppercase; letter-spacing: 1px;" id="tef-modal-tipo">Cartão de Crédito</div>
           <div id="tef-modal-valor" style="font-size: 40px; font-weight: 900; font-family: 'JetBrains Mono'; color: #34d399; margin: 6px 0;">R$ 0,00</div>
-          <div style="font-size: 12px; color: #c7d2fe; display: flex; align-items: center; justify-content: center; gap: 6px;">
-            <span>📶 Terminal Conectado</span> &bull; <span>Aproxime ou Insira</span>
-          </div>
+          <div id="tef-modal-visor-cliente" style="font-size: 12px; color: #c7d2fe; min-height: 16px; font-family: 'JetBrains Mono';"></div>
         </div>
+
+        <!-- Área dinâmica: menus, perguntas e campos pedidos pela CliSiTef -->
+        <div id="tef-modal-interacao" style="display: none; padding: 12px; background: #fff; border: 1px solid var(--border-card); border-radius: 10px; margin-bottom: 14px; text-align: center; font-size: 13px;"></div>
 
         <div style="padding: 14px; background: #f8fafc; border: 1px solid var(--border-card); border-radius: 10px; margin-bottom: 18px; display: flex; align-items: center; gap: 12px; text-align: left;">
           <div id="tef-modal-icone-status" style="font-size: 32px;">📲</div>
@@ -4073,9 +4128,9 @@
           </div>
         </div>
 
-        <!-- Painel de Demonstração / Simulador Rápido -->
-        <div style="background: rgba(14, 165, 233, 0.06); border: 1px dashed rgba(14, 165, 233, 0.3); border-radius: 8px; padding: 10px; margin-bottom: 16px;">
-          <div style="font-size: 10.5px; font-weight: 800; color: #0284c7; text-transform: uppercase; margin-bottom: 6px;">🧪 Painel de Demonstração / Simulação:</div>
+        <!-- Painel de Demonstração (só aparece com o provedor Simulador) -->
+        <div id="tef-modal-painel-demo" style="display: none; background: rgba(217, 119, 6, 0.06); border: 1px dashed rgba(217, 119, 6, 0.4); border-radius: 8px; padding: 10px; margin-bottom: 16px;">
+          <div style="font-size: 10.5px; font-weight: 800; color: #b45309; text-transform: uppercase; margin-bottom: 6px;">🧪 Simulação - nenhuma cobrança real:</div>
           <div style="display: flex; gap: 6px; justify-content: center; flex-wrap: wrap;">
             <button type="button" class="cat-filter-btn" style="background: #dcfce7; color: #15803d; border-color: #86efac; font-weight: 800;" onclick="TefModule.aprovarTransacao('Mastercard')">🟢 Aprovado (Mastercard)</button>
             <button type="button" class="cat-filter-btn" style="background: #dbeafe; color: #1d4ed8; border-color: #93c5fd; font-weight: 800;" onclick="TefModule.aprovarTransacao('Visa')">🔵 Aprovado (Visa)</button>

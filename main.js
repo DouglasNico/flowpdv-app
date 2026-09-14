@@ -370,6 +370,13 @@ if (!gotTheLock) {
     }
   });
 
+  // TEF SiTef: laço interativo da CliSiTef roda aqui no main (DLL nativa).
+  try {
+    require('./sitef-bridge.js').registrar(ipcMain, () => mainWindow);
+  } catch (err) {
+    console.warn('[SiTef] Ponte não carregada:', err.message);
+  }
+
   // IPC Handler: Verificar atualizações manualmente
   ipcMain.handle('check-for-updates', async () => {
     const currentVer = app.getVersion();
@@ -564,13 +571,14 @@ if (!gotTheLock) {
     }
   });
 
-  // IPC Handler: HTTP para a API Focus NFe (NFC-e). Só aceita os hosts da Focus.
-  ipcMain.handle('fiscal-http', (_event, req) => {
+  // IPC Handler: HTTP JSON para as APIs fiscais/TEF (Focus NFe, Stone).
+  // Só aceita hosts conhecidos; o token vira Basic Auth (usuário=token, senha vazia).
+  ipcMain.handle('http-json', (_event, req) => {
     return new Promise((resolve) => {
       try {
         const https = require('https');
         const url = new URL(String(req && req.url || ''));
-        const hostsPermitidos = ['api.focusnfe.com.br', 'homologacao.focusnfe.com.br'];
+        const hostsPermitidos = ['api.focusnfe.com.br', 'homologacao.focusnfe.com.br', 'api.pagar.me'];
         if (url.protocol !== 'https:' || !hostsPermitidos.includes(url.hostname)) {
           resolve({ status: 0, body: { codigo: 'host_nao_permitido', mensagem: 'Host não permitido: ' + url.hostname } });
           return;
@@ -578,12 +586,14 @@ if (!gotTheLock) {
 
         const corpo = req.body != null ? JSON.stringify(req.body) : null;
         const auth = Buffer.from(String(req.token || '') + ':').toString('base64');
+        const headersExtras = (req.headers && typeof req.headers === 'object') ? req.headers : {};
         const opcoes = {
           method: String(req.method || 'GET').toUpperCase(),
           headers: {
             'Authorization': 'Basic ' + auth,
             'Accept': 'application/json',
-            'User-Agent': 'FlowPDV/' + app.getVersion()
+            'User-Agent': 'FlowPDV/' + app.getVersion(),
+            ...headersExtras
           },
           timeout: Number(req.timeoutMs) || 45000
         };
