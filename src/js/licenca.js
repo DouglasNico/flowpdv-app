@@ -673,7 +673,7 @@ export const LicencaModule = {
       const descEl = document.getElementById('ativacao-modal-desc');
       const btnConfirmar = document.getElementById('ativacao-btn-confirmar');
       if (tituloEl) tituloEl.textContent = 'Ativação de Licença FlowPDV';
-      if (descEl) descEl.innerHTML = 'Para começar a usar seu sistema de frente de caixa e estoque, digite a <strong>Chave de Licença</strong> ou o <strong>CNPJ</strong> fornecido pelo suporte para ativar este computador:';
+      if (descEl) descEl.innerHTML = 'Para começar a usar seu sistema de frente de caixa e estoque, digite a <strong>Chave de Licença</strong> fornecida pelo suporte para ativar este computador:';
       if (btnConfirmar) btnConfirmar.innerHTML = '🚀 Ativar e Entrar no Sistema';
       if (modalAtivacao) modalAtivacao.classList.add('active');
       return;
@@ -818,7 +818,7 @@ export const LicencaModule = {
 
     if (!chave) {
       if (erroEl) {
-        erroEl.textContent = '⚠️ Digite a Chave de Licença ou CNPJ para ativar!';
+        erroEl.textContent = '⚠️ Digite a Chave de Licença para ativar!';
         erroEl.style.display = 'block';
       }
       return;
@@ -1099,7 +1099,7 @@ export const LicencaModule = {
         btnAtivar.innerHTML = '🚀 Ativar e Entrar no Sistema';
       }
       if (erroEl) {
-        erroEl.textContent = '❌ Chave de licença ou CNPJ não encontrado no sistema ou na nuvem.';
+        erroEl.textContent = '❌ Chave de licença não encontrada no sistema ou na nuvem.';
         erroEl.style.display = 'block';
       }
       if (window.App && typeof window.App.showToast === 'function') {
@@ -1228,7 +1228,7 @@ export const LicencaModule = {
     const lockTerminais = document.getElementById('lock-screen-terminais-overlay');
 
     if (tituloEl) tituloEl.textContent = 'Alterar Licença do Sistema';
-    if (descEl) descEl.innerHTML = 'Digite a nova <strong>Chave de Licença</strong> ou <strong>CNPJ</strong> para vincular a este computador:';
+    if (descEl) descEl.innerHTML = 'Digite a nova <strong>Chave de Licença</strong> para vincular a este computador:';
     if (btnConfirmar) btnConfirmar.innerHTML = '💾 Salvar e Ativar Licença';
 
     if (erroEl) erroEl.style.display = 'none';

@@ -1981,8 +1981,9 @@ export const EstoqueModule = {
       const bgColor = isEven ? 'FFFFFFFF' : 'FFF8FAFC';
 
       const estoqueDisplay = controlaEstoque ? estoque : 'Infinito';
+      // 10 colunas (A-J), na mesma ordem dos cabeçalhos acima.
       const vals = [idx + 1, p.codigoBarras || '-', p.nome || 'Sem Nome', p.categoria || 'Sem Categoria', precoCusto, precoVenda,
-        precoClube, estoqueDisplay, margem, valorEstoque, status];
+        estoqueDisplay, margem, valorEstoque, status];
       vals.forEach((v, i) => {
         const col = String.fromCharCode(65 + i);
         const cell = ws.getCell(`${col}${row}`);
@@ -2435,13 +2436,13 @@ export const EstoqueModule = {
 
       for (let i = 0; i < linhasBrutas.length; i++) {
         const cols = linhasBrutas[i];
+        // Mesma ordem das 11 colunas do modelo (baixarModeloPlanilha).
         let [
           codBarras, 
           categoria, 
           nome, 
           precoCusto, 
           precoVenda,
-        precoClube, 
           estoque, 
           estoqueMinimo,
           unidadeFracionada,
@@ -2607,15 +2608,27 @@ export const EstoqueModule = {
           novasCategoriasSet.add(p.categoria);
         }
 
+        const { isNovo, originalId, ...dadosProduto } = p;
+        const estoqueNovo = parseFloat(dadosProduto.estoque) || 0;
+
         if (mapaProdutos.has(p.id)) {
           const anterior = mapaProdutos.get(p.id);
+          const estoqueAntes = parseFloat(anterior.estoque) || 0;
+          if (estoqueNovo !== estoqueAntes) {
+            StorageService.registrarMovimentoEstoque({
+              produtoId: p.id,
+              delta: estoqueNovo - estoqueAntes,
+              origem: 'definir',
+              refId: 'planilha',
+              saldoPara: estoqueNovo
+            });
+          }
           mapaProdutos.set(p.id, {
             ...anterior,
-            ...p,
-            estoque: p.estoque,
+            ...dadosProduto,
+            estoque: estoqueNovo,
             precoCusto: p.precoCusto,
             precoVenda: p.precoVenda,
-        precoClube,
             estoqueMinimo: p.estoqueMinimo,
             categoria: p.categoria,
             unidadeFracionada: p.unidadeFracionada !== null ? p.unidadeFracionada : (anterior.unidadeFracionada || null),
@@ -2625,7 +2638,16 @@ export const EstoqueModule = {
           });
           atualizadosQtd++;
         } else {
-          mapaProdutos.set(p.id, p);
+          mapaProdutos.set(p.id, { ...dadosProduto, estoque: estoqueNovo });
+          if (estoqueNovo > 0) {
+            StorageService.registrarMovimentoEstoque({
+              produtoId: p.id,
+              delta: estoqueNovo,
+              origem: 'definir',
+              refId: 'planilha',
+              saldoPara: estoqueNovo
+            });
+          }
           novosQtd++;
         }
       });

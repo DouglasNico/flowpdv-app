@@ -6,7 +6,7 @@ import { StorageService } from './storage.js';
 import { AuthModule } from './auth.js';
 import { ThermalPrintModule } from './thermal-print.js';
 import { AuditModule } from './audit.js';
-import { encontrarClientePorDocumento } from './merge-core.js';
+import { encontrarClientePorDocumento, vendaPertenceAoTurno, dinheiroLiquidoVenda } from './merge-core.js';
 
 export const PdvModule = {
   carrinho: [],
@@ -2759,24 +2759,7 @@ export const PdvModule = {
     const vendas = StorageService.getVendas() || [];
     let vendasDinheiro = 0;
     vendas.forEach(v => {
-      if (v && (v.turnoId === turno.id || (!v.turnoId && new Date(v.data) >= new Date(turno.dataAbertura)))) {
-        if (v.formaPagamento === 'Dinheiro') {
-          vendasDinheiro += (parseFloat(v.total) || 0);
-        } else if (v.pagamentoDividido && Array.isArray(v.pagamentos)) {
-          let dinheiroLancado = 0;
-          v.pagamentos.forEach(p => {
-            if (p.forma === 'Dinheiro') dinheiroLancado += (parseFloat(p.valor) || 0);
-          });
-          const trocoDinheiro = (parseFloat(v.troco) || 0);
-          vendasDinheiro += Math.max(0, dinheiroLancado - trocoDinheiro);
-        } else if (v.pagamentoDividido && (v.parcela1 || v.parcela2)) {
-          let dinheiroLancado = 0;
-          if (v.parcela1?.forma === 'Dinheiro') dinheiroLancado += (parseFloat(v.parcela1.valor) || 0);
-          if (v.parcela2?.forma === 'Dinheiro') dinheiroLancado += (parseFloat(v.parcela2.valor) || 0);
-          const trocoDinheiro = (parseFloat(v.troco) || 0);
-          vendasDinheiro += Math.max(0, dinheiroLancado - trocoDinheiro);
-        }
-      }
+      if (vendaPertenceAoTurno(v, turno)) vendasDinheiro += dinheiroLiquidoVenda(v);
     });
 
     return Math.max(0, trocoInicial + suprimentos + vendasDinheiro - sangrias);

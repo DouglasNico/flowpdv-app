@@ -856,8 +856,10 @@ export const StorageService = {
   },
 
   registrarMovimentoEstoque({ produtoId, delta, origem, refId, saldoPara }) {
-    const qtd = parseFloat(delta);
-    if (!produtoId || !qtd) return null;
+    const qtd = parseFloat(delta) || 0;
+    const temSaldo = saldoPara != null && saldoPara !== '';
+    // Saldo absoluto vale mesmo com delta 0: o outro caixa pode estar com base diferente.
+    if (!produtoId || (!qtd && !temSaldo)) return null;
     const mov = {
       id: 'MOV-' + Date.now() + '-' + Math.random().toString(36).substring(2, 8),
       produtoId: String(produtoId),
@@ -867,7 +869,7 @@ export const StorageService = {
       terminalId: this.getDeviceId(),
       at: new Date().toISOString()
     };
-    if (saldoPara != null && saldoPara !== '') {
+    if (temSaldo) {
       mov.saldoPara = Math.max(0, parseFloat(saldoPara) || 0);
     }
     const lista = this.getMovimentosEstoque();

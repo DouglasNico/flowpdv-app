@@ -12,10 +12,39 @@ const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "dougnvds26@gmail.com,admin@fl
   .filter(Boolean);
 
 function assertAdmin(auth) {
-  const email = (auth && auth.token && auth.token.email ? auth.token.email : "").toLowerCase();
-  const isAdmin = Boolean(auth && (auth.token.admin === true || ADMIN_EMAILS.includes(email)));
-  if (!isAdmin) {
+  if (!ehAdmin(auth)) {
     throw new HttpsError("permission-denied", "Acesso restrito ao administrador.");
+  }
+}
+
+const DOMINIO_LOJA = "pdv.flowpdv.com.br";
+
+// Mesma regra do firestore.rules / firebase-config.js: a conta de maquina da loja.
+function emailDaLoja(chave) {
+  return `loja_${String(chave || "").trim().toLowerCase()}@${DOMINIO_LOJA}`;
+}
+
+function emailDoChamador(auth) {
+  return String((auth && auth.token && auth.token.email) || "").toLowerCase();
+}
+
+function ehAdmin(auth) {
+  return Boolean(auth && (auth.token.admin === true || ADMIN_EMAILS.includes(emailDoChamador(auth))));
+}
+
+// A loja prova que e dona quando esta logada com a conta derivada da propria chave.
+function ehDonaDaLicenca(auth, licenca) {
+  if (!auth || !licenca) return false;
+  const email = emailDoChamador(auth);
+  if (!email) return false;
+  return [licenca.id, licenca.docId, licenca.chaveLicenca, licenca.clienteId]
+    .filter(Boolean)
+    .some((c) => emailDaLoja(c) === email);
+}
+
+function exigirLogin(auth) {
+  if (!auth) {
+    throw new HttpsError("unauthenticated", "Faca login na loja antes de consultar a licenca.");
   }
 }
 
@@ -66,7 +95,14 @@ async function encontrarLicenca({ chave, cnpj, clienteId }) {
   return null;
 }
 
+/**
+ * Consulta da licenca pelo PDV. So responde para quem ja esta logado com a
+ * conta de maquina daquela licenca (ou admin). Chave/clienteId sao o segredo
+ * da loja, entao quem os informa e esta logado com eles e a dona. O CNPJ e
+ * publico: quem nao e dona nao recebe nada por ele, senao a chave vazaria.
+ */
 exports.buscarLicenca = onCall({ cors: true }, async (request) => {
+  exigirLogin(request.auth);
   const chave = request.data && request.data.chave;
   const cnpj = request.data && request.data.cnpj;
   const clienteId = request.data && request.data.clienteId;
@@ -75,10 +111,14 @@ exports.buscarLicenca = onCall({ cors: true }, async (request) => {
   }
   const licenca = await encontrarLicenca({ chave, cnpj, clienteId });
   if (!licenca) return { ok: false, licenca: null };
+  if (!ehAdmin(request.auth) && !ehDonaDaLicenca(request.auth, licenca)) {
+    return { ok: false, licenca: null };
+  }
   return { ok: true, licenca };
 });
 
 exports.desvincularTerminal = onCall({ cors: true }, async (request) => {
+  exigirLogin(request.auth);
   const deviceId = String((request.data && request.data.deviceId) || "").trim();
   const chaveManter = normalizarChave(request.data && request.data.chaveManter);
   if (!deviceId || !chaveManter) {
@@ -88,6 +128,9 @@ exports.desvincularTerminal = onCall({ cors: true }, async (request) => {
   const licencaAlvo = await encontrarLicenca({ chave: chaveManter, clienteId: chaveManter });
   if (!licencaAlvo) {
     throw new HttpsError("not-found", "Licenca de destino nao encontrada.");
+  }
+  if (!ehAdmin(request.auth) && !ehDonaDaLicenca(request.auth, licencaAlvo)) {
+    throw new HttpsError("permission-denied", "So a loja dona da licenca pode desvincular terminais.");
   }
 
   const idsManter = new Set(

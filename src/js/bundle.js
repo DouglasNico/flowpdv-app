@@ -23829,6 +23829,38 @@
     const n = Number(countBruto) || 0;
     return Math.max(0, n - (temDocMeta ? 1 : 0));
   }
+  function vendaPertenceAoTurno(venda, turno) {
+    if (!venda || !turno) return false;
+    if ((turno.vendasIds || []).some((id) => String(id) === String(venda.id))) return true;
+    if (venda.turnoId) return String(venda.turnoId) === String(turno.id);
+    const t = Date.parse(venda.data);
+    if (!Number.isFinite(t)) return false;
+    const inicio = Date.parse(turno.dataAbertura);
+    const fim = turno.dataFechamento ? Date.parse(turno.dataFechamento) : Date.now();
+    return t >= inicio && t <= fim;
+  }
+  function dinheiroLiquidoVenda(venda) {
+    if (!venda) return 0;
+    const troco = parseFloat(venda.troco) || 0;
+    if (venda.pagamentoDividido && Array.isArray(venda.pagamentos)) {
+      let dinheiro = 0;
+      let jaLiquido = false;
+      venda.pagamentos.forEach((p) => {
+        if (!p || p.forma !== "Dinheiro") return;
+        dinheiro += parseFloat(p.valor) || 0;
+        if (p.valorEntregue != null) jaLiquido = true;
+      });
+      return Math.max(0, jaLiquido ? dinheiro : dinheiro - troco);
+    }
+    if (venda.pagamentoDividido && (venda.parcela1 || venda.parcela2)) {
+      let dinheiro = 0;
+      [venda.parcela1, venda.parcela2].forEach((p) => {
+        if (p && p.forma === "Dinheiro") dinheiro += parseFloat(p.valor) || 0;
+      });
+      return Math.max(0, dinheiro - troco);
+    }
+    return venda.formaPagamento === "Dinheiro" ? parseFloat(venda.total) || 0 : 0;
+  }
   function ehContaPaga(conta) {
     return String(conta && conta.status || "").toLowerCase() === "pago";
   }
@@ -24929,8 +24961,9 @@
       }
     },
     registrarMovimentoEstoque({ produtoId, delta, origem, refId, saldoPara }) {
-      const qtd = parseFloat(delta);
-      if (!produtoId || !qtd) return null;
+      const qtd = parseFloat(delta) || 0;
+      const temSaldo = saldoPara != null && saldoPara !== "";
+      if (!produtoId || !qtd && !temSaldo) return null;
       const mov = {
         id: "MOV-" + Date.now() + "-" + Math.random().toString(36).substring(2, 8),
         produtoId: String(produtoId),
@@ -24940,7 +24973,7 @@
         terminalId: this.getDeviceId(),
         at: (/* @__PURE__ */ new Date()).toISOString()
       };
-      if (saldoPara != null && saldoPara !== "") {
+      if (temSaldo) {
         mov.saldoPara = Math.max(0, parseFloat(saldoPara) || 0);
       }
       const lista = this.getMovimentosEstoque();
@@ -51190,24 +51223,7 @@ Venda bloqueada no PDV!`);
       const vendas = StorageService.getVendas() || [];
       let vendasDinheiro = 0;
       vendas.forEach((v) => {
-        if (v && (v.turnoId === turno.id || !v.turnoId && new Date(v.data) >= new Date(turno.dataAbertura))) {
-          if (v.formaPagamento === "Dinheiro") {
-            vendasDinheiro += parseFloat(v.total) || 0;
-          } else if (v.pagamentoDividido && Array.isArray(v.pagamentos)) {
-            let dinheiroLancado = 0;
-            v.pagamentos.forEach((p) => {
-              if (p.forma === "Dinheiro") dinheiroLancado += parseFloat(p.valor) || 0;
-            });
-            const trocoDinheiro = parseFloat(v.troco) || 0;
-            vendasDinheiro += Math.max(0, dinheiroLancado - trocoDinheiro);
-          } else if (v.pagamentoDividido && (v.parcela1 || v.parcela2)) {
-            let dinheiroLancado = 0;
-            if (v.parcela1?.forma === "Dinheiro") dinheiroLancado += parseFloat(v.parcela1.valor) || 0;
-            if (v.parcela2?.forma === "Dinheiro") dinheiroLancado += parseFloat(v.parcela2.valor) || 0;
-            const trocoDinheiro = parseFloat(v.troco) || 0;
-            vendasDinheiro += Math.max(0, dinheiroLancado - trocoDinheiro);
-          }
-        }
+        if (vendaPertenceAoTurno(v, turno)) vendasDinheiro += dinheiroLiquidoVenda(v);
       });
       return Math.max(0, trocoInicial + suprimentos + vendasDinheiro - sangrias);
     },
@@ -52633,8 +52649,8 @@ Venda bloqueada no PDV!`);
         hoje.setHours(0, 0, 0, 0);
         produtos = produtos.filter((p) => {
           if (this.filtroValidade === "promocao") {
-            const precoClube2 = parseFloat(p.precoClube) || 0;
-            return p.emPromocao === true || p.precoPromocional && p.precoPromocional < p.precoVenda || p.precoOriginal && p.precoVenda < p.precoOriginal || precoClube2 > 0;
+            const precoClube = parseFloat(p.precoClube) || 0;
+            return p.emPromocao === true || p.precoPromocional && p.precoPromocional < p.precoVenda || p.precoOriginal && p.precoVenda < p.precoOriginal || precoClube > 0;
           }
           if (!p.dataValidade) return false;
           const dataVal = /* @__PURE__ */ new Date(p.dataValidade + "T00:00:00");
@@ -52756,11 +52772,11 @@ Venda bloqueada no PDV!`);
         `;
         }
         const custoFormatado = podeVerCustos ? `R$ ${(p.precoCusto || 0).toFixed(2).replace(".", ",")}` : "***";
-        const precoClube2 = clubeAtivo && parseFloat(p.precoClube) > 0 ? parseFloat(p.precoClube) : 0;
-        const precosEspeciaisHtml = p.emPromocao || precoClube2 > 0 ? `
+        const precoClube = clubeAtivo && parseFloat(p.precoClube) > 0 ? parseFloat(p.precoClube) : 0;
+        const precosEspeciaisHtml = p.emPromocao || precoClube > 0 ? `
         <div class="precos-especiais-cell">
           ${p.emPromocao ? `<span class="preco-especial promo"><small>PROMO</small>R$ ${(p.precoPromocional || p.precoVenda || 0).toFixed(2).replace(".", ",")}</span>` : ""}
-          ${precoClube2 > 0 ? `<span class="preco-especial clube"><small>CLUBE</small>R$ ${precoClube2.toFixed(2).replace(".", ",")}</span>` : ""}
+          ${precoClube > 0 ? `<span class="preco-especial clube"><small>CLUBE</small>R$ ${precoClube.toFixed(2).replace(".", ",")}</span>` : ""}
         </div>
       ` : '<span class="preco-especial-vazio">-</span>';
         return `
@@ -52959,7 +52975,7 @@ Venda bloqueada no PDV!`);
       const nome = (document.getElementById("prod-nome").value.trim() || "").toUpperCase();
       const precoCusto = this.parseMoedaBR(document.getElementById("prod-preco-custo").value);
       const precoVenda = this.parseMoedaBR(document.getElementById("prod-preco-venda").value);
-      const precoClube2 = this.parseMoedaBR(document.getElementById("prod-preco-clube")?.value || "");
+      const precoClube = this.parseMoedaBR(document.getElementById("prod-preco-clube")?.value || "");
       const controlarEstoque = document.getElementById("prod-controlar-estoque")?.checked ?? true;
       const parseQtd = (raw, fallback) => {
         const n = parseFloat(String(raw || "").replace(",", "."));
@@ -53059,7 +53075,7 @@ Venda bloqueada no PDV!`);
             categoria,
             precoCusto,
             precoVenda,
-            precoClube: precoClube2,
+            precoClube,
             controlarEstoque,
             estoque,
             estoqueMinimo,
@@ -53081,7 +53097,7 @@ Venda bloqueada no PDV!`);
             nome,
             codigoBarras,
             precoVenda,
-            precoClube: precoClube2,
+            precoClube,
             estoque
           });
           const deltaEstoque = estoque - estoqueAntes;
@@ -53116,7 +53132,7 @@ Venda bloqueada no PDV!`);
           categoria,
           precoCusto,
           precoVenda,
-          precoClube: precoClube2,
+          precoClube,
           controlarEstoque,
           estoque,
           estoqueMinimo,
@@ -53147,7 +53163,7 @@ Venda bloqueada no PDV!`);
           nome: novoProduto.nome,
           codigoBarras: novoProduto.codigoBarras,
           precoVenda: novoProduto.precoVenda,
-          precoClube: precoClube2,
+          precoClube,
           estoque: novoProduto.estoque
         });
       }
@@ -53397,7 +53413,6 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
           p.categoria || "Sem Categoria",
           precoCusto,
           precoVenda,
-          precoClube,
           estoqueDisplay,
           margem,
           valorEstoque,
@@ -53804,7 +53819,6 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
             nome,
             precoCusto,
             precoVenda,
-            precoClube2,
             estoque,
             estoqueMinimo,
             unidadeFracionada,
@@ -53943,15 +53957,26 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
           if (p.categoria && !novasCategoriasSet.has(p.categoria)) {
             novasCategoriasSet.add(p.categoria);
           }
+          const { isNovo, originalId, ...dadosProduto } = p;
+          const estoqueNovo = parseFloat(dadosProduto.estoque) || 0;
           if (mapaProdutos.has(p.id)) {
             const anterior = mapaProdutos.get(p.id);
+            const estoqueAntes = parseFloat(anterior.estoque) || 0;
+            if (estoqueNovo !== estoqueAntes) {
+              StorageService.registrarMovimentoEstoque({
+                produtoId: p.id,
+                delta: estoqueNovo - estoqueAntes,
+                origem: "definir",
+                refId: "planilha",
+                saldoPara: estoqueNovo
+              });
+            }
             mapaProdutos.set(p.id, {
               ...anterior,
-              ...p,
-              estoque: p.estoque,
+              ...dadosProduto,
+              estoque: estoqueNovo,
               precoCusto: p.precoCusto,
               precoVenda: p.precoVenda,
-              precoClube,
               estoqueMinimo: p.estoqueMinimo,
               categoria: p.categoria,
               unidadeFracionada: p.unidadeFracionada !== null ? p.unidadeFracionada : anterior.unidadeFracionada || null,
@@ -53961,7 +53986,16 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
             });
             atualizadosQtd++;
           } else {
-            mapaProdutos.set(p.id, p);
+            mapaProdutos.set(p.id, { ...dadosProduto, estoque: estoqueNovo });
+            if (estoqueNovo > 0) {
+              StorageService.registrarMovimentoEstoque({
+                produtoId: p.id,
+                delta: estoqueNovo,
+                origem: "definir",
+                refId: "planilha",
+                saldoPara: estoqueNovo
+              });
+            }
             novosQtd++;
           }
         });
@@ -55082,13 +55116,7 @@ ${base}`;
         saldoEmGaveta: 0
       };
       const vendas = StorageService.getVendas();
-      const dataInicio = new Date(turno.dataAbertura);
-      const dataFim = turno.dataFechamento ? new Date(turno.dataFechamento) : /* @__PURE__ */ new Date();
-      const vendasTurno = vendas.filter((v) => {
-        if ((turno.vendasIds || []).includes(v.id)) return true;
-        const d = new Date(v.data);
-        return d >= dataInicio && d <= dataFim;
-      });
+      const vendasTurno = vendas.filter((v) => vendaPertenceAoTurno(v, turno));
       let totalDinheiro = 0;
       let totalPix = 0;
       let totalDebito = 0;
@@ -55099,28 +55127,25 @@ ${base}`;
         const tot = v.total || 0;
         totalVendas += tot;
         if (v.pagamentoDividido && Array.isArray(v.pagamentos)) {
-          let dinheiroVenda = 0;
           v.pagamentos.forEach((p) => {
             const val = parseFloat(p.valor) || 0;
-            if (p.forma === "Dinheiro") dinheiroVenda += val;
-            else if (p.forma === "PIX") totalPix += val;
+            if (p.forma === "PIX") totalPix += val;
             else if (p.forma === "D\xE9bito") totalDebito += val;
             else if (p.forma === "Cr\xE9dito") totalCredito += val;
             else if (p.forma === "Fiado") totalFiado += val;
           });
-          const trocoVenda = parseFloat(v.troco) || 0;
-          totalDinheiro += Math.max(0, dinheiroVenda - trocoVenda);
+          totalDinheiro += dinheiroLiquidoVenda(v);
         } else if (v.pagamentoDividido && (v.parcela1 || v.parcela2)) {
           const addParcela = (forma, valor) => {
             const val = parseFloat(valor) || 0;
-            if (forma === "Dinheiro") totalDinheiro += val;
-            else if (forma === "PIX") totalPix += val;
+            if (forma === "PIX") totalPix += val;
             else if (forma === "D\xE9bito") totalDebito += val;
             else if (forma === "Cr\xE9dito") totalCredito += val;
             else if (forma === "Fiado") totalFiado += val;
           };
           if (v.parcela1) addParcela(v.parcela1.forma, v.parcela1.valor);
           if (v.parcela2) addParcela(v.parcela2.forma, v.parcela2.valor);
+          totalDinheiro += dinheiroLiquidoVenda(v);
         } else {
           if (v.formaPagamento === "Dinheiro") totalDinheiro += tot;
           else if (v.formaPagamento === "PIX") totalPix += tot;
@@ -55612,13 +55637,7 @@ ${base}`;
       }
       const r = this.calcularResumoFinanceiro(turno);
       const vendas = StorageService.getVendas();
-      const dataInicio = new Date(turno.dataAbertura);
-      const dataFim = turno.dataFechamento ? new Date(turno.dataFechamento) : /* @__PURE__ */ new Date();
-      const vendasTurno = vendas.filter((v) => {
-        if ((turno.vendasIds || []).includes(v.id)) return true;
-        const d = new Date(v.data);
-        return d >= dataInicio && d <= dataFim;
-      });
+      const vendasTurno = vendas.filter((v) => vendaPertenceAoTurno(v, turno));
       const dataAb = new Date(turno.dataAbertura).toLocaleString("pt-BR");
       const dataFc = turno.dataFechamento ? new Date(turno.dataFechamento).toLocaleString("pt-BR") : "Em Aberto";
       const trocoInicial = parseFloat(turno.trocoInicial || turno.valorAbertura) || 0;
@@ -56147,13 +56166,7 @@ ${base}`;
         return;
       }
       const vendas = StorageService.getVendas();
-      const dataInicio = new Date(turno.dataAbertura);
-      const dataFim = turno.dataFechamento ? new Date(turno.dataFechamento) : /* @__PURE__ */ new Date();
-      const vendasTurno = vendas.filter((v) => {
-        if ((turno.vendasIds || []).includes(v.id)) return true;
-        const d = new Date(v.data);
-        return d >= dataInicio && d <= dataFim;
-      });
+      const vendasTurno = vendas.filter((v) => vendaPertenceAoTurno(v, turno));
       if (badgeQtd) {
         badgeQtd.textContent = `${vendasTurno.length} ${vendasTurno.length === 1 ? "venda" : "vendas"}`;
       }
@@ -57668,7 +57681,7 @@ ${base}`;
         const descEl = document.getElementById("ativacao-modal-desc");
         const btnConfirmar = document.getElementById("ativacao-btn-confirmar");
         if (tituloEl) tituloEl.textContent = "Ativa\xE7\xE3o de Licen\xE7a FlowPDV";
-        if (descEl) descEl.innerHTML = "Para come\xE7ar a usar seu sistema de frente de caixa e estoque, digite a <strong>Chave de Licen\xE7a</strong> ou o <strong>CNPJ</strong> fornecido pelo suporte para ativar este computador:";
+        if (descEl) descEl.innerHTML = "Para come\xE7ar a usar seu sistema de frente de caixa e estoque, digite a <strong>Chave de Licen\xE7a</strong> fornecida pelo suporte para ativar este computador:";
         if (btnConfirmar) btnConfirmar.innerHTML = "\u{1F680} Ativar e Entrar no Sistema";
         if (modalAtivacao) modalAtivacao.classList.add("active");
         return;
@@ -57790,7 +57803,7 @@ ${base}`;
       const chave = (chaveParam || (input ? input.value : "")).trim().toUpperCase();
       if (!chave) {
         if (erroEl) {
-          erroEl.textContent = "\u26A0\uFE0F Digite a Chave de Licen\xE7a ou CNPJ para ativar!";
+          erroEl.textContent = "\u26A0\uFE0F Digite a Chave de Licen\xE7a para ativar!";
           erroEl.style.display = "block";
         }
         return;
@@ -58025,7 +58038,7 @@ ${base}`;
           btnAtivar.innerHTML = "\u{1F680} Ativar e Entrar no Sistema";
         }
         if (erroEl) {
-          erroEl.textContent = "\u274C Chave de licen\xE7a ou CNPJ n\xE3o encontrado no sistema ou na nuvem.";
+          erroEl.textContent = "\u274C Chave de licen\xE7a n\xE3o encontrada no sistema ou na nuvem.";
           erroEl.style.display = "block";
         }
         if (window.App && typeof window.App.showToast === "function") {
@@ -58143,7 +58156,7 @@ ${base}`;
       const btnConfirmar = document.getElementById("ativacao-btn-confirmar");
       const lockTerminais = document.getElementById("lock-screen-terminais-overlay");
       if (tituloEl) tituloEl.textContent = "Alterar Licen\xE7a do Sistema";
-      if (descEl) descEl.innerHTML = "Digite a nova <strong>Chave de Licen\xE7a</strong> ou <strong>CNPJ</strong> para vincular a este computador:";
+      if (descEl) descEl.innerHTML = "Digite a nova <strong>Chave de Licen\xE7a</strong> para vincular a este computador:";
       if (btnConfirmar) btnConfirmar.innerHTML = "\u{1F4BE} Salvar e Ativar Licen\xE7a";
       if (erroEl) erroEl.style.display = "none";
       if (input) {

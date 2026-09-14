@@ -6,6 +6,7 @@ import { StorageService } from './storage.js';
 import { AuthModule } from './auth.js';
 import { ThermalPrintModule } from './thermal-print.js';
 import { AuditModule } from './audit.js';
+import { vendaPertenceAoTurno, dinheiroLiquidoVenda } from './merge-core.js';
 import ExcelJS from 'exceljs';
 
 export const CaixaModule = {
@@ -117,14 +118,7 @@ export const CaixaModule = {
     };
 
     const vendas = StorageService.getVendas();
-    const dataInicio = new Date(turno.dataAbertura);
-    const dataFim = turno.dataFechamento ? new Date(turno.dataFechamento) : new Date();
-
-    const vendasTurno = vendas.filter(v => {
-      if ((turno.vendasIds || []).includes(v.id)) return true;
-      const d = new Date(v.data);
-      return d >= dataInicio && d <= dataFim;
-    });
+    const vendasTurno = vendas.filter(v => vendaPertenceAoTurno(v, turno));
 
     let totalDinheiro = 0;
     let totalPix = 0;
@@ -138,28 +132,25 @@ export const CaixaModule = {
       totalVendas += tot;
 
       if (v.pagamentoDividido && Array.isArray(v.pagamentos)) {
-        let dinheiroVenda = 0;
         v.pagamentos.forEach(p => {
           const val = parseFloat(p.valor) || 0;
-          if (p.forma === 'Dinheiro') dinheiroVenda += val;
-          else if (p.forma === 'PIX') totalPix += val;
+          if (p.forma === 'PIX') totalPix += val;
           else if (p.forma === 'Débito') totalDebito += val;
           else if (p.forma === 'Crédito') totalCredito += val;
           else if (p.forma === 'Fiado') totalFiado += val;
         });
-        const trocoVenda = parseFloat(v.troco) || 0;
-        totalDinheiro += Math.max(0, dinheiroVenda - trocoVenda);
+        totalDinheiro += dinheiroLiquidoVenda(v);
       } else if (v.pagamentoDividido && (v.parcela1 || v.parcela2)) {
         const addParcela = (forma, valor) => {
           const val = parseFloat(valor) || 0;
-          if (forma === 'Dinheiro') totalDinheiro += val;
-          else if (forma === 'PIX') totalPix += val;
+          if (forma === 'PIX') totalPix += val;
           else if (forma === 'Débito') totalDebito += val;
           else if (forma === 'Crédito') totalCredito += val;
           else if (forma === 'Fiado') totalFiado += val;
         };
         if (v.parcela1) addParcela(v.parcela1.forma, v.parcela1.valor);
         if (v.parcela2) addParcela(v.parcela2.forma, v.parcela2.valor);
+        totalDinheiro += dinheiroLiquidoVenda(v);
       } else {
         if (v.formaPagamento === 'Dinheiro') totalDinheiro += tot;
         else if (v.formaPagamento === 'PIX') totalPix += tot;
@@ -736,14 +727,7 @@ export const CaixaModule = {
 
     const r = this.calcularResumoFinanceiro(turno);
     const vendas = StorageService.getVendas();
-    const dataInicio = new Date(turno.dataAbertura);
-    const dataFim = turno.dataFechamento ? new Date(turno.dataFechamento) : new Date();
-
-    const vendasTurno = vendas.filter(v => {
-      if ((turno.vendasIds || []).includes(v.id)) return true;
-      const d = new Date(v.data);
-      return d >= dataInicio && d <= dataFim;
-    });
+    const vendasTurno = vendas.filter(v => vendaPertenceAoTurno(v, turno));
 
     const dataAb = new Date(turno.dataAbertura).toLocaleString('pt-BR');
     const dataFc = turno.dataFechamento ? new Date(turno.dataFechamento).toLocaleString('pt-BR') : 'Em Aberto';
@@ -1350,14 +1334,7 @@ export const CaixaModule = {
     }
 
     const vendas = StorageService.getVendas();
-    const dataInicio = new Date(turno.dataAbertura);
-    const dataFim = turno.dataFechamento ? new Date(turno.dataFechamento) : new Date();
-
-    const vendasTurno = vendas.filter(v => {
-      if ((turno.vendasIds || []).includes(v.id)) return true;
-      const d = new Date(v.data);
-      return d >= dataInicio && d <= dataFim;
-    });
+    const vendasTurno = vendas.filter(v => vendaPertenceAoTurno(v, turno));
 
     if (badgeQtd) {
       badgeQtd.textContent = `${vendasTurno.length} ${vendasTurno.length === 1 ? 'venda' : 'vendas'}`;

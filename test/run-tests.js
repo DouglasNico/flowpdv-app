@@ -69,6 +69,8 @@ const {
   dividirEmLotes,
   carimbarAlterados,
   logCaiuNaExclusao,
+  vendaPertenceAoTurno,
+  dinheiroLiquidoVenda,
   StorageService
 } = core;
 
@@ -262,6 +264,47 @@ teste('definir saldo 15 nos dois caixas nao vira 18', () => {
     movimentosLocais: [vendaA, vendaB]
   });
   assert.strictEqual(a.produtos[0].estoque, 15);
+});
+
+teste('definir o mesmo saldo de novo ainda gera movimento absoluto', () => {
+  localStorage.clear();
+  const mov = StorageService.registrarMovimentoEstoque({ produtoId: 'P1', delta: 0, origem: 'definir', saldoPara: 15 });
+  assert.ok(mov, 'movimento com delta 0 e saldoPara precisa existir');
+  assert.strictEqual(mov.saldoPara, 15);
+  assert.strictEqual(StorageService.registrarMovimentoEstoque({ produtoId: 'P1', delta: 0, origem: 'venda' }), null);
+});
+
+// ---------------------------------------------------------------------------
+// Fechamento de caixa
+// ---------------------------------------------------------------------------
+
+teste('fechamento nao soma venda do outro caixa aberto no mesmo horario', () => {
+  const turnoA = { id: 'T-A', dataAbertura: emMinutos(-10), vendasIds: [] };
+  const turnoB = { id: 'T-B', dataAbertura: emMinutos(-10), vendasIds: [] };
+  const vendaDoB = { id: 'V1', turnoId: 'T-B', data: emMinutos(-5), total: 80, formaPagamento: 'Dinheiro' };
+  const vendaAntiga = { id: 'V0', data: emMinutos(-7), total: 10, formaPagamento: 'PIX' };
+
+  assert.strictEqual(vendaPertenceAoTurno(vendaDoB, turnoA), false);
+  assert.strictEqual(vendaPertenceAoTurno(vendaDoB, turnoB), true);
+  assert.strictEqual(vendaPertenceAoTurno(vendaAntiga, turnoA), true, 'venda sem turnoId cai na faixa de horario');
+  assert.strictEqual(vendaPertenceAoTurno({ id: 'V9', turnoId: 'T-X', data: emMinutos(1) }, { ...turnoA, vendasIds: ['V9'] }), true);
+});
+
+teste('troco nao e descontado duas vezes no dinheiro do fechamento', () => {
+  const pixMaisDinheiro = {
+    total: 100, troco: 10, pagamentoDividido: true,
+    pagamentos: [
+      { forma: 'PIX', valor: 60 },
+      { forma: 'Dinheiro', valor: 40, valorEntregue: 50, troco: 10 }
+    ]
+  };
+  assert.strictEqual(dinheiroLiquidoVenda(pixMaisDinheiro), 40);
+
+  const legadoBruto = { total: 100, troco: 10, pagamentoDividido: true, pagamentos: [{ forma: 'Dinheiro', valor: 110 }] };
+  assert.strictEqual(dinheiroLiquidoVenda(legadoBruto), 100);
+
+  assert.strictEqual(dinheiroLiquidoVenda({ total: 25, formaPagamento: 'Dinheiro', troco: 5 }), 25);
+  assert.strictEqual(dinheiroLiquidoVenda({ total: 25, formaPagamento: 'PIX' }), 0);
 });
 
 teste('consulta de movimento recua a marca d agua para nao perder venda do outro caixa', () => {
