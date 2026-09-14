@@ -3817,25 +3817,10 @@ body.tela-login-ativa #license-warning-banner {
   gap: 18px;
 }
 
-.login-screen-cart {
-  width: min(168px, 46%);
+.login-screen-logo {
+  width: min(220px, 68%);
   height: auto;
   display: block;
-}
-
-.login-screen-name {
-  font-size: clamp(36px, 4.6vw, 52px);
-  font-weight: 800;
-  letter-spacing: -0.8px;
-  line-height: 1;
-}
-
-.login-screen-name .login-flow {
-  color: #ffffff;
-}
-
-.login-screen-name .login-pdv {
-  color: #fb923c;
 }
 
 .login-screen-kicker {
@@ -4054,11 +4039,8 @@ body.tela-login-ativa #license-warning-banner {
     padding: 28px 20px 20px;
     min-height: auto;
   }
-  .login-screen-name {
-    font-size: 32px;
-  }
-  .login-screen-cart {
-    width: 88px;
+  .login-screen-logo {
+    width: min(160px, 42%);
   }
   .login-screen-loja-logo {
     max-height: 140px;
@@ -4070,11 +4052,8 @@ body.tela-login-ativa #license-warning-banner {
 }
 
 @media (max-height: 760px) {
-  .login-screen-name {
-    font-size: 34px;
-  }
-  .login-screen-cart {
-    width: 96px;
+  .login-screen-logo {
+    width: min(170px, 46%);
   }
   .login-screen-loja-logo {
     max-height: 148px;

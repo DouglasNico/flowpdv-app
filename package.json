@@ -1,6 +1,6 @@
 {
   "name": "flowpdv",
-  "version": "3.2.24",
+  "version": "3.2.25",
   "description": "FlowPDV - Sistema de Gestão Comercial e Ponto de Venda Ágil",
   "main": "main.js",
   "scripts": {
@@ -58,7 +58,8 @@
     },
     "compression": "maximum",
     "asarUnpack": [
-      "node_modules/koffi/**"
+      "node_modules/koffi/**",
+      "node_modules/@koromix/koffi-win32-x64/**"
     ],
     "files": [
       "main.js",
