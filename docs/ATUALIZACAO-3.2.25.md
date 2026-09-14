@@ -82,8 +82,9 @@ Já estavam no ar antes desta semana de NFC-e/TEF:
 | 3.2.23 | Auditoria (planilha, turno, decimais, XML, tombstones, comanda) |
 | 3.2.24 | NFC-e Focus + TEF Stone/SiTef |
 | **3.2.25** | Logo oficial em app/site/mobile + `asarUnpack` do koffi |
+| **3.2.26** | Logo da loja preenche o PDV clássico; QTD em UN/KG; DEL remove o item inteiro; título Central da Gerência |
 
-Instalador: https://github.com/DouglasNico/flowpdv/releases/tag/v3.2.25
+Instalador: https://github.com/DouglasNico/flowpdv/releases/tag/v3.2.26
 
 NFC-e e TEF só fecham o ciclo com token Focus / maquininha / CliSiTef no cliente. O caminho no sistema é o de produção; o cadastro é da loja.
 

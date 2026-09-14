@@ -724,8 +724,7 @@ export const StorageService = {
       cfopPadrao: '5102',
       ncmPadrao: '22030000',
       csosnPadrao: '102',
-      naturezaOperacao: 'VENDA AO CONSUMIDOR',
-      autoEmitirAoFinalizar: false
+      naturezaOperacao: 'VENDA AO CONSUMIDOR'
     };
   },
 

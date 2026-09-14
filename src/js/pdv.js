@@ -40,12 +40,24 @@ export const PdvModule = {
     return !!(p && (p.permiteFracionado === true || (p.unidade && String(p.unidade).toLowerCase() === 'kg')));
   },
 
+  rotuloUnidade(item) {
+    return this.itemEhPeso(item) ? 'KG' : 'UN';
+  },
+
+  formatarNumeroQtd(qtd) {
+    const n = parseFloat(qtd) || 0;
+    return Number.isInteger(n)
+      ? String(n)
+      : n.toFixed(3).replace(/\.?0+$/, '').replace('.', ',');
+  },
+
   formatarQtdItem(item) {
-    const qtd = parseFloat(item && item.quantidade) || 0;
-    const num = Number.isInteger(qtd)
-      ? String(qtd)
-      : qtd.toFixed(3).replace(/\.?0+$/, '').replace('.', ',');
-    return this.itemEhPeso(item) ? num + ' kg' : num;
+    return this.formatarNumeroQtd(item && item.quantidade) + ' ' + this.rotuloUnidade(item);
+  },
+
+  valorQtdInput(qtd) {
+    const n = parseFloat(qtd) || 0;
+    return Number.isInteger(n) ? String(n) : String(parseFloat(n.toFixed(3)));
   },
 
   formatarPrecoUnitarioItem(item) {
@@ -1194,13 +1206,12 @@ export const PdvModule = {
       const item = this.carrinho[num - 1];
       if (inputQtd) {
         inputQtd.max = item.quantidade;
-        if (parseFloat(inputQtd.value) > item.quantidade || !inputQtd.value || parseFloat(inputQtd.value) <= 0) {
-          inputQtd.value = 1;
-        }
+        inputQtd.step = this.itemEhPeso(item) ? '0.001' : '1';
+        inputQtd.value = this.valorQtdInput(item.quantidade);
       }
       if (detalhe) {
         detalhe.style.display = 'block';
-        detalhe.innerHTML = `📌 Item #${num}: <strong>${item.nome}</strong> (Qtd total no carrinho: <strong>${item.quantidade} un</strong> - Total: <strong>R$ ${(item.precoUnitario * item.quantidade).toFixed(2).replace('.', ',')}</strong>)`;
+        detalhe.innerHTML = `📌 Item #${num}: <strong>${item.nome}</strong> (Qtd total no carrinho: <strong>${this.formatarQtdItem(item)}</strong> - Total: <strong>R$ ${(item.precoUnitario * item.quantidade).toFixed(2).replace('.', ',')}</strong>)`;
       }
     } else {
       if (detalhe) detalhe.style.display = 'none';
@@ -1244,18 +1255,18 @@ export const PdvModule = {
             <span style="background: #0f172a; color: #38bdf8; font-family: 'JetBrains Mono'; font-weight: 900; font-size: 12px; padding: 3px 8px; border-radius: 6px; flex-shrink: 0;">#${idx + 1}</span>
             <div style="min-width: 0;">
               <strong style="font-size: 13.5px; color: var(--text-main); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${item.nome}</strong>
-              <span style="font-size: 11.5px; color: var(--text-muted);">Qtd no carrinho: <strong style="color: #0f172a;">${item.quantidade} un</strong> × R$ ${item.precoUnitario.toFixed(2).replace('.', ',')}</span>
+              <span style="font-size: 11.5px; color: var(--text-muted);">Qtd no carrinho: <strong style="color: #0f172a;">${this.formatarQtdItem(item)}</strong> × R$ ${item.precoUnitario.toFixed(2).replace('.', ',')}</span>
             </div>
           </div>
           <div style="display: flex; align-items: center; gap: 12px; flex-shrink: 0;">
             <div style="text-align: right; min-width: 85px;">
               <strong style="font-size: 14.5px; font-family: 'JetBrains Mono'; color: #059669; display: block;">R$ ${(item.precoUnitario * item.quantidade).toFixed(2).replace('.', ',')}</strong>
-              <span style="font-size: 11px; color: var(--text-muted);">${item.quantidade > 1 ? item.quantidade + ' un' : '1 un'}</span>
+              <span style="font-size: 11px; color: var(--text-muted);">${this.formatarQtdItem(item)}</span>
             </div>
             <div style="display: flex; align-items: center; gap: 6px;">
-              ${item.quantidade > 1 ? `
+              ${!this.itemEhPeso(item) && item.quantidade > 1 ? `
                 <button type="button" style="background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; height: 32px; padding: 0 10px; font-size: 11.5px; font-weight: 800; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; transition: all 0.15s ease;" onclick="event.stopPropagation(); PdvModule.excluirItemPorIndice(${idx}, 1);" title="Remover apenas 1 unidade deste item">
-                  -1 Un.
+                  -1 UN
                 </button>
               ` : ''}
               <button type="button" style="background: #ef4444; color: #ffffff; border: none; height: 32px; padding: 0 10px; font-size: 11.5px; font-weight: 800; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 2px 6px rgba(239, 68, 68, 0.25); transition: all 0.15s ease;" onclick="event.stopPropagation(); PdvModule.excluirItemPorIndice(${idx});" title="Remover item #${idx + 1} do carrinho">
@@ -1270,7 +1281,6 @@ export const PdvModule = {
     if (modal) modal.classList.add('active');
     if (input) {
       input.value = this.carrinho.length;
-      if (inputQtd) inputQtd.value = 1;
       this.atualizarQtdMaximaCancelamento();
       setTimeout(() => {
         input.focus();
@@ -1283,7 +1293,6 @@ export const PdvModule = {
     const input = document.getElementById('input-cancelar-item-num');
     const inputQtd = document.getElementById('input-cancelar-item-qtd');
     if (input) input.value = idx + 1;
-    if (inputQtd) inputQtd.value = 1;
     this.atualizarQtdMaximaCancelamento();
     if (inputQtd) {
       inputQtd.focus();
@@ -1301,7 +1310,7 @@ export const PdvModule = {
     const inputNum = document.getElementById('input-cancelar-item-num');
     const inputQtd = document.getElementById('input-cancelar-item-qtd');
     const num = parseInt(inputNum ? inputNum.value : '', 10);
-    const qtd = parseFloat(inputQtd ? inputQtd.value : '1') || 1;
+    const qtd = parseFloat(String(inputQtd ? inputQtd.value : '1').replace(',', '.')) || 0;
 
     if (isNaN(num) || num < 1 || num > this.carrinho.length) {
       window.App.showToast(`Digite um número válido de item (entre 1 e ${this.carrinho.length})!`, 'warning');
@@ -1323,21 +1332,21 @@ export const PdvModule = {
     const item = this.carrinho[idx];
     if (!item) return;
 
-    const qtdRemover = qtd !== null ? Math.min(parseFloat(qtd) || 1, item.quantidade) : item.quantidade;
+    const qtdRemover = qtd !== null ? Math.min(parseFloat(qtd) || 0, item.quantidade) : item.quantidade;
+    if (!qtdRemover || qtdRemover <= 0) return;
 
     const acaoRemover = () => {
       const nomeItem = item.nome;
       const qtdAnterior = item.quantidade;
       const valorRemovido = item.precoUnitario * qtdRemover;
 
-      if (qtdRemover >= item.quantidade) {
-        // Remove o item inteiro
+      const un = this.rotuloUnidade(item);
+      if (qtdRemover + 1e-6 >= item.quantidade) {
         this.carrinho.splice(idx, 1);
         window.App.showToast(`Item #${idx + 1} (${nomeItem}) removido do carrinho!`, 'info');
       } else {
-        // Reduz a quantidade mantendo o restante
         item.quantidade = parseFloat((item.quantidade - qtdRemover).toFixed(3));
-        window.App.showToast(`Removido ${qtdRemover} un de "${nomeItem}" (Restam ${item.quantidade} un)!`, 'info');
+        window.App.showToast(`Removido ${this.formatarNumeroQtd(qtdRemover)} ${un} de "${nomeItem}" (Restam ${this.formatarNumeroQtd(item.quantidade)} ${un})!`, 'info');
       }
 
       this.renderCarrinho();
@@ -1366,7 +1375,7 @@ export const PdvModule = {
     }
 
     if (window.AuthModule && typeof window.AuthModule.executarComPermissaoOuPin === 'function') {
-      window.AuthModule.executarComPermissaoOuPin('cancelarItem', acaoRemover, `Autorização: Cancelar ${qtdRemover} un de "${item.nome}"`);
+      window.AuthModule.executarComPermissaoOuPin('cancelarItem', acaoRemover, `Autorização: Cancelar ${this.formatarNumeroQtd(qtdRemover)} ${this.rotuloUnidade(item)} de "${item.nome}"`);
     } else {
       acaoRemover();
     }

@@ -1,5 +1,5 @@
 /**
- * gerencia.js - Central do Dono / Gerência (Gestão Financeira, Indicadores Curva ABC, Auditoria e Categorias)
+ * gerencia.js - Central da Gerência (Gestão Financeira, Indicadores Curva ABC, Auditoria e Categorias)
  */
 
 import { StorageService } from './storage.js';
