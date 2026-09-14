@@ -781,8 +781,12 @@ export const AuthModule = {
       textoCancelar: 'Cancelar [ESC]',
       perigo: true,
       onConfirm: () => {
-        usuarios = usuarios.filter(item => item.id !== id);
-        StorageService.saveUsuarios(usuarios);
+        StorageService.excluirUsuario(id);
+        // Se o excluído estiver logado neste caixa, a sessão dele acaba agora.
+        if (this.usuarioAtual && String(this.usuarioAtual.id) === String(id)) {
+          this.usuarioAtual = null;
+          sessionStorage.removeItem('flowpdv_usuario_logado');
+        }
         if (window.CloudSyncModule && typeof window.CloudSyncModule.enviarAlteracaoNuvem === 'function') {
           window.CloudSyncModule.enviarAlteracaoNuvem('operadores');
         }

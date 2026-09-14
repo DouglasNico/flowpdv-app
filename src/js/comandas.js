@@ -1209,18 +1209,50 @@ export const ComandasModule = {
     }, 150);
   },
 
-  liberarComandaAposVenda(comandaId) {
+  /**
+   * Baixa só o que foi cobrado. Item lançado na mesa enquanto o caixa
+   * recebia continua na comanda; a mesa só libera quando nada sobrar.
+   */
+  liberarComandaAposVenda(comandaId, itensCobrados = null) {
     if (!comandaId) return;
     const comandas = this.getComandas();
     const c = comandas.find(item => item.id === comandaId);
-    if (c) {
-      c.status = 'livre';
+    if (!c) return;
+
+    const cobrados = Array.isArray(itensCobrados) ? itensCobrados : null;
+    if (cobrados) {
+      const pagoPorProduto = new Map();
+      cobrados.forEach(it => {
+        if (!it || it.comandaOrigemId !== comandaId || it.id === 'TAXA-SERVICO-10') return;
+        pagoPorProduto.set(it.id, (pagoPorProduto.get(it.id) || 0) + (parseFloat(it.quantidade) || 0));
+      });
+      c.itens = (c.itens || []).map(it => {
+        const pago = pagoPorProduto.get(it.id) || 0;
+        if (pago <= 0) return it;
+        const restante = Math.round(((parseFloat(it.quantidade) || 0) - pago) * 1000) / 1000;
+        if (restante <= 0) return null;
+        return { ...it, quantidade: restante, total: restante * (parseFloat(it.precoUnitario) || 0) };
+      }).filter(Boolean);
+    } else {
       c.itens = [];
-      c.total = 0;
-      c.cliente = '';
-      c.abertaEm = null;
-      c.taxaServico = false;
-      this.salvarComandas(comandas);
     }
+
+    if (c.itens.length > 0) {
+      c.total = c.itens.reduce((acc, i) => acc + (parseFloat(i.total) || 0), 0);
+      c.status = 'ocupada';
+      this.salvarComandas(comandas);
+      this.renderGridComandas();
+      if (window.App) window.App.showToast(`ℹ️ ${c.nome}: ficou consumo lançado durante a cobrança (R$ ${c.total.toFixed(2).replace('.', ',')}).`, 'warning', 6000);
+      return;
+    }
+
+    c.status = 'livre';
+    c.itens = [];
+    c.total = 0;
+    c.cliente = '';
+    c.abertaEm = null;
+    c.taxaServico = false;
+    this.salvarComandas(comandas);
+    this.renderGridComandas();
   }
 };

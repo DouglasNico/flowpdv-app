@@ -1806,7 +1806,10 @@ export const EstoqueModule = {
     if (!p) return;
 
     const tipo = document.getElementById('ajuste-tipo-mov')?.value || 'entrada';
-    const qtd = parseInt(document.getElementById('ajuste-qtd-input')?.value, 10);
+    // Produto por kg aceita 0,750; produto por unidade continua inteiro.
+    const fracionado = p.permiteFracionado === true || String(p.unidade || '').toLowerCase() === 'kg';
+    const bruto = parseFloat(String(document.getElementById('ajuste-qtd-input')?.value || '').replace(',', '.'));
+    const qtd = fracionado ? Math.round(bruto * 1000) / 1000 : Math.trunc(bruto);
     const motivo = document.getElementById('ajuste-motivo-input')?.value.trim() || 'Ajuste Manual';
 
     if (isNaN(qtd) || qtd < 0) {
@@ -1814,14 +1817,15 @@ export const EstoqueModule = {
       return;
     }
 
+    const arred = (n) => Math.round(n * 1000) / 1000;
     const estoqueAtual = Number(p.estoque) || 0;
     let delta = 0;
     if (tipo === 'entrada') {
       delta = qtd;
-      p.estoque = estoqueAtual + qtd;
+      p.estoque = arred(estoqueAtual + qtd);
     } else if (tipo === 'perda') {
       delta = -Math.min(estoqueAtual, qtd);
-      p.estoque = Math.max(0, estoqueAtual - qtd);
+      p.estoque = arred(Math.max(0, estoqueAtual - qtd));
     } else if (tipo === 'balanco') {
       delta = qtd - estoqueAtual;
       p.estoque = qtd;
@@ -2459,10 +2463,10 @@ export const EstoqueModule = {
 
         const custoNum = this.parseValorMonetario(precoCusto);
         const vendaNum = this.parseValorMonetario(precoVenda);
-        const estNum = parseInt(estoque, 10);
-        const estValido = isNaN(estNum) ? 0 : estNum;
-        const minNum = parseInt(estoqueMinimo, 10);
-        const minValido = isNaN(minNum) ? 5 : minNum;
+        const estNum = parseFloat(String(estoque || '').replace(',', '.'));
+        const estValido = isNaN(estNum) ? 0 : Math.round(estNum * 1000) / 1000;
+        const minNum = parseFloat(String(estoqueMinimo || '').replace(',', '.'));
+        const minValido = isNaN(minNum) ? 5 : Math.round(minNum * 1000) / 1000;
 
         // Tratar Grade / Fardo Opcional (Colunas 8 a 11)
         const nomeFardo = (unidadeFracionada || '').trim();

@@ -627,6 +627,7 @@ export const CloudSyncModule = {
           cloudData.produtosExcluidos.forEach(id => excluidos.add(String(id)));
           localStorage.setItem('adega_produtos_excluidos_ids', JSON.stringify(Array.from(excluidos)));
         }
+        this.aplicarTombstonesRecebidos(cloudData);
 
         if (Array.isArray(cloudData.categoriasExcluidas) && StorageService.adicionarCategoriaExcluida) {
           cloudData.categoriasExcluidas.forEach(c => StorageService.adicionarCategoriaExcluida(c));
@@ -754,6 +755,7 @@ export const CloudSyncModule = {
           cloudData.produtosExcluidos.forEach(id => excluidos.add(String(id)));
           localStorage.setItem('adega_produtos_excluidos_ids', JSON.stringify(Array.from(excluidos)));
         }
+        this.aplicarTombstonesRecebidos(cloudData);
 
         console.log('[CloudSync] Alteração recebida de outro terminal:', cloudData.motivo || 'nuvem');
         this.aplicarDadosRecebidos(cloudData, { silencioso: false });
@@ -872,6 +874,28 @@ export const CloudSyncModule = {
     }
   },
 
+  /**
+   * Exclusão de despesa/funcionário feita no outro caixa vale aqui também.
+   * Sem isso o merge por id devolveria o registro (e o acesso) apagado.
+   */
+  aplicarTombstonesRecebidos(cloudData) {
+    if (!cloudData) return;
+    if (Array.isArray(cloudData.contasExcluidas) && cloudData.contasExcluidas.length && StorageService.adicionarContasExcluidasIds) {
+      StorageService.adicionarContasExcluidasIds(cloudData.contasExcluidas);
+      StorageService.saveContasPagar(StorageService.getContasPagar());
+    }
+    if (Array.isArray(cloudData.usuariosExcluidos) && cloudData.usuariosExcluidos.length && StorageService.adicionarUsuariosExcluidosIds) {
+      StorageService.adicionarUsuariosExcluidosIds(cloudData.usuariosExcluidos);
+      StorageService.saveUsuarios(StorageService.getUsuarios());
+      const logado = window.AuthModule && window.AuthModule.usuarioAtual;
+      if (logado && cloudData.usuariosExcluidos.map(String).includes(String(logado.id))) {
+        window.AuthModule.usuarioAtual = null;
+        sessionStorage.removeItem('flowpdv_usuario_logado');
+        if (typeof window.AuthModule.renderCardsLogin === 'function') window.AuthModule.renderCardsLogin();
+      }
+    }
+  },
+
   carregarBaseCompletaNovaEmpresa(cloudData) {
     if (!cloudData) return;
 
@@ -892,6 +916,7 @@ export const CloudSyncModule = {
     } else {
       localStorage.removeItem('adega_produtos_excluidos_ids');
     }
+    this.aplicarTombstonesRecebidos(cloudData);
 
     // Clientes & Fiados
     if (Array.isArray(cloudData.clientes)) {
@@ -1149,6 +1174,8 @@ export const CloudSyncModule = {
           cnpj: lic.cnpj || config.cnpj || '',
           produtos: produtos,
           produtosExcluidos: produtosExcluidos,
+          contasExcluidas: StorageService.getContasExcluidasIds ? StorageService.getContasExcluidasIds() : [],
+          usuariosExcluidos: StorageService.getUsuariosExcluidosIds ? StorageService.getUsuariosExcluidosIds() : [],
           usuarios: usuarios,
           categorias: categorias,
           categoriasExcluidas: StorageService.getCategoriasExcluidas ? StorageService.getCategoriasExcluidas() : [],
@@ -1220,6 +1247,8 @@ export const CloudSyncModule = {
         cnpj: lic.cnpj || config.cnpj || '',
         produtos: produtos,
         produtosExcluidos: produtosExcluidos,
+        contasExcluidas: StorageService.getContasExcluidasIds ? StorageService.getContasExcluidasIds() : [],
+        usuariosExcluidos: StorageService.getUsuariosExcluidosIds ? StorageService.getUsuariosExcluidosIds() : [],
         usuarios: usuarios,
         categorias: categorias,
         clientes: clientes,

@@ -1023,8 +1023,7 @@ export const GerenciaModule = {
       textoCancelar: 'Cancelar [ESC]',
       perigo: true,
       onConfirm: () => {
-        const novaLista = contas.filter(item => item.id !== id);
-        StorageService.saveContasPagar(novaLista);
+        StorageService.excluirContaPagar(id);
         if (window.CloudSyncModule) window.CloudSyncModule.enviarAlteracaoNuvem('contas_pagar_exclusao');
 
         this.renderContasPagar();

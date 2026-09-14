@@ -274,6 +274,42 @@ teste('definir o mesmo saldo de novo ainda gera movimento absoluto', () => {
   assert.strictEqual(StorageService.registrarMovimentoEstoque({ produtoId: 'P1', delta: 0, origem: 'venda' }), null);
 });
 
+teste('despesa e funcionario excluidos nao voltam com a copia antiga do outro caixa', () => {
+  localStorage.clear();
+  StorageService.saveContasPagar([{ id: 'C1', descricao: 'Luz', valor: 100 }, { id: 'C2', descricao: 'Agua', valor: 50 }]);
+  StorageService.excluirContaPagar('C1');
+  assert.deepStrictEqual(StorageService.getContasPagar().map(c => c.id), ['C2']);
+  // Merge com a nuvem que ainda tem a C1
+  StorageService.saveContasPagar(mesclarContasPagar([{ id: 'C1', descricao: 'Luz', valor: 100 }, { id: 'C2', valor: 50 }], StorageService.getContasPagar()));
+  assert.deepStrictEqual(StorageService.getContasPagar().map(c => c.id), ['C2']);
+  assert.deepStrictEqual(StorageService.getContasExcluidasIds(), ['C1']);
+
+  StorageService.saveUsuarios([{ id: 'U1', nome: 'Ana', cargo: 'gerente', pin: '1' }, { id: 'U2', nome: 'Bia', cargo: 'operador', pin: '2' }]);
+  StorageService.excluirUsuario('U2');
+  StorageService.saveUsuarios(mesclarItensPorId([{ id: 'U2', nome: 'Bia', cargo: 'operador', pin: '2' }], StorageService.getUsuarios()));
+  assert.deepStrictEqual(StorageService.getUsuarios().map(u => u.id), ['U1']);
+});
+
+teste('mesmo XML importado duas vezes e detectado pela chave de acesso', () => {
+  localStorage.clear();
+  const chave = '35240912345678000190550010000012341000012345';
+  assert.strictEqual(StorageService.notaJaImportada(chave), null);
+  StorageService.registrarNotaImportada(chave, '1234');
+  assert.strictEqual(StorageService.notaJaImportada(chave).numero, '1234');
+  // Outro caixa importou: só a conta a pagar chegou pela nuvem
+  localStorage.clear();
+  StorageService.saveContasPagar([{ id: 'CTA-1', chaveNFe: chave, numeroNota: '1234', criadoEm: emMinutos(-1) }]);
+  assert.ok(StorageService.notaJaImportada(chave));
+});
+
+teste('troca de licenca esvazia o cache de produtos em memoria', () => {
+  localStorage.clear();
+  StorageService.saveProdutos([{ id: 'P1', nome: 'Loja A' }]);
+  assert.strictEqual(StorageService.getProdutos().length, 1);
+  StorageService.limparDadosLocaisParaNovaEmpresa({ chaveLicenca: 'LOJA-B' });
+  assert.deepStrictEqual(StorageService.getProdutos(), []);
+});
+
 // ---------------------------------------------------------------------------
 // Fechamento de caixa
 // ---------------------------------------------------------------------------

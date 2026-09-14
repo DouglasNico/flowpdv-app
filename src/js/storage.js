@@ -528,13 +528,50 @@ export const StorageService = {
   },
 
   // Contas a Pagar (Módulo Financeiro)
+  // Tombstones genéricos: excluir aqui precisa continuar excluído depois do
+  // merge com o outro caixa, senão a cópia antiga dele ressuscita o registro.
+  _getExcluidosIds(chaveStorage) {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(chaveStorage) || '[]');
+      return Array.isArray(parsed) ? parsed.map(String) : [];
+    } catch (e) {
+      return [];
+    }
+  },
+
+  _adicionarExcluidosIds(chaveStorage, ids) {
+    const atuais = new Set(this._getExcluidosIds(chaveStorage));
+    (Array.isArray(ids) ? ids : [ids]).forEach(id => { if (id != null && id !== '') atuais.add(String(id)); });
+    localStorage.setItem(chaveStorage, JSON.stringify(Array.from(atuais).slice(-2000)));
+  },
+
+  getContasExcluidasIds() { return this._getExcluidosIds('flowpdv_contas_excluidas_ids'); },
+  adicionarContasExcluidasIds(ids) { this._adicionarExcluidosIds('flowpdv_contas_excluidas_ids', ids); },
+  getUsuariosExcluidosIds() { return this._getExcluidosIds('flowpdv_usuarios_excluidos_ids'); },
+  adicionarUsuariosExcluidosIds(ids) { this._adicionarExcluidosIds('flowpdv_usuarios_excluidos_ids', ids); },
+
+  excluirContaPagar(id) {
+    if (!id) return false;
+    this.adicionarContasExcluidasIds(id);
+    this.saveContasPagar(this.getContasPagar().filter(c => c && String(c.id) !== String(id)));
+    return true;
+  },
+
+  excluirUsuario(id) {
+    if (!id) return false;
+    this.adicionarUsuariosExcluidosIds(id);
+    this.saveUsuarios(this.getUsuarios().filter(u => u && String(u.id) !== String(id)));
+    return true;
+  },
+
   getContasPagar() {
     const saved = localStorage.getItem('flowpdv_contas_pagar');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) {
-          return parsed.map(c => {
+          const excluidas = new Set(this.getContasExcluidasIds());
+          return parsed.filter(c => c && !excluidas.has(String(c.id))).map(c => {
             if (c.categoria === 'Estoque / Fornecedores') {
               return { ...c, categoria: 'Fornecedores' };
             }
@@ -555,7 +592,9 @@ export const StorageService = {
     } catch (e) {
       anteriores = [];
     }
-    const carimbados = carimbarAlterados(Array.isArray(contas) ? contas : [], anteriores);
+    const excluidas = new Set(this.getContasExcluidasIds());
+    const vivas = (Array.isArray(contas) ? contas : []).filter(c => c && !excluidas.has(String(c.id)));
+    const carimbados = carimbarAlterados(vivas, anteriores);
     localStorage.setItem('flowpdv_contas_pagar', JSON.stringify(carimbados));
   },
 
@@ -794,7 +833,11 @@ export const StorageService = {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const excluidos = new Set(this.getUsuariosExcluidosIds());
+          const vivos = parsed.filter(u => u && !excluidos.has(String(u.id)));
+          if (vivos.length > 0) return vivos;
+        }
       } catch(e) {}
     }
 
@@ -824,7 +867,8 @@ export const StorageService = {
 
   saveUsuarios(usuarios) {
     const agora = new Date().toISOString();
-    const lista = (Array.isArray(usuarios) ? usuarios : []).map(u => {
+    const excluidos = new Set(this.getUsuariosExcluidosIds());
+    const lista = (Array.isArray(usuarios) ? usuarios : []).filter(u => u && !excluidos.has(String(u.id))).map(u => {
       if (!u || u.atualizadoEm) return u;
       return { ...u, atualizadoEm: u.criadoEm || agora };
     });
@@ -1004,13 +1048,47 @@ export const StorageService = {
     'flowpdv_inventarios',
     'flowpdv_inventarios_enviados',
     'adega_licenca_backup',
-    'flowpdv_terminal_heartbeat_ms'
+    'flowpdv_terminal_heartbeat_ms',
+    'flowpdv_notas_importadas',
+    'flowpdv_contas_excluidas_ids',
+    'flowpdv_usuarios_excluidos_ids'
   ],
+
+  // NF-e já lançadas no estoque (chave de acesso): reimportar o mesmo XML
+  // não pode dobrar a entrada.
+  getNotasImportadas() {
+    try {
+      const lista = JSON.parse(localStorage.getItem('flowpdv_notas_importadas') || '[]');
+      return Array.isArray(lista) ? lista : [];
+    } catch (e) {
+      return [];
+    }
+  },
+
+  notaJaImportada(chaveAcesso) {
+    const chave = String(chaveAcesso || '').replace(/\D/g, '');
+    if (!chave) return null;
+    const local = this.getNotasImportadas().find(n => n && String(n.chave) === chave);
+    if (local) return local;
+    // Conta a pagar da nota viaja pela nuvem: serve de sinal quando foi o outro caixa que importou.
+    const conta = (this.getContasPagar() || []).find(c => c && String(c.chaveNFe || '').replace(/\D/g, '') === chave);
+    return conta ? { chave, at: conta.criadoEm || null, numero: conta.numeroNota || '' } : null;
+  },
+
+  registrarNotaImportada(chaveAcesso, numero = '') {
+    const chave = String(chaveAcesso || '').replace(/\D/g, '');
+    if (!chave) return;
+    const lista = this.getNotasImportadas().filter(n => n && String(n.chave) !== chave);
+    lista.push({ chave, numero: String(numero || ''), at: new Date().toISOString() });
+    localStorage.setItem('flowpdv_notas_importadas', JSON.stringify(lista.slice(-500)));
+  },
 
   PREFIXOS_DA_LOJA: ['flowpdv_logs_auditoria_', 'flowpdv_logs_nuvem_pendentes_', 'flowpdv_logs_migrados_', 'flowpdv_logs_exclusao_', 'flowpdv_cache_', 'flowpdv_master_'],
 
   // Limpeza de Isolamento Multi-Tenant ao Trocar de Empresa/Licença
   limparDadosLocaisParaNovaEmpresa(novaLic) {
+    // O cache em memória também é da loja anterior.
+    this._produtosMem = null;
     this.CHAVES_DA_LOJA.forEach(chave => localStorage.removeItem(chave));
 
     Object.keys(localStorage)
@@ -1020,6 +1098,11 @@ export const StorageService = {
     sessionStorage.removeItem('flowpdv_usuario_logado');
     if (window.AuthModule) {
       window.AuthModule.usuarioAtual = null;
+    }
+    if (window.PdvModule) {
+      window.PdvModule.carrinho = [];
+      window.PdvModule.pagamentosLancados = [];
+      window.PdvModule.clienteClubeAtivo = null;
     }
 
     if (novaLic) {

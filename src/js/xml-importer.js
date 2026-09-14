@@ -512,6 +512,31 @@ export const XmlImporterModule = {
       return;
     }
 
+    // Mesma nota duas vezes dobra o estoque e as contas. Só segue se a gerente confirmar.
+    const jaImportada = StorageService.notaJaImportada(this.dadosNotaAtual.chaveAcesso);
+    if (jaImportada && !this._reimportacaoConfirmada) {
+      const quando = jaImportada.at ? new Date(jaImportada.at).toLocaleString('pt-BR') : 'anteriormente';
+      const seguir = () => {
+        this._reimportacaoConfirmada = true;
+        this.confirmarEntradaNota();
+      };
+      if (window.App && typeof window.App.confirmarAcao === 'function') {
+        window.App.confirmarAcao({
+          icone: '⚠️',
+          titulo: 'Nota já importada',
+          mensagem: `A NF-e <strong>#${this.dadosNotaAtual.numeroNota}</strong> já deu entrada no estoque em <strong>${quando}</strong>.<br><br>Importar de novo vai <strong>somar o estoque e as contas outra vez</strong>. Deseja continuar mesmo assim?`,
+          textoConfirmar: 'Importar novamente',
+          textoCancelar: 'Cancelar',
+          perigo: true,
+          onConfirm: seguir
+        });
+      } else if (confirm(`A NF-e #${this.dadosNotaAtual.numeroNota} já foi importada em ${quando}. Importar de novo soma o estoque outra vez. Continuar?`)) {
+        seguir();
+      }
+      return;
+    }
+    this._reimportacaoConfirmada = false;
+
     const btnConfirmar = document.getElementById('btn-confirmar-entrada-xml');
     if (btnConfirmar) {
       btnConfirmar.disabled = true;
@@ -587,6 +612,7 @@ export const XmlImporterModule = {
 
       // Salvar Produtos
       StorageService.saveProdutos(produtosAtuais);
+      StorageService.registrarNotaImportada(this.dadosNotaAtual.chaveAcesso, this.dadosNotaAtual.numeroNota);
 
       // Registrar Contas a Pagar no Financeiro (se selecionado)
       const lancarFinanceiroGeral = document.getElementById('xml-lancar-financeiro-geral')?.checked ?? true;

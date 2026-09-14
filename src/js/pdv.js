@@ -2693,7 +2693,7 @@ export const PdvModule = {
       this.agendarEmissaoFiscal(venda, deveEmitirFiscal && cfgFiscal);
 
       if (venda.itens && venda.itens.length > 0 && venda.itens[0].comandaOrigemId && window.ComandasModule) {
-        window.ComandasModule.liberarComandaAposVenda(venda.itens[0].comandaOrigemId);
+        window.ComandasModule.liberarComandaAposVenda(venda.itens[0].comandaOrigemId, venda.itens);
       }
 
       this.fecharModalPagamento();
@@ -2849,7 +2849,7 @@ export const PdvModule = {
       this.agendarEmissaoFiscal(venda, deveEmitirFiscal && cfgFiscal);
 
       if (venda.itens && venda.itens.length > 0 && venda.itens[0].comandaOrigemId && window.ComandasModule) {
-        window.ComandasModule.liberarComandaAposVenda(venda.itens[0].comandaOrigemId);
+        window.ComandasModule.liberarComandaAposVenda(venda.itens[0].comandaOrigemId, venda.itens);
       }
 
       this.fecharModalPagamento();

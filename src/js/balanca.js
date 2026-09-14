@@ -269,17 +269,24 @@ export const BalancaModule = {
     }
   },
 
+  _bufferSerial: '',
+
   processarBytesBalanca(dados) {
-    // Protocolo Toledo / Urano / Filizola padrão: extrai dígitos numéricos de peso (ex: STX 00650 ETX)
-    const matches = dados.match(/\d{5,6}/);
-    if (matches && matches[0]) {
-      const valorInt = parseInt(matches[0], 10);
-      const pesoKg = valorInt / 1000;
-      if (pesoKg > 0 && pesoKg < 100) {
-        this.pesoAtual = pesoKg;
-        this.atualizarDisplayPeso();
-      }
+    // Protocolo Toledo / Urano / Filizola padrão: STX 00650 ETX. A serial pode
+    // entregar a mensagem em pedaços, então juntamos até fechar um bloco.
+    this._bufferSerial = (this._bufferSerial + String(dados || '')).slice(-64);
+    const matches = this._bufferSerial.match(/\d{5,6}(?!\d)/g);
+    if (!matches || matches.length === 0) return;
+
+    const ultimo = matches[matches.length - 1];
+    const pesoKg = parseInt(ultimo, 10) / 1000;
+    // Zero também é leitura: tirou o produto do prato, o peso antigo não pode ficar.
+    if (pesoKg >= 0 && pesoKg < 100) {
+      this.pesoAtual = pesoKg;
+      this.atualizarDisplayPeso();
     }
+    const fim = this._bufferSerial.lastIndexOf(ultimo) + ultimo.length;
+    this._bufferSerial = this._bufferSerial.slice(fim);
   },
 
   async pararLeituraSerial() {

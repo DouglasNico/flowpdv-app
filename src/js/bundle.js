@@ -24641,13 +24641,55 @@
       localStorage.setItem("adega_clientes", JSON.stringify(carimbados));
     },
     // Contas a Pagar (Módulo Financeiro)
+    // Tombstones genéricos: excluir aqui precisa continuar excluído depois do
+    // merge com o outro caixa, senão a cópia antiga dele ressuscita o registro.
+    _getExcluidosIds(chaveStorage) {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(chaveStorage) || "[]");
+        return Array.isArray(parsed) ? parsed.map(String) : [];
+      } catch (e) {
+        return [];
+      }
+    },
+    _adicionarExcluidosIds(chaveStorage, ids) {
+      const atuais = new Set(this._getExcluidosIds(chaveStorage));
+      (Array.isArray(ids) ? ids : [ids]).forEach((id) => {
+        if (id != null && id !== "") atuais.add(String(id));
+      });
+      localStorage.setItem(chaveStorage, JSON.stringify(Array.from(atuais).slice(-2e3)));
+    },
+    getContasExcluidasIds() {
+      return this._getExcluidosIds("flowpdv_contas_excluidas_ids");
+    },
+    adicionarContasExcluidasIds(ids) {
+      this._adicionarExcluidosIds("flowpdv_contas_excluidas_ids", ids);
+    },
+    getUsuariosExcluidosIds() {
+      return this._getExcluidosIds("flowpdv_usuarios_excluidos_ids");
+    },
+    adicionarUsuariosExcluidosIds(ids) {
+      this._adicionarExcluidosIds("flowpdv_usuarios_excluidos_ids", ids);
+    },
+    excluirContaPagar(id) {
+      if (!id) return false;
+      this.adicionarContasExcluidasIds(id);
+      this.saveContasPagar(this.getContasPagar().filter((c) => c && String(c.id) !== String(id)));
+      return true;
+    },
+    excluirUsuario(id) {
+      if (!id) return false;
+      this.adicionarUsuariosExcluidosIds(id);
+      this.saveUsuarios(this.getUsuarios().filter((u) => u && String(u.id) !== String(id)));
+      return true;
+    },
     getContasPagar() {
       const saved = localStorage.getItem("flowpdv_contas_pagar");
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
           if (Array.isArray(parsed)) {
-            return parsed.map((c) => {
+            const excluidas = new Set(this.getContasExcluidasIds());
+            return parsed.filter((c) => c && !excluidas.has(String(c.id))).map((c) => {
               if (c.categoria === "Estoque / Fornecedores") {
                 return { ...c, categoria: "Fornecedores" };
               }
@@ -24668,7 +24710,9 @@
       } catch (e) {
         anteriores = [];
       }
-      const carimbados = carimbarAlterados(Array.isArray(contas) ? contas : [], anteriores);
+      const excluidas = new Set(this.getContasExcluidasIds());
+      const vivas = (Array.isArray(contas) ? contas : []).filter((c) => c && !excluidas.has(String(c.id)));
+      const carimbados = carimbarAlterados(vivas, anteriores);
       localStorage.setItem("flowpdv_contas_pagar", JSON.stringify(carimbados));
     },
     getContas() {
@@ -24908,7 +24952,11 @@
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const excluidos = new Set(this.getUsuariosExcluidosIds());
+            const vivos = parsed.filter((u) => u && !excluidos.has(String(u.id)));
+            if (vivos.length > 0) return vivos;
+          }
         } catch (e) {
         }
       }
@@ -24932,7 +24980,8 @@
     },
     saveUsuarios(usuarios) {
       const agora = (/* @__PURE__ */ new Date()).toISOString();
-      const lista = (Array.isArray(usuarios) ? usuarios : []).map((u) => {
+      const excluidos = new Set(this.getUsuariosExcluidosIds());
+      const lista = (Array.isArray(usuarios) ? usuarios : []).filter((u) => u && !excluidos.has(String(u.id))).map((u) => {
         if (!u || u.atualizadoEm) return u;
         return { ...u, atualizadoEm: u.criadoEm || agora };
       });
@@ -25096,16 +25145,50 @@
       "flowpdv_inventarios",
       "flowpdv_inventarios_enviados",
       "adega_licenca_backup",
-      "flowpdv_terminal_heartbeat_ms"
+      "flowpdv_terminal_heartbeat_ms",
+      "flowpdv_notas_importadas",
+      "flowpdv_contas_excluidas_ids",
+      "flowpdv_usuarios_excluidos_ids"
     ],
+    // NF-e já lançadas no estoque (chave de acesso): reimportar o mesmo XML
+    // não pode dobrar a entrada.
+    getNotasImportadas() {
+      try {
+        const lista = JSON.parse(localStorage.getItem("flowpdv_notas_importadas") || "[]");
+        return Array.isArray(lista) ? lista : [];
+      } catch (e) {
+        return [];
+      }
+    },
+    notaJaImportada(chaveAcesso) {
+      const chave = String(chaveAcesso || "").replace(/\D/g, "");
+      if (!chave) return null;
+      const local = this.getNotasImportadas().find((n) => n && String(n.chave) === chave);
+      if (local) return local;
+      const conta = (this.getContasPagar() || []).find((c) => c && String(c.chaveNFe || "").replace(/\D/g, "") === chave);
+      return conta ? { chave, at: conta.criadoEm || null, numero: conta.numeroNota || "" } : null;
+    },
+    registrarNotaImportada(chaveAcesso, numero = "") {
+      const chave = String(chaveAcesso || "").replace(/\D/g, "");
+      if (!chave) return;
+      const lista = this.getNotasImportadas().filter((n) => n && String(n.chave) !== chave);
+      lista.push({ chave, numero: String(numero || ""), at: (/* @__PURE__ */ new Date()).toISOString() });
+      localStorage.setItem("flowpdv_notas_importadas", JSON.stringify(lista.slice(-500)));
+    },
     PREFIXOS_DA_LOJA: ["flowpdv_logs_auditoria_", "flowpdv_logs_nuvem_pendentes_", "flowpdv_logs_migrados_", "flowpdv_logs_exclusao_", "flowpdv_cache_", "flowpdv_master_"],
     // Limpeza de Isolamento Multi-Tenant ao Trocar de Empresa/Licença
     limparDadosLocaisParaNovaEmpresa(novaLic) {
+      this._produtosMem = null;
       this.CHAVES_DA_LOJA.forEach((chave) => localStorage.removeItem(chave));
       Object.keys(localStorage).filter((chave) => this.PREFIXOS_DA_LOJA.some((prefixo) => chave.startsWith(prefixo))).forEach((chave) => localStorage.removeItem(chave));
       sessionStorage.removeItem("flowpdv_usuario_logado");
       if (window.AuthModule) {
         window.AuthModule.usuarioAtual = null;
+      }
+      if (window.PdvModule) {
+        window.PdvModule.carrinho = [];
+        window.PdvModule.pagamentosLancados = [];
+        window.PdvModule.clienteClubeAtivo = null;
       }
       if (novaLic) {
         this.saveLicenca(novaLic);
@@ -25809,8 +25892,11 @@
         textoCancelar: "Cancelar [ESC]",
         perigo: true,
         onConfirm: () => {
-          usuarios = usuarios.filter((item) => item.id !== id);
-          StorageService.saveUsuarios(usuarios);
+          StorageService.excluirUsuario(id);
+          if (this.usuarioAtual && String(this.usuarioAtual.id) === String(id)) {
+            this.usuarioAtual = null;
+            sessionStorage.removeItem("flowpdv_usuario_logado");
+          }
           if (window.CloudSyncModule && typeof window.CloudSyncModule.enviarAlteracaoNuvem === "function") {
             window.CloudSyncModule.enviarAlteracaoNuvem("operadores");
           }
@@ -51164,7 +51250,7 @@ Venda bloqueada no PDV!`);
         StorageService.saveVenda(venda);
         this.agendarEmissaoFiscal(venda, deveEmitirFiscal && cfgFiscal);
         if (venda.itens && venda.itens.length > 0 && venda.itens[0].comandaOrigemId && window.ComandasModule) {
-          window.ComandasModule.liberarComandaAposVenda(venda.itens[0].comandaOrigemId);
+          window.ComandasModule.liberarComandaAposVenda(venda.itens[0].comandaOrigemId, venda.itens);
         }
         this.fecharModalPagamento();
         this.limparCarrinho();
@@ -51299,7 +51385,7 @@ Venda bloqueada no PDV!`);
         StorageService.saveVenda(venda);
         this.agendarEmissaoFiscal(venda, deveEmitirFiscal && cfgFiscal);
         if (venda.itens && venda.itens.length > 0 && venda.itens[0].comandaOrigemId && window.ComandasModule) {
-          window.ComandasModule.liberarComandaAposVenda(venda.itens[0].comandaOrigemId);
+          window.ComandasModule.liberarComandaAposVenda(venda.itens[0].comandaOrigemId, venda.itens);
         }
         this.fecharModalPagamento();
         this.limparCarrinho();
@@ -53260,20 +53346,23 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
       const p = produtos.find((item) => item.id === this.produtoAjustandoId);
       if (!p) return;
       const tipo = document.getElementById("ajuste-tipo-mov")?.value || "entrada";
-      const qtd = parseInt(document.getElementById("ajuste-qtd-input")?.value, 10);
+      const fracionado = p.permiteFracionado === true || String(p.unidade || "").toLowerCase() === "kg";
+      const bruto = parseFloat(String(document.getElementById("ajuste-qtd-input")?.value || "").replace(",", "."));
+      const qtd = fracionado ? Math.round(bruto * 1e3) / 1e3 : Math.trunc(bruto);
       const motivo = document.getElementById("ajuste-motivo-input")?.value.trim() || "Ajuste Manual";
       if (isNaN(qtd) || qtd < 0) {
         window.App.showToast("Informe uma quantidade v\xE1lida!", "warning");
         return;
       }
+      const arred = (n) => Math.round(n * 1e3) / 1e3;
       const estoqueAtual = Number(p.estoque) || 0;
       let delta = 0;
       if (tipo === "entrada") {
         delta = qtd;
-        p.estoque = estoqueAtual + qtd;
+        p.estoque = arred(estoqueAtual + qtd);
       } else if (tipo === "perda") {
         delta = -Math.min(estoqueAtual, qtd);
-        p.estoque = Math.max(0, estoqueAtual - qtd);
+        p.estoque = arred(Math.max(0, estoqueAtual - qtd));
       } else if (tipo === "balanco") {
         delta = qtd - estoqueAtual;
         p.estoque = qtd;
@@ -53832,10 +53921,10 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
           codBarras = (codBarras || "").trim().toUpperCase();
           const custoNum = this.parseValorMonetario(precoCusto);
           const vendaNum = this.parseValorMonetario(precoVenda);
-          const estNum = parseInt(estoque, 10);
-          const estValido = isNaN(estNum) ? 0 : estNum;
-          const minNum = parseInt(estoqueMinimo, 10);
-          const minValido = isNaN(minNum) ? 5 : minNum;
+          const estNum = parseFloat(String(estoque || "").replace(",", "."));
+          const estValido = isNaN(estNum) ? 0 : Math.round(estNum * 1e3) / 1e3;
+          const minNum = parseFloat(String(estoqueMinimo || "").replace(",", "."));
+          const minValido = isNaN(minNum) ? 5 : Math.round(minNum * 1e3) / 1e3;
           const nomeFardo = (unidadeFracionada || "").trim();
           const fatorNum = parseInt(fatorConversao, 10);
           const fatorValido = !isNaN(fatorNum) && fatorNum >= 2 ? fatorNum : null;
@@ -58728,6 +58817,7 @@ ${base}`;
             cloudData.produtosExcluidos.forEach((id) => excluidos.add(String(id)));
             localStorage.setItem("adega_produtos_excluidos_ids", JSON.stringify(Array.from(excluidos)));
           }
+          this.aplicarTombstonesRecebidos(cloudData);
           if (Array.isArray(cloudData.categoriasExcluidas) && StorageService.adicionarCategoriaExcluida) {
             cloudData.categoriasExcluidas.forEach((c) => StorageService.adicionarCategoriaExcluida(c));
           }
@@ -58828,6 +58918,7 @@ ${base}`;
             cloudData.produtosExcluidos.forEach((id) => excluidos.add(String(id)));
             localStorage.setItem("adega_produtos_excluidos_ids", JSON.stringify(Array.from(excluidos)));
           }
+          this.aplicarTombstonesRecebidos(cloudData);
           console.log("[CloudSync] Altera\xE7\xE3o recebida de outro terminal:", cloudData.motivo || "nuvem");
           this.aplicarDadosRecebidos(cloudData, { silencioso: false });
         }, (err) => {
@@ -58929,6 +59020,27 @@ ${base}`;
         console.error("[CloudSync] Erro na troca de sincroniza\xE7\xE3o da empresa:", err);
       }
     },
+    /**
+     * Exclusão de despesa/funcionário feita no outro caixa vale aqui também.
+     * Sem isso o merge por id devolveria o registro (e o acesso) apagado.
+     */
+    aplicarTombstonesRecebidos(cloudData) {
+      if (!cloudData) return;
+      if (Array.isArray(cloudData.contasExcluidas) && cloudData.contasExcluidas.length && StorageService.adicionarContasExcluidasIds) {
+        StorageService.adicionarContasExcluidasIds(cloudData.contasExcluidas);
+        StorageService.saveContasPagar(StorageService.getContasPagar());
+      }
+      if (Array.isArray(cloudData.usuariosExcluidos) && cloudData.usuariosExcluidos.length && StorageService.adicionarUsuariosExcluidosIds) {
+        StorageService.adicionarUsuariosExcluidosIds(cloudData.usuariosExcluidos);
+        StorageService.saveUsuarios(StorageService.getUsuarios());
+        const logado = window.AuthModule && window.AuthModule.usuarioAtual;
+        if (logado && cloudData.usuariosExcluidos.map(String).includes(String(logado.id))) {
+          window.AuthModule.usuarioAtual = null;
+          sessionStorage.removeItem("flowpdv_usuario_logado");
+          if (typeof window.AuthModule.renderCardsLogin === "function") window.AuthModule.renderCardsLogin();
+        }
+      }
+    },
     carregarBaseCompletaNovaEmpresa(cloudData) {
       if (!cloudData) return;
       if (Array.isArray(cloudData.produtos)) {
@@ -58945,6 +59057,7 @@ ${base}`;
       } else {
         localStorage.removeItem("adega_produtos_excluidos_ids");
       }
+      this.aplicarTombstonesRecebidos(cloudData);
       if (Array.isArray(cloudData.clientes)) {
         StorageService.saveClientes(cloudData.clientes);
       } else {
@@ -59144,6 +59257,8 @@ ${base}`;
             cnpj: lic.cnpj || config.cnpj || "",
             produtos,
             produtosExcluidos,
+            contasExcluidas: StorageService.getContasExcluidasIds ? StorageService.getContasExcluidasIds() : [],
+            usuariosExcluidos: StorageService.getUsuariosExcluidosIds ? StorageService.getUsuariosExcluidosIds() : [],
             usuarios,
             categorias,
             categoriasExcluidas: StorageService.getCategoriasExcluidas ? StorageService.getCategoriasExcluidas() : [],
@@ -59206,6 +59321,8 @@ ${base}`;
           cnpj: lic.cnpj || config.cnpj || "",
           produtos,
           produtosExcluidos,
+          contasExcluidas: StorageService.getContasExcluidasIds ? StorageService.getContasExcluidasIds() : [],
+          usuariosExcluidos: StorageService.getUsuariosExcluidosIds ? StorageService.getUsuariosExcluidosIds() : [],
           usuarios,
           categorias,
           clientes,
@@ -60394,8 +60511,7 @@ ${base}`;
         textoCancelar: "Cancelar [ESC]",
         perigo: true,
         onConfirm: () => {
-          const novaLista = contas.filter((item) => item.id !== id);
-          StorageService.saveContasPagar(novaLista);
+          StorageService.excluirContaPagar(id);
           if (window.CloudSyncModule) window.CloudSyncModule.enviarAlteracaoNuvem("contas_pagar_exclusao");
           this.renderContasPagar();
           window.App.showToast("\u{1F5D1}\uFE0F Despesa exclu\xEDda com sucesso.", "info");
@@ -62294,6 +62410,29 @@ Por favor, escolha uma categoria no campo em vermelho antes de confirmar.`);
         }
         return;
       }
+      const jaImportada = StorageService.notaJaImportada(this.dadosNotaAtual.chaveAcesso);
+      if (jaImportada && !this._reimportacaoConfirmada) {
+        const quando = jaImportada.at ? new Date(jaImportada.at).toLocaleString("pt-BR") : "anteriormente";
+        const seguir = () => {
+          this._reimportacaoConfirmada = true;
+          this.confirmarEntradaNota();
+        };
+        if (window.App && typeof window.App.confirmarAcao === "function") {
+          window.App.confirmarAcao({
+            icone: "\u26A0\uFE0F",
+            titulo: "Nota j\xE1 importada",
+            mensagem: `A NF-e <strong>#${this.dadosNotaAtual.numeroNota}</strong> j\xE1 deu entrada no estoque em <strong>${quando}</strong>.<br><br>Importar de novo vai <strong>somar o estoque e as contas outra vez</strong>. Deseja continuar mesmo assim?`,
+            textoConfirmar: "Importar novamente",
+            textoCancelar: "Cancelar",
+            perigo: true,
+            onConfirm: seguir
+          });
+        } else if (confirm(`A NF-e #${this.dadosNotaAtual.numeroNota} j\xE1 foi importada em ${quando}. Importar de novo soma o estoque outra vez. Continuar?`)) {
+          seguir();
+        }
+        return;
+      }
+      this._reimportacaoConfirmada = false;
       const btnConfirmar = document.getElementById("btn-confirmar-entrada-xml");
       if (btnConfirmar) {
         btnConfirmar.disabled = true;
@@ -62362,6 +62501,7 @@ Por favor, escolha uma categoria no campo em vermelho antes de confirmar.`);
           }
         }
         StorageService.saveProdutos(produtosAtuais);
+        StorageService.registrarNotaImportada(this.dadosNotaAtual.chaveAcesso, this.dadosNotaAtual.numeroNota);
         const lancarFinanceiroGeral = document.getElementById("xml-lancar-financeiro-geral")?.checked ?? true;
         let totalContasCriadas = 0;
         if (lancarFinanceiroGeral && this.duplicatasProcessadas.length > 0) {
@@ -62814,16 +62954,19 @@ Por favor, escolha uma categoria no campo em vermelho antes de confirmar.`);
         console.warn("[Balanca] Erro na leitura serial f\xEDsica:", err);
       }
     },
+    _bufferSerial: "",
     processarBytesBalanca(dados) {
-      const matches = dados.match(/\d{5,6}/);
-      if (matches && matches[0]) {
-        const valorInt = parseInt(matches[0], 10);
-        const pesoKg = valorInt / 1e3;
-        if (pesoKg > 0 && pesoKg < 100) {
-          this.pesoAtual = pesoKg;
-          this.atualizarDisplayPeso();
-        }
+      this._bufferSerial = (this._bufferSerial + String(dados || "")).slice(-64);
+      const matches = this._bufferSerial.match(/\d{5,6}(?!\d)/g);
+      if (!matches || matches.length === 0) return;
+      const ultimo = matches[matches.length - 1];
+      const pesoKg = parseInt(ultimo, 10) / 1e3;
+      if (pesoKg >= 0 && pesoKg < 100) {
+        this.pesoAtual = pesoKg;
+        this.atualizarDisplayPeso();
       }
+      const fim = this._bufferSerial.lastIndexOf(ultimo) + ultimo.length;
+      this._bufferSerial = this._bufferSerial.slice(fim);
     },
     async pararLeituraSerial() {
       try {
@@ -64814,19 +64957,48 @@ NSU: ${nsuGerado}`
         if (window.App) window.App.showToast(`\u{1F4B0} Itens da ${c.nome} transferidos para o caixa!`, "success");
       }, 150);
     },
-    liberarComandaAposVenda(comandaId) {
+    /**
+     * Baixa só o que foi cobrado. Item lançado na mesa enquanto o caixa
+     * recebia continua na comanda; a mesa só libera quando nada sobrar.
+     */
+    liberarComandaAposVenda(comandaId, itensCobrados = null) {
       if (!comandaId) return;
       const comandas = this.getComandas();
       const c = comandas.find((item) => item.id === comandaId);
-      if (c) {
-        c.status = "livre";
+      if (!c) return;
+      const cobrados = Array.isArray(itensCobrados) ? itensCobrados : null;
+      if (cobrados) {
+        const pagoPorProduto = /* @__PURE__ */ new Map();
+        cobrados.forEach((it2) => {
+          if (!it2 || it2.comandaOrigemId !== comandaId || it2.id === "TAXA-SERVICO-10") return;
+          pagoPorProduto.set(it2.id, (pagoPorProduto.get(it2.id) || 0) + (parseFloat(it2.quantidade) || 0));
+        });
+        c.itens = (c.itens || []).map((it2) => {
+          const pago = pagoPorProduto.get(it2.id) || 0;
+          if (pago <= 0) return it2;
+          const restante = Math.round(((parseFloat(it2.quantidade) || 0) - pago) * 1e3) / 1e3;
+          if (restante <= 0) return null;
+          return { ...it2, quantidade: restante, total: restante * (parseFloat(it2.precoUnitario) || 0) };
+        }).filter(Boolean);
+      } else {
         c.itens = [];
-        c.total = 0;
-        c.cliente = "";
-        c.abertaEm = null;
-        c.taxaServico = false;
-        this.salvarComandas(comandas);
       }
+      if (c.itens.length > 0) {
+        c.total = c.itens.reduce((acc, i) => acc + (parseFloat(i.total) || 0), 0);
+        c.status = "ocupada";
+        this.salvarComandas(comandas);
+        this.renderGridComandas();
+        if (window.App) window.App.showToast(`\u2139\uFE0F ${c.nome}: ficou consumo lan\xE7ado durante a cobran\xE7a (R$ ${c.total.toFixed(2).replace(".", ",")}).`, "warning", 6e3);
+        return;
+      }
+      c.status = "livre";
+      c.itens = [];
+      c.total = 0;
+      c.cliente = "";
+      c.abertaEm = null;
+      c.taxaServico = false;
+      this.salvarComandas(comandas);
+      this.renderGridComandas();
     }
   };
 
