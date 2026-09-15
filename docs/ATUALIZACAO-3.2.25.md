@@ -1,8 +1,8 @@
-# FlowPDV — o que foi feito até a v3.2.27
+# FlowPDV — o que foi feito até a v3.2.28
 
 Resumo para o Douglas: auditoria, NFC-e, TEF com diário de recuperação, logo oficial e os ajustes de caixa.
 
-Instalador atual: https://github.com/DouglasNico/flowpdv/releases/tag/v3.2.27
+Instalador atual: https://github.com/DouglasNico/flowpdv/releases/tag/v3.2.28
 
 ---
 
@@ -44,7 +44,15 @@ Se a loja ainda tem logo antiga (quadrado 240), **anexar de novo** no master.
 
 ---
 
-## 2. Caixa e gerência — v3.2.26
+## 2. Frente clássica em tela larga — v3.2.28
+
+Em alguns PCs (e nos prints maximizados) a caixa clássica parava no meio e deixava uma faixa azul na direita. A janela era maior que o `100vw` do Electron.
+
+A frente agora cola nas quatro bordas. A coluna da logo continua 580px; a lista de produtos é que cresce. Fundo igual ao da caixa, sem o azul vazando.
+
+---
+
+## 3. Caixa e gerência — v3.2.26
 
 - Título da aba: **Central da Gerência** (o selo Modo Gestor continua)
 - Coluna **QTD** da lista: unidade mostra `1 UN`; peso mostra `1,365 KG`
@@ -54,7 +62,7 @@ Se a loja ainda tem logo antiga (quadrado 240), **anexar de novo** no master.
 
 ---
 
-## 3. NFC-e real (Focus NFe) — v3.2.24
+## 4. NFC-e real (Focus NFe) — v3.2.24
 
 A venda é gravada primeiro e depois vai para `POST /v2/nfce` com referência fixa `fp-<id da venda>` (não duplica nota se o PC cair no meio).
 
@@ -69,7 +77,7 @@ O cliente precisa: conta Focus, certificado A1 + CSC no painel deles, token cola
 
 ---
 
-## 4. TEF — v3.2.24 e v3.2.27
+## 5. TEF — v3.2.24 e v3.2.27
 
 Na tela de TEF o cliente escolhe a maquininha:
 
@@ -98,7 +106,7 @@ Ainda precisa de homologação na loja com Stone/SiTef de verdade. Os testes loc
 
 ---
 
-## 5. Correções da auditoria (v3.2.23)
+## 6. Correções da auditoria (v3.2.23)
 
 Já estavam no ar antes da semana de NFC-e/TEF:
 
@@ -114,7 +122,7 @@ Já estavam no ar antes da semana de NFC-e/TEF:
 
 ---
 
-## 6. Releases
+## 7. Releases
 
 | Versão | Conteúdo | Link |
 |---|---|---|
@@ -124,12 +132,13 @@ Já estavam no ar antes da semana de NFC-e/TEF:
 | 3.2.25 | Logo oficial em app/site/mobile + `asarUnpack` do koffi | [v3.2.25](https://github.com/DouglasNico/flowpdv/releases/tag/v3.2.25) |
 | **3.2.26** | Logo da loja no card; QTD UN/KG; DEL com total; Central da Gerência | [v3.2.26](https://github.com/DouglasNico/flowpdv/releases/tag/v3.2.26) |
 | **3.2.27** | Diário TEF, pendências, sem cobrança duplicada; bloqueio de caixa com pendência | [v3.2.27](https://github.com/DouglasNico/flowpdv/releases/tag/v3.2.27) |
+| **3.2.28** | Frente clássica ocupa a janela inteira em monitor largo | [v3.2.28](https://github.com/DouglasNico/flowpdv/releases/tag/v3.2.28) |
 
 NFC-e e TEF só fecham o ciclo com token Focus / maquininha / CliSiTef no cliente. O caminho no sistema é o de produção; o cadastro é da loja.
 
 ---
 
-## 7. Como o cliente configura (piloto)
+## 8. Como o cliente configura (piloto)
 
 1. **NFC-e:** Focus → homologação → token + CNPJ no FlowPDV → venda de teste → conferir QR e consulta da SEFAZ → só então produção.
 2. **Stone:** Connect ativo na conta, chave `sk_`, serial da maquininha; venda pequena e cancelamento em seguida.

@@ -353,7 +353,7 @@ body {
 
 /* Layout Clássico Moderno */
 #tab-pdv.pdv-layout-classico {
-  background: #0f172a;
+  background: #e2e8f0;
 }
 #classic-pdv-shell {
   display: none;
@@ -364,10 +364,9 @@ body {
   display: flex;
   flex-direction: column;
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
+  inset: 0;
+  width: auto;
+  height: auto;
   z-index: 50;
   background: #e2e8f0; /* Tom Slate Suave Oficial do Sistema Moderno */
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
