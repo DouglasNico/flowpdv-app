@@ -26,12 +26,22 @@ let dllCarregada = '';
 let configurada = false;
 
 let emExecucao = false;
+let chamadaNativa = false;
 let cancelarSolicitado = false;
 let seqEvento = 0;
 const pendentes = new Map(); // idEvento -> resolve
 
 function latin1(str) {
-  return Buffer.from(String(str || ''), 'latin1');
+  return Buffer.from(String(str || '').replace(/\0/g, '') + '\0', 'latin1');
+}
+
+function chamar(f, ...args) {
+  if (chamadaNativa) return Promise.reject(new Error('CliSiTef ocupada. Aguarde.'));
+  chamadaNativa = true;
+  return new Promise((resolve, reject) => {
+    try { f.async(...args, (err, result) => err ? reject(err) : resolve(result)); }
+    catch (e) { reject(e); }
+  }).finally(() => { chamadaNativa = false; });
 }
 
 function lerBuffer(buf) {
@@ -68,7 +78,8 @@ function carregarDll(caminho) {
   configurada = false;
 }
 
-function configurar(cfg) {
+async function configurar(cfg) {
+  if (emExecucao || chamadaNativa) throw new Error('Aguarde o fim da transação antes de configurar o SiTef.');
   carregarDll(cfg.caminhoDll);
   const ip = String(cfg.ipServidor || '').trim();
   const loja = String(cfg.codigoLoja || '').replace(/\D/g, '').padStart(8, '0');
@@ -77,13 +88,16 @@ function configurar(cfg) {
   if (!ip) throw new Error('IP do servidor SiTef não informado.');
   if (!/^[A-Za-z]{2}\d{6}$/.test(terminal)) throw new Error('Código do terminal deve ter 2 letras + 6 dígitos (ex.: FP000001).');
 
-  const r = fn.configurar(latin1(ip), latin1(loja), latin1(terminal), 0, latin1(param));
+  const r = await chamar(fn.configurar, latin1(ip), latin1(loja), latin1(terminal), 0, latin1(param));
   configurada = r === 0;
   return r;
 }
 
 function aguardarResposta(idEvento) {
-  return new Promise((resolve) => { pendentes.set(idEvento, resolve); });
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => { pendentes.delete(idEvento); cancelarSolicitado = true; resolve({ cancelar: true }); }, 120000);
+    pendentes.set(idEvento, resposta => { clearTimeout(timer); resolve(resposta); });
+  });
 }
 
 function enviarEvento(win, evento) {
@@ -96,7 +110,7 @@ function enviarEvento(win, evento) {
  * confirma depois de imprimir os comprovantes).
  */
 async function executar(win, params) {
-  if (emExecucao) return { retorno: -12, erro: 'Já existe uma transação SiTef em andamento.' };
+  if (emExecucao || chamadaNativa) return { retorno: -12, erro: 'Já existe uma transação SiTef em andamento.' };
   if (!fn || !configurada) return { retorno: -1, erro: 'CliSiTef não configurada. Salve a configuração do TEF e teste a conexão.' };
 
   emExecucao = true;
@@ -104,7 +118,7 @@ async function executar(win, params) {
   const campos = {};
 
   try {
-    const inicio = fn.iniciar(
+    const inicio = await chamar(fn.iniciar,
       parseInt(params.funcao, 10) || 0,
       latin1(params.valor || ''),
       latin1(params.cupomFiscal || ''),
@@ -127,7 +141,7 @@ async function executar(win, params) {
     let iteracoes = 0;
 
     while (retorno === 10000) {
-      retorno = fn.continuar(comando, tipoCampo, tamMin, tamMax, buffer, TAM_BUFFER, continua);
+      retorno = await chamar(fn.continuar, comando, tipoCampo, tamMin, tamMax, buffer, TAM_BUFFER, continua);
       if (retorno !== 10000) break;
       if (++iteracoes > 200000) { retorno = -15; break; }
 
@@ -164,8 +178,9 @@ async function executar(win, params) {
         continue;
       }
 
+      const espera = aguardarResposta(evento.id);
       enviarEvento(win, evento);
-      const resposta = await aguardarResposta(evento.id);
+      const resposta = await espera;
       buffer.fill(0);
       if (!resposta || resposta.cancelar || cancelarSolicitado) {
         continua = -1;
@@ -185,9 +200,10 @@ async function executar(win, params) {
   }
 }
 
-function finalizar(params) {
+async function finalizar(params) {
   if (!fn) return false;
-  fn.finalizar(
+  if (emExecucao) throw new Error('Aguarde o fim do laço interativo antes de finalizar.');
+  await chamar(fn.finalizar,
     params.confirma ? 1 : 0,
     latin1(params.cupomFiscal || ''),
     latin1(params.dataFiscal || ''),
@@ -198,18 +214,23 @@ function finalizar(params) {
 }
 
 function registrar(ipcMain, getWindow) {
-  ipcMain.handle('sitef-configurar', (_e, cfg) => {
+  const handle = (channel, handler) => ipcMain.handle(channel, (event, ...args) => {
+    const win = getWindow();
+    if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame) throw new Error('Origem IPC SiTef inválida.');
+    return handler(event, ...args);
+  });
+  handle('sitef-configurar', async (_e, cfg) => {
     try {
-      const r = configurar(cfg || {});
+      const r = await configurar(cfg || {});
       return { ok: r === 0, codigo: r };
     } catch (err) {
       return { ok: false, codigo: 13, erro: err.message };
     }
   });
 
-  ipcMain.handle('sitef-executar', (_e, params) => executar(getWindow(), params || {}));
+  handle('sitef-executar', (_e, params) => executar(getWindow(), params || {}));
 
-  ipcMain.handle('sitef-responder', (_e, resposta) => {
+  handle('sitef-responder', (_e, resposta) => {
     const r = pendentes.get(resposta && resposta.id);
     if (r) {
       pendentes.delete(resposta.id);
@@ -219,7 +240,7 @@ function registrar(ipcMain, getWindow) {
     return false;
   });
 
-  ipcMain.handle('sitef-cancelar', () => {
+  handle('sitef-cancelar', () => {
     cancelarSolicitado = true;
     // Se estava esperando o operador, destrava o laço para ele encerrar.
     pendentes.forEach((resolve) => resolve({ cancelar: true }));
@@ -227,12 +248,13 @@ function registrar(ipcMain, getWindow) {
     return true;
   });
 
-  ipcMain.handle('sitef-finalizar', (_e, params) => {
-    try { return finalizar(params || {}); } catch (err) { return false; }
+  handle('sitef-finalizar', async (_e, params) => {
+    try { return await finalizar(params || {}); } catch (err) { return false; }
   });
 
-  ipcMain.handle('sitef-pinpad-presente', () => {
-    try { return fn ? fn.pinpad() === 1 : false; } catch (err) { return false; }
+  handle('sitef-pinpad-presente', async () => {
+    if (emExecucao || chamadaNativa) return false;
+    try { return fn ? (await chamar(fn.pinpad)) === 1 : false; } catch (err) { return false; }
   });
 }
 

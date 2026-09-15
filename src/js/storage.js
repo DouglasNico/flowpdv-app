@@ -6,6 +6,7 @@ import { carimbarAlterados } from './merge-core.js';
 
 export const StorageService = {
   init() {
+    this.recuperarVendaPendente();
     this.getProdutos();
     this.getConfig();
     this.getClientes();
@@ -299,6 +300,7 @@ export const StorageService = {
   },
 
   saveProdutos(produtos) {
+    this.exigirVendaRecuperada();
     if (Array.isArray(produtos) && produtos.length > 0) {
       const backupAtual = this.getProdutos();
       if (produtos.length >= backupAtual.length) {
@@ -340,28 +342,47 @@ export const StorageService = {
     return proximo;
   },
 
-  saveVenda(venda) {
-    const vendas = this.getVendas();
-    vendas.unshift(venda);
-    localStorage.setItem('adega_vendas', JSON.stringify(vendas));
+  temVendaPendente() { return !!localStorage.getItem('flowpdv_commit_venda'); },
+  exigirVendaRecuperada() {
+    if (this.temVendaPendente()) throw new Error('Recupere a venda pendente antes de alterar os dados do caixa.');
+  },
 
-    // Vincular venda ao turno atual (para relatórios precisos)
+  recuperarVendaPendente() {
+    const raw = localStorage.getItem('flowpdv_commit_venda');
+    if (!raw) return;
+    const plano = JSON.parse(raw);
+    if (plano.loja !== (this.getLicenca()?.chaveLicenca || '')) throw new Error('Existe uma venda pendente de recuperação na loja anterior.');
+    const permitidas = new Set(['adega_vendas', 'adega_turno_atual', 'adega_produtos', 'adega_produtos_backup_seguranca', 'flowpdv_estoque_movimentos', 'adega_clientes']);
+    if (!plano.escritas || Object.keys(plano.escritas).some(k => !permitidas.has(k))) throw new Error('Diário de venda inválido.');
+    // Reaplica valores finais, nunca incrementos. Repetir após uma queda é seguro.
+    for (const [key, value] of Object.entries(plano.escritas)) localStorage.setItem(key, value);
+    this._produtosMem = null;
+    localStorage.removeItem('flowpdv_commit_venda');
+  },
+
+  saveVenda(venda, clientesAtualizados = null) {
+    this.recuperarVendaPendente();
+    const vendas = this.getVendas();
+    if (vendas.some(v => v.id === venda.id)) return; // Mesmo fechamento reenviado.
+    vendas.unshift(venda);
+    const escritas = { adega_vendas: JSON.stringify(vendas) };
     const turno = this.getTurnoAtual();
     if (turno && venda.id) {
+      if (venda.turnoId && venda.turnoId !== turno.id) throw new Error('O turno mudou durante o pagamento. Recupere a venda no turno original.');
       turno.vendasIds = turno.vendasIds || [];
-      turno.vendasIds.push(venda.id);
-      this.salvarTurno(turno);
+      if (!turno.vendasIds.includes(venda.id)) turno.vendasIds.push(venda.id);
+      escritas.adega_turno_atual = JSON.stringify(turno);
     }
-
-    // Abater estoque automaticamente
-    const produtos = this.getProdutos();
-    (venda.itens || []).forEach(item => {
+    const produtos = JSON.parse(JSON.stringify(this.getProdutos()));
+    const movimentos = this.getMovimentosEstoque();
+    (venda.itens || []).forEach((item, index) => {
       const prod = produtos.find(p => p.id === item.id || p.codigoBarras === item.id);
       if (prod && prod.controlarEstoque !== false) {
         const fator = item.isFardo ? (prod.fatorConversao || 1) : 1;
         const delta = -((parseFloat(item.quantidade) || 0) * fator);
         prod.estoque = Math.max(0, (parseFloat(prod.estoque) || 0) + delta);
-        this.registrarMovimentoEstoque({
+        movimentos.push({
+          id: `MOV-${venda.id}-${index}`, at: venda.data || new Date().toISOString(), terminalId: this.getDeviceId(),
           produtoId: prod.id,
           delta,
           origem: 'venda',
@@ -369,13 +390,25 @@ export const StorageService = {
         });
       }
     });
-    this.saveProdutos(produtos);
+    escritas.adega_produtos = JSON.stringify(produtos);
+    escritas.adega_produtos_backup_seguranca = escritas.adega_produtos;
+    escritas.flowpdv_estoque_movimentos = JSON.stringify(movimentos);
+    if (clientesAtualizados) escritas.adega_clientes = JSON.stringify(carimbarAlterados(clientesAtualizados, this.getClientes()));
+    localStorage.setItem('flowpdv_commit_venda', JSON.stringify({ loja: this.getLicenca()?.chaveLicenca || '', vendaId: venda.id, escritas }));
+    this.recuperarVendaPendente();
+    // Notificações externas só podem observar a venda após o commit local completo.
+    try {
+      const cloud = window.CloudSyncModule;
+      if (turno && cloud?.atualizarTurnoAtivoDoTerminal) Promise.resolve(cloud.atualizarTurnoAtivoDoTerminal(cloud.getChaveLicenca?.() || '', this.getDeviceId(), turno)).catch(() => {});
+      if (window.LicencaModule?.forcarHeartbeatTerminal) Promise.resolve(window.LicencaModule.forcarHeartbeatTerminal()).catch(() => {});
+    } catch (e) { console.warn('Venda gravada; atualização do terminal será retomada na sincronização.', e); }
     if (window.CloudSyncModule && typeof window.CloudSyncModule.enviarAlteracaoNuvem === 'function') {
       window.CloudSyncModule.enviarAlteracaoNuvem('venda');
     }
   },
 
   atualizarVenda(venda) {
+    this.exigirVendaRecuperada();
     if (!venda || !venda.id) return false;
     const vendas = this.getVendas();
     const index = vendas.findIndex(item => item.id === venda.id);
@@ -441,6 +474,7 @@ export const StorageService = {
   },
 
   salvarTurno(turno) {
+    this.exigirVendaRecuperada();
     localStorage.setItem('adega_turno_atual', JSON.stringify(turno));
     if (window.CloudSyncModule) {
       if (typeof window.CloudSyncModule.atualizarTurnoAtivoDoTerminal === 'function') {
@@ -515,6 +549,7 @@ export const StorageService = {
   },
 
   saveClientes(clientes) {
+    this.exigirVendaRecuperada();
     let anteriores = [];
     try {
       const saved = localStorage.getItem('adega_clientes');
@@ -684,7 +719,7 @@ export const StorageService = {
     }
     return {
       habilitado: false,
-      provedor: 'simulador',
+      provedor: 'stone',
       stoneSecretKey: '',
       stoneSerial: '',
       stoneRecipientId: '',
@@ -892,6 +927,7 @@ export const StorageService = {
   },
 
   saveMovimentosEstoque(movimentos) {
+    this.exigirVendaRecuperada();
     const lista = Array.isArray(movimentos) ? movimentos.slice(-8000) : [];
     try {
       localStorage.setItem('flowpdv_estoque_movimentos', JSON.stringify(lista));
@@ -1092,6 +1128,7 @@ export const StorageService = {
 
   // Limpeza de Isolamento Multi-Tenant ao Trocar de Empresa/Licença
   limparDadosLocaisParaNovaEmpresa(novaLic) {
+    if (this.temVendaPendente() || window.TefModule?.temPendencias()) throw new Error('Resolva as vendas e pagamentos pendentes antes de trocar de loja.');
     // O cache em memória também é da loja anterior.
     this._produtosMem = null;
     this.CHAVES_DA_LOJA.forEach(chave => localStorage.removeItem(chave));

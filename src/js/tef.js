@@ -9,6 +9,7 @@
 
 import { StorageService } from './storage.js';
 import { AuditModule } from './audit.js';
+import { TefLedger, validarConfigIntegracao, valorTefConfere } from './tef-ledger.js';
 import {
   STONE_API,
   STONE_TIMEOUT_MS,
@@ -39,10 +40,237 @@ export const TefModule = {
 
   init() {
     this._ouvirEventosSitef();
+    setTimeout(() => {
+      try { if (this.diario().pendentes().length) this.abrirPendencias(); }
+      catch (e) { window.App.showToast(e.message, 'error'); }
+    }, 1000);
   },
 
   getConfig() {
     return StorageService.getTefConfig();
+  },
+  contextoConfiguracao() {
+    const c = this.getConfig();
+    return JSON.stringify([c.provedor, c.stoneSerial || '', c.stoneRecipientId || '', c.sitefCaminhoDll || '', c.sitefIp || '', c.sitefLoja || '', c.sitefTerminal || '']);
+  },
+  validarContexto(op) {
+    if (op.contexto && op.contexto !== this.contextoConfiguracao()) throw new Error('A configuração mudou desde o pagamento. Restaure a configuração original antes de recuperar o TEF.');
+  },
+
+  diario() {
+    const loja = StorageService.getLicenca()?.chaveLicenca || 'sem-licenca';
+    return new TefLedger(localStorage, `flowpdv_tef_diario_${loja}_${StorageService.getDeviceId()}`);
+  },
+
+  temPendencias() { return !!this.transacaoAtiva || !!this._reconciliando || this.diario().pendentes().length > 0; },
+  async _exclusivo(acao) {
+    if (this.transacaoAtiva || this._reconciliando) throw new Error('Aguarde a operação TEF em andamento.');
+    this._reconciliando = true;
+    try { return await acao(); } finally { this._reconciliando = false; }
+  },
+  confirmarVenda(venda) { return this._exclusivo(() => this._confirmarVenda(venda)); },
+  cancelarOperacao(id) { return this._exclusivo(() => this._cancelarOperacao(id)); },
+  consultarOperacao(id) { return this._exclusivo(() => this._consultarOperacao(id)); },
+  vincularPedidoStone(id, pedidoId) {
+    return this._exclusivo(async () => {
+      if (!window.AuthModule?.isGerente()) throw new Error('Recuperação por identificador restrita ao gerente.');
+      const op = this.diario().obter(id);
+      if (!op || op.provedor !== 'stone' || !pedidoId || op.pedidoId) throw new Error('Referência inválida ou pedido já vinculado.');
+      const r = await this._httpStone('GET', `/core/v5/orders/${encodeURIComponent(pedidoId.trim())}`);
+      if (r.status !== 200 || r.body?.code !== op.id || !valorTefConfere(op.valor, Number(r.body.amount) / 100)) {
+        throw new Error('O código e o valor do pedido Stone não correspondem à operação local.');
+      }
+      this.diario().salvar({ id, pedidoId: r.body.id });
+      await this._consultarOperacao(id);
+    });
+  },
+  temPagamentoDaVenda(vendaId) { return this.diario().pendentes().some(t => t.vendaId === vendaId); },
+
+  _registrar(patch) {
+    if (!this.transacaoAtiva || this.transacaoAtiva.demonstracao || this.transacaoAtiva.administrativa) return;
+    this.diario().salvar({ id: this.transacaoAtiva.id, ...patch });
+  },
+
+  validarPagamentos(venda) {
+    const ids = new Set();
+    for (const p of venda.pagamentos || []) {
+      if (!p.tefInfo) continue;
+      const op = this.diario().obter(p.tefInfo.operacaoId);
+      if (ids.has(p.tefInfo.operacaoId)) throw new Error('Pagamento TEF duplicado.');
+      ids.add(p.tefInfo.operacaoId);
+      if (!op || op.vendaId !== venda.id || !['autorizada', 'confirmando', 'concluida'].includes(op.estado)
+          || !valorTefConfere(p.valor, op.dados?.valor) || op.provedor === 'simulador') {
+        throw new Error('Pagamento integrado não confirmado para esta venda. Abra Pendências TEF.');
+      }
+      if (JSON.stringify(op.checkout?.carrinho) !== JSON.stringify(venda.itens)) throw new Error('Carrinho alterado após a autorização TEF. Recupere o pagamento.');
+      if (op.checkout?.total != null && !valorTefConfere(op.checkout.total, venda.total)) throw new Error('Total alterado após autorização TEF. Recupere o pagamento.');
+    }
+    if (this.diario().pendentes().some(op => op.vendaId === venda.id && !ids.has(op.id))) throw new Error('Existem pagamentos pendentes fora desta venda. Abra Pendências TEF.');
+  },
+
+  async _confirmarVenda(venda) {
+    venda = StorageService.getVendas().find(v => v.id === venda.id);
+    // Nunca confirma na adquirente uma venda que só existe no carrinho.
+    if (StorageService.temVendaPendente() || !venda) {
+      throw new Error('Grave e recupere a venda antes de confirmar o TEF.');
+    }
+    this.validarPagamentos(venda);
+    for (const p of venda.pagamentos || []) {
+      if (!p.tefInfo) continue;
+      const op = this.diario().obter(p.tefInfo.operacaoId);
+      if (op.estado === 'concluida') continue;
+      this.validarContexto(op);
+      this.diario().salvar({ id: op.id, estado: 'confirmando' });
+      if (op.provedor === 'sitef') {
+        if (!this._sitefConfigurado) {
+          const cfg = await this.configurarSitef();
+          if (!cfg.ok) throw new Error(cfg.mensagem);
+        }
+        const ok = await window.electronAPI.sitefFinalizar({ ...op.sitef, confirma: true });
+        if (ok !== true) throw new Error('Venda gravada; confirmação SiTef pendente. Não cobre novamente.');
+      } else if (op.provedor === 'stone') {
+        const fechado = await this._httpStone('PATCH', `/core/v5/orders/${encodeURIComponent(op.pedidoId)}/closed`, { status: 'paid' });
+        if (fechado.status < 200 || fechado.status >= 300) throw new Error('Venda gravada; encerramento do pedido Stone pendente. Não cobre novamente.');
+      }
+      this.diario().salvar({ id: op.id, estado: 'concluida' });
+    }
+  },
+
+  async _cancelarOperacao(id) {
+    if (!window.AuthModule?.isGerente()) throw new Error('Estorno restrito ao gerente.');
+    const op = this.diario().obter(id);
+    if (!op) throw new Error('Operação TEF não encontrada.');
+    this.validarContexto(op);
+    if (this.transacaoAtiva) throw new Error('Cancele e aguarde a operação em andamento primeiro.');
+    if (StorageService.getVendas().some(v => v.id === op.vendaId)) {
+      throw new Error('A venda já foi gravada. Use o cancelamento da venda e o procedimento da adquirente.');
+    }
+    if (['cancelada', 'recusada'].includes(op.estado)) return true;
+    this.diario().salvar({ id, estado: 'cancelando' });
+    if (op.provedor === 'sitef') {
+      if (!op.sitef) throw new Error('Sem referência SiTef: confira as pendências no menu administrativo.');
+      if (!this._sitefConfigurado) {
+        const cfg = await this.configurarSitef();
+        if (!cfg.ok) throw new Error(cfg.mensagem);
+      }
+      if (await window.electronAPI.sitefFinalizar({ ...op.sitef, confirma: false }) !== true) {
+        throw new Error('Estorno SiTef não confirmado. Não faça outra cobrança.');
+      }
+    } else {
+      if (!op.pedidoId) throw new Error('Consulte a operação primeiro para recuperar o pedido Stone.');
+      const closed = await this._httpStone('PATCH', `/core/v5/orders/${encodeURIComponent(op.pedidoId)}/closed`, { status: 'canceled' });
+      if (closed.status < 200 || closed.status >= 300) throw new Error('Encerramento Stone não confirmado. Consulte novamente.');
+      const consulta = await this._httpStone('GET', `/core/v5/orders/${encodeURIComponent(op.pedidoId)}`);
+      if (consulta.status !== 200 || !Array.isArray(consulta.body?.charges)) throw new Error('Não foi possível conferir as cobranças Stone.');
+      for (const c of consulta.body.charges) {
+        if (!['paid', 'pending', 'processing'].includes(c.status)) continue;
+        if (!c.id) throw new Error('Cobrança Stone sem identificador. Confira na adquirente.');
+        const res = await this._httpStone('DELETE', `/core/v5/charges/${encodeURIComponent(c.id)}`);
+        if (res.status < 200 || res.status >= 300) throw new Error('Estorno Stone pendente. Não cobre novamente.');
+      }
+      const final = await this._httpStone('GET', `/core/v5/orders/${encodeURIComponent(op.pedidoId)}`);
+      if (final.status !== 200 || !Array.isArray(final.body?.charges)
+          || final.body.charges.some(c => !['canceled', 'failed', 'voided'].includes(c.status))) {
+        throw new Error('A adquirente ainda não confirmou todos os estornos. Consulte novamente.');
+      }
+    }
+    this.diario().salvar({ id, estado: 'cancelada' });
+    const p = window.PdvModule;
+    if (p?.tefVendaId === op.vendaId) {
+      p.pagamentosLancados = p.pagamentosLancados.filter(x => x.tefInfo?.operacaoId !== id);
+      p.atualizarInterfacePagamentoNovo();
+    }
+    return true;
+  },
+
+  async _consultarOperacao(id) {
+    if (this.transacaoAtiva) throw new Error('Aguarde a operação em andamento.');
+    if (StorageService.temVendaPendente()) StorageService.recuperarVendaPendente();
+    let op = this.diario().obter(id);
+    if (!op) throw new Error('Operação não encontrada.');
+    this.validarContexto(op);
+    const venda = StorageService.getVendas().find(v => v.id === op.vendaId);
+    if (venda) { await this._confirmarVenda(venda); return; }
+    if (!op.pedido && !op.pedidoId && !op.sitef) {
+      this.diario().salvar({ id, estado: 'cancelada' });
+      return; // Interrompida antes de registrar qualquer envio ao provedor.
+    }
+    if (op.provedor === 'sitef') {
+      if (op.estado === 'autorizada') return;
+      throw new Error('SiTef interrompido: estorne esta referência antes de iniciar outra cobrança.');
+    }
+    let res;
+    if (op.pedidoId) res = await this._httpStone('GET', `/core/v5/orders/${encodeURIComponent(op.pedidoId)}`);
+    else {
+      // A chave do provedor tem prazo. Nunca cria pedido novamente fora dele.
+      if (!op.pedido || !Number.isFinite(Date.parse(op.criadoEm)) || Date.now() - Date.parse(op.criadoEm) >= 4 * 60 * 1000) {
+        throw new Error('Prazo de recuperação automática encerrado. Confira o pedido na Stone pelo código ' + op.id + '.');
+      }
+      res = await this._httpStone('POST', '/core/v5/orders/', op.pedido, op.id);
+    }
+    if (res.status < 200 || res.status >= 300 || !res.body?.id) throw new Error('Consulta Stone não confirmada. Não cobre novamente.');
+    op = this.diario().salvar({ id, pedidoId: res.body.id });
+    const r = interpretarPedidoStone(res.body, op.valor);
+    if (r.estado === 'aprovada') {
+      this.diario().salvar({ id, estado: 'autorizada', dados: { ...r.dados, operacaoId: id, vendaId: op.vendaId } });
+    } else if (['cancelada', 'recusada'].includes(r.estado) && !(res.body.charges || []).some(c => ['paid', 'pending', 'processing'].includes(c.status))) {
+      this.diario().salvar({ id, estado: r.estado });
+    } else throw new Error(r.mensagem || 'Pedido ainda pendente na Stone.');
+  },
+
+  recuperarCheckout(id) {
+    if (this.transacaoAtiva || this._reconciliando) throw new Error('Aguarde a consulta em andamento.');
+    const op = this.diario().obter(id);
+    if (!op || op.estado !== 'autorizada' || !op.checkout) throw new Error('Consulte e confirme a autorização primeiro.');
+    if (StorageService.getVendas().some(v => v.id === op.vendaId)) throw new Error('Venda já gravada: use Consultar / concluir.');
+    const turno = StorageService.getTurnoAtual();
+    if (!turno || turno.id !== op.checkout.turnoId || turno.status !== 'aberto') throw new Error('Reabra o turno original ou estorne a operação.');
+    const p = window.PdvModule;
+    if (p.carrinho.length && p.tefVendaId !== op.vendaId) throw new Error('Conclua ou limpe o carrinho atual antes de recuperar.');
+    const todos = this.diario().pendentes().filter(t => t.vendaId === op.vendaId);
+    if (todos.some(t => t.estado !== 'autorizada')) throw new Error('Consulte todas as pendências desta venda primeiro.');
+    p.carrinho = JSON.parse(JSON.stringify(op.checkout.carrinho));
+    p.desconto = op.checkout.desconto || 0;
+    p.clienteClubeAtivo = op.checkout.clienteClubeAtivo || null;
+    p.tefVendaId = op.vendaId;
+    p.renderCarrinho();
+    p.abrirModalPagamento(true);
+    p.pagamentosLancados = [];
+    for (const t of todos) p.pagamentosLancados.push({ id: t.id, forma: t.tipo, valor: t.valor, tefInfo: t.dados });
+    p.trocoDinheiroTotal = 0;
+    p.atualizarInterfacePagamentoNovo();
+    window.App.showToast('Pagamentos integrados recuperados. Confira e lance novamente os valores recebidos manualmente.', 'info');
+  },
+
+  abrirPendencias() {
+    let modal = document.getElementById('modal-pendencias-tef');
+    if (!modal) {
+      modal = document.createElement('div'); modal.id = 'modal-pendencias-tef'; modal.className = 'modal-overlay'; modal.style.zIndex = '20000';
+      document.body.appendChild(modal);
+    }
+    modal.replaceChildren();
+    const box = document.createElement('div'); box.className = 'modal-content-box'; box.style.cssText = 'max-width:760px;padding:24px;max-height:85vh;overflow:auto';
+    const title = document.createElement('h3'); title.textContent = 'Pagamentos integrados pendentes'; box.appendChild(title);
+    const texto = document.createElement('p'); texto.textContent = 'Confira antes de cobrar novamente. Consultar também conclui pagamentos de vendas já gravadas.'; box.appendChild(texto);
+    const adicionarBotao = (parent, texto, action) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn-primary-action'; b.style.margin = '6px'; b.textContent = texto; b.onclick = async () => { b.disabled = true; try { await action(); } catch (e) { window.App.showToast(e.message, 'error'); } finally { b.disabled = false; } }; parent.appendChild(b); };
+    for (const op of this.diario().pendentes()) {
+      const row = document.createElement('div'); row.style.cssText = 'padding:12px;border-bottom:1px solid #ddd';
+      const desc = document.createElement('p'); desc.textContent = `${op.provedor} · R$ ${Number(op.valor).toFixed(2)} · ${op.estado} · ${op.id}`; row.appendChild(desc);
+      adicionarBotao(row, 'Consultar / concluir', async () => { await this.consultarOperacao(op.id); this.abrirPendencias(); });
+      if (op.provedor === 'stone' && !op.pedidoId) adicionarBotao(row, 'Localizar pelo ID Stone', async () => {
+        const pedidoId = window.prompt('Informe o ID do pedido consultado na Stone (order_...). O FlowPDV verificará código e valor antes de vincular.');
+        if (pedidoId) { await this.vincularPedidoStone(op.id, pedidoId); this.abrirPendencias(); }
+      });
+      adicionarBotao(row, 'Recuperar no caixa', () => { this.recuperarCheckout(op.id); modal.classList.remove('active'); });
+      adicionarBotao(row, 'Estornar', async () => {
+        if (!window.AuthModule?.isGerente()) throw new Error('O gerente deve autorizar o estorno.');
+        if (!window.confirm('Solicitar estorno deste pagamento na adquirente?')) return;
+        await this.cancelarOperacao(op.id); this.abrirPendencias();
+      });
+      box.appendChild(row);
+    }
+    adicionarBotao(box, 'Fechar', () => modal.classList.remove('active'));
+    modal.appendChild(box); modal.classList.add('active');
   },
 
   provedor() {
@@ -131,12 +359,22 @@ export const TefModule = {
   },
 
   _concluir(dados) {
+    const op = this.transacaoAtiva;
+    if (!op || op.encerrando) return;
+    if (!op.demonstracao && !op.administrativa) {
+      if (!valorTefConfere(op.valor, dados.valor)) { this._falhar('Valor confirmado diferente do solicitado. Confira Pendências TEF.'); return; }
+      dados = { ...dados, operacaoId: op.id, vendaId: op.vendaId };
+      try { this._registrar({ estado: 'autorizada', dados }); }
+      catch (e) { this._falhar('Pagamento recebido, mas o disco falhou. Não cobre novamente; consulte Pendências TEF.'); return; }
+    }
+    op.encerrando = true;
     if (this.temporizador) clearInterval(this.temporizador);
     this._status('Transação aprovada!', `${dados.bandeira || dados.rede || ''} · NSU ${dados.nsu || '-'}`.trim(), '✅');
-    AuditModule.registrarLog('tef_aprovado', `TEF ${dados.provedor || ''} aprovado: R$ ${(Number(dados.valor) || 0).toFixed(2)} ${dados.tipo || ''} NSU ${dados.nsu || ''}`, {
+    try { AuditModule.registrarLog('tef_aprovado', `TEF ${dados.provedor || ''} aprovado: R$ ${(Number(dados.valor) || 0).toFixed(2)} ${dados.tipo || ''} NSU ${dados.nsu || ''}`, {
       provedor: dados.provedor, nsu: dados.nsu, autorizacao: dados.autorizacao, valor: dados.valor
-    });
+    }); } catch (e) { console.warn('[TEF] Falha no log; autorização preservada no diário.', e); }
     setTimeout(() => {
+      if (this.transacaoAtiva !== op) return;
       this.fecharModalTef();
       const r = this.resolverPromessa;
       this.resolverPromessa = null;
@@ -146,10 +384,15 @@ export const TefModule = {
     }, 900);
   },
 
-  _falhar(motivo, silencioso = false) {
+  _falhar(motivo, silencioso = false, definitivo = false) {
+    const op = this.transacaoAtiva;
+    if (!op || op.encerrando) return;
+    try { this._registrar({ estado: definitivo ? 'recusada' : 'incerta', erro: motivo }); } catch (e) { console.error('[TEF] Diário indisponível:', e); }
+    op.encerrando = true;
     if (this.temporizador) clearInterval(this.temporizador);
     this._status('Transação não concluída', motivo, '❌');
     setTimeout(() => {
+      if (this.transacaoAtiva !== op) return;
       this.fecharModalTef();
       const rej = this.rejeitarPromessa;
       this.resolverPromessa = null;
@@ -172,14 +415,25 @@ export const TefModule = {
    */
   iniciarTransacao(params) {
     return new Promise((resolve, reject) => {
-      if (this.transacaoAtiva) {
+      if (this.transacaoAtiva || this._reconciliando) {
         reject(new Error('Já existe uma transação TEF em andamento.'));
         return;
       }
+      try {
+        const cfg = this.getConfig();
+        if (!this.tefAtivo()) throw new Error('TEF desativado. Confirme manualmente o pagamento realizado na maquininha.');
+        const erro = validarConfigIntegracao(cfg);
+        if (erro) throw new Error(erro);
+        if (!params.vendaId || !params.checkout || !valorTefConfere(params.valor, params.valor)) throw new Error('Venda ou valor inválido para integração.');
+        if (this.diario().pendentes().some(t => t.estado !== 'autorizada' || t.vendaId !== params.vendaId)) {
+          throw new Error('Existe pagamento pendente. Abra Pendências TEF antes de cobrar novamente.');
+        }
+      } catch (e) { reject(e); return; }
       this.resolverPromessa = resolve;
       this.rejeitarPromessa = reject;
       this.transacaoAtiva = {
-        id: 'TEF-' + Date.now().toString(36).toUpperCase(),
+        id: 'TEF-' + crypto.randomUUID(),
+        vendaId: params.vendaId,
         valor: Number(params.valor) || 0,
         tipo: params.tipo || 'Crédito',
         parcelas: Math.max(1, parseInt(params.parcelas, 10) || 1),
@@ -188,13 +442,16 @@ export const TefModule = {
       };
 
       const provedor = this.provedor();
-      if (provedor === 'stone') this._executarStone(params);
-      else if (provedor === 'sitef') this._executarSitef(params);
-      else this._executarSimulador(params);
+      try {
+        this._registrar({ ...this.transacaoAtiva, provedor, contexto: this.contextoConfiguracao(), estado: 'iniciada', criadoEm: new Date().toISOString(), checkout: params.checkout });
+      } catch (e) { this.transacaoAtiva = null; this.resolverPromessa = null; this.rejeitarPromessa = null; reject(e); return; }
+      const execucao = provedor === 'stone' ? this._executarStone(params) : this._executarSitef(params);
+      Promise.resolve(execucao).catch(e => this._falhar('Falha de comunicação: ' + e.message + '. Confira Pendências TEF.'));
     });
   },
 
   cancelarPeloOperador() {
+    if (!this.transacaoAtiva || this.transacaoAtiva.encerrando) return;
     const provedor = this.provedor();
     if (provedor === 'stone') {
       this._cancelarStone = true;
@@ -258,9 +515,10 @@ export const TefModule = {
   // Stone Connect 2.0 (pedido na API Pagar.me -> maquininha Stone)
   // ---------------------------------------------------------------------
 
-  async _httpStone(metodo, caminho, body) {
-    const cfg = this.getConfig();
+  async _httpStone(metodo, caminho, body, chaveIdempotencia, configTeste) {
+    const cfg = configTeste || this.getConfig();
     const headers = {};
+    if (chaveIdempotencia) headers['Idempotency-key'] = chaveIdempotencia;
     if (cfg.stoneServiceRefererName) headers['ServiceRefererName'] = String(cfg.stoneServiceRefererName).trim();
     const req = { method: metodo, url: STONE_API + caminho, token: String(cfg.stoneSecretKey || '').trim(), body, headers, timeoutMs: 30000 };
 
@@ -271,7 +529,8 @@ export const TefModule = {
       const resp = await fetch(req.url, {
         method: metodo,
         headers: { 'Authorization': 'Basic ' + btoa(req.token + ':'), 'Accept': 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}), ...headers },
-        body: body ? JSON.stringify(body) : undefined
+        body: body ? JSON.stringify(body) : undefined,
+        signal: AbortSignal.timeout(30000)
       });
       let json = null;
       try { json = await resp.json(); } catch (e) { json = null; }
@@ -316,7 +575,9 @@ export const TefModule = {
     }
 
     this._status('Enviando pedido à maquininha Stone...', 'A maquininha vai abrir a tela de pagamento sozinha.', '📡');
-    const criado = await this._httpStone('POST', '/core/v5/orders/', pedido);
+    const opId = this.transacaoAtiva.id;
+    this._registrar({ pedido });
+    const criado = await this._httpStone('POST', '/core/v5/orders/', pedido, opId);
     if (criado.status < 200 || criado.status >= 300 || !criado.body || !criado.body.id) {
       this._falhar(mensagemErroStone(criado.status, criado.body));
       return;
@@ -324,21 +585,26 @@ export const TefModule = {
 
     const orderId = criado.body.id;
     this.transacaoAtiva.pedidoId = orderId;
-    let resultado = interpretarPedidoStone(criado.body);
+    this._registrar({ pedidoId: orderId });
+    let resultado = interpretarPedidoStone(criado.body, params.valor);
     this._status('Aguardando o cliente na maquininha...', `Pedido ${orderId} enviado${cfg.stoneSerial ? ' para o terminal ' + cfg.stoneSerial : ''}.`, '💳');
 
     const inicio = Date.now();
     while (resultado.estado === 'aguardando') {
       if (this._cancelarStone || (Date.now() - inicio) > STONE_TIMEOUT_MS) {
-        await this._httpStone('PATCH', `/core/v5/orders/${orderId}/closed`, { status: 'canceled' });
-        this._falhar(this._cancelarStone ? 'Cancelado pelo operador no caixa.' : 'Tempo esgotado aguardando a maquininha.', this._cancelarStone);
+        const encerrado = await this._httpStone('PATCH', `/core/v5/orders/${orderId}/closed`, { status: 'canceled' });
+        const consultaFinal = await this._httpStone('GET', `/core/v5/orders/${orderId}`);
+        const charges = consultaFinal.body?.charges;
+        const semCobranca = encerrado.status >= 200 && encerrado.status < 300 && consultaFinal.status === 200 && Array.isArray(charges)
+          && charges.every(c => ['canceled', 'failed', 'voided'].includes(c.status));
+        this._falhar(semCobranca ? 'Pedido encerrado sem cobrança.' : 'Resultado incerto. Abra Pendências TEF e confira antes de cobrar novamente.', false, semCobranca);
         return;
       }
       await new Promise(r => setTimeout(r, STONE_POLL_MS));
       if (!this.transacaoAtiva) return;
       const consulta = await this._httpStone('GET', `/core/v5/orders/${orderId}`);
       if (consulta.status >= 200 && consulta.status < 300 && consulta.body) {
-        resultado = interpretarPedidoStone(consulta.body);
+        resultado = interpretarPedidoStone(consulta.body, params.valor);
       } else if (consulta.status === 401 || consulta.status === 403) {
         this._falhar(mensagemErroStone(consulta.status, consulta.body));
         return;
@@ -346,31 +612,25 @@ export const TefModule = {
     }
 
     if (resultado.estado === 'aprovada') {
-      // Fecha o pedido para ele sair da fila da maquininha.
-      this._httpStone('PATCH', `/core/v5/orders/${orderId}/closed`, { status: 'paid' }).catch(() => {});
+      // O encerramento é verificado em confirmarVenda, após a gravação.
       const dados = { ...resultado.dados, tipo: resultado.dados.tipo || this.transacaoAtiva.tipo, parcelas: this.transacaoAtiva.parcelas };
       if (!dados.valor) dados.valor = this.transacaoAtiva.valor;
       this._concluir(dados);
       return;
     }
 
-    this._httpStone('PATCH', `/core/v5/orders/${orderId}/closed`, { status: 'canceled' }).catch(() => {});
-    this._falhar(resultado.mensagem || 'Pagamento não aprovado.');
+    const fechado = await this._httpStone('PATCH', `/core/v5/orders/${orderId}/closed`, { status: 'canceled' });
+    const consultado = await this._httpStone('GET', `/core/v5/orders/${orderId}`);
+    const definitivo = fechado.status >= 200 && fechado.status < 300 && consultado.status === 200
+      && Array.isArray(consultado.body?.charges) && consultado.body.charges.every(c => ['canceled', 'failed', 'voided'].includes(c.status));
+    this._falhar(definitivo ? (resultado.mensagem || 'Pagamento não aprovado.') : 'Encerramento não confirmado. Confira Pendências TEF.', false, definitivo);
   },
 
   async testarStone(cfgTeste) {
     const cfg = cfgTeste || this.getConfig();
-    const anterior = this.getConfig();
-    // Usa a config da tela sem salvar.
-    const salvo = StorageService.getTefConfig;
-    StorageService.getTefConfig = () => ({ ...anterior, ...cfg });
-    try {
-      const r = await this._httpStone('GET', '/core/v5/orders?size=1');
+      const r = await this._httpStone('GET', '/core/v5/orders?size=1', undefined, undefined, cfg);
       if (r.status >= 200 && r.status < 300) return { ok: true, mensagem: 'Chave Stone válida. API respondendo.' };
       return { ok: false, mensagem: mensagemErroStone(r.status, r.body) };
-    } finally {
-      StorageService.getTefConfig = salvo;
-    }
   },
 
   // ---------------------------------------------------------------------
@@ -391,7 +651,7 @@ export const TefModule = {
       codigoTerminal: cfg.sitefTerminal,
       parametrosAdicionais: cfg.sitefParametros || ''
     });
-    this._sitefConfigurado = Boolean(r && r.ok);
+    this._sitefConfigurado = !cfgTeste && Boolean(r && r.ok);
     if (r && r.ok) return { ok: true, mensagem: 'CliSiTef configurada.' };
     return { ok: false, mensagem: (r && r.erro) || mensagemConfiguraSitef(r && r.codigo) };
   },
@@ -401,7 +661,7 @@ export const TefModule = {
     if (!conf.ok) return conf;
     let pinpad = false;
     try { pinpad = await window.electronAPI.sitefPinpadPresente(); } catch (e) {}
-    return { ok: true, mensagem: pinpad ? 'CliSiTef configurada e pinpad detectado.' : 'CliSiTef configurada. Pinpad não detectado (confira o cabo/porta).' };
+    return { ok: pinpad === true, mensagem: pinpad ? 'CliSiTef configurada e pinpad detectado.' : 'CliSiTef configurada. Pinpad não detectado (confira o cabo/porta).' };
   },
 
   _ouvirEventosSitef() {
@@ -522,7 +782,7 @@ export const TefModule = {
   async _executarSitef(params) {
     if (!this._sitefDisponivel()) {
       this._abrirModal(params, { rotuloProvedor: 'SITEF' });
-      this._falhar('SiTef só funciona no FlowPDV instalado (Windows).');
+      this._falhar('SiTef só funciona no FlowPDV instalado (Windows).', false, true);
       return;
     }
     this._ouvirEventosSitef();
@@ -531,7 +791,7 @@ export const TefModule = {
     if (!this._sitefConfigurado) {
       this._status('Conectando à CliSiTef...', 'Carregando a DLL e configurando loja/terminal.', '⏳');
       const conf = await this.configurarSitef();
-      if (!conf.ok) { this._falhar(conf.mensagem); return; }
+      if (!conf.ok) { this._falhar(conf.mensagem, false, true); return; }
     }
 
     const agora = new Date();
@@ -542,6 +802,7 @@ export const TefModule = {
     const operador = (window.AuthModule && window.AuthModule.usuarioAtual && window.AuthModule.usuarioAtual.nome) || 'CAIXA';
     const t = this.transacaoAtiva;
     t.sitef = { cupomFiscal, dataFiscal, horaFiscal };
+    this._registrar({ sitef: t.sitef });
 
     // Parcelamento decidido no caixa: já restringe o menu da CliSiTef.
     let paramAdic = '';
@@ -561,45 +822,52 @@ export const TefModule = {
     if (!r || r.retorno !== 0) {
       const motivo = (r && r.erro) || mensagemRetornoSitef(r ? r.retorno : -100);
       if (r && r.campos && Object.keys(r.campos).length && window.electronAPI.sitefFinalizar) {
-        window.electronAPI.sitefFinalizar({ confirma: false, cupomFiscal, dataFiscal, horaFiscal });
+        const desfeito = await window.electronAPI.sitefFinalizar({ confirma: false, cupomFiscal, dataFiscal, horaFiscal });
+        if (desfeito !== true) { this._falhar('Estorno SiTef pendente. Confira antes de cobrar novamente.'); return; }
       }
-      this._falhar(motivo, Boolean(r && r.cancelado));
+      this._falhar(motivo, Boolean(r && r.cancelado), !!r && r.retorno !== -100);
       return;
     }
 
     const dados = interpretarCamposSitef(r.campos, { tipo: t.tipo, parcelas: t.parcelas, valor: t.valor });
     dados.cupomFiscalTef = cupomFiscal;
 
-    // Imprime os comprovantes e só então confirma a transação no SiTef.
+    // A confirmação ocorre somente em confirmarVenda, depois da gravação local.
     let impressaoOk = true;
     try {
       if (window.ThermalPrintModule && typeof window.ThermalPrintModule.imprimirComprovanteTef === 'function') {
-        if (dados.comprovanteLoja) window.ThermalPrintModule.imprimirComprovanteTef(dados.comprovanteLoja, 'VIA ESTABELECIMENTO');
-        if (dados.comprovanteCliente) window.ThermalPrintModule.imprimirComprovanteTef(dados.comprovanteCliente, 'VIA CLIENTE');
+        if (dados.comprovanteLoja) await window.ThermalPrintModule.imprimirComprovanteTef(dados.comprovanteLoja, 'VIA ESTABELECIMENTO');
+        if (dados.comprovanteCliente) await window.ThermalPrintModule.imprimirComprovanteTef(dados.comprovanteCliente, 'VIA CLIENTE');
+      } else {
+        throw new Error('Impressão TEF indisponível.');
       }
     } catch (e) {
       impressaoOk = false;
       console.warn('[TEF] Falha ao imprimir comprovante SiTef:', e);
     }
-    window.electronAPI.sitefFinalizar({ confirma: impressaoOk, cupomFiscal, dataFiscal, horaFiscal });
-    if (!impressaoOk) { this._falhar('Comprovante não impresso; transação desfeita no SiTef.'); return; }
+    if (!impressaoOk) {
+      const desfeito = await window.electronAPI.sitefFinalizar({ confirma: false, cupomFiscal, dataFiscal, horaFiscal });
+      this._falhar(desfeito === true ? 'Comprovante não impresso; transação desfeita no SiTef.' : 'Impressão falhou; estorno pendente. Abra Pendências TEF.', false, desfeito === true);
+      return;
+    }
 
     this._concluir(dados);
   },
 
   // Menu administrativo do SiTef (cancelamento, reimpressão, pendências).
   async abrirMenuAdministrativoSitef() {
+    if (!window.AuthModule?.isGerente()) { window.App.showToast('Acesso restrito ao gerente.', 'warning'); return; }
     if (this.provedor() !== 'sitef') {
       window.App.showToast('O menu administrativo é do SiTef. Selecione SiTef como provedor.', 'info');
       return;
     }
-    if (this.transacaoAtiva) { window.App.showToast('Há uma transação em andamento.', 'warning'); return; }
+    if (this.transacaoAtiva || this._reconciliando) { window.App.showToast('Há uma transação em andamento.', 'warning'); return; }
     this._ouvirEventosSitef();
-    this.transacaoAtiva = { id: 'ADM-' + Date.now(), valor: 0, tipo: 'Administrativo', parcelas: 1 };
+    this.transacaoAtiva = { id: 'ADM-' + Date.now(), administrativa: true, valor: 0, tipo: 'Administrativo', parcelas: 1 };
     this.resolverPromessa = () => {};
     this.rejeitarPromessa = () => {};
     this._abrirModal({ valor: 0, tipo: 'Menu administrativo' }, { rotuloProvedor: 'SITEF' });
-
+    try {
     if (!this._sitefConfigurado) {
       const conf = await this.configurarSitef();
       if (!conf.ok) { this._falhar(conf.mensagem); return; }
@@ -617,11 +885,12 @@ export const TefModule = {
     }
     const campos = r.campos || {};
     try {
-      if (campos[122]) window.ThermalPrintModule.imprimirComprovanteTef(campos[122], 'VIA ESTABELECIMENTO');
-      if (campos[121]) window.ThermalPrintModule.imprimirComprovanteTef(campos[121], 'VIA CLIENTE');
-    } catch (e) {}
-    window.electronAPI.sitefFinalizar({ confirma: true, cupomFiscal, dataFiscal, horaFiscal });
+      if (campos[122]) await window.ThermalPrintModule.imprimirComprovanteTef(campos[122], 'VIA ESTABELECIMENTO');
+      if (campos[121]) await window.ThermalPrintModule.imprimirComprovanteTef(campos[121], 'VIA CLIENTE');
+      if (await window.electronAPI.sitefFinalizar({ confirma: true, cupomFiscal, dataFiscal, horaFiscal }) !== true) throw new Error('Finalização administrativa pendente. Verifique no SiTef.');
+    } catch (e) { this._falhar(e.message); return; }
     this._concluir({ sucesso: true, provedor: 'sitef', nsu: campos[133] || '', rede: 'SiTef', tipo: 'Administrativo', valor: 0 });
+    } catch (e) { this._falhar('Falha no menu administrativo: ' + e.message + '. Confira o resultado no SiTef.'); }
   },
 
   // ---------------------------------------------------------------------
@@ -629,6 +898,7 @@ export const TefModule = {
   // ---------------------------------------------------------------------
 
   async testarTefConfig() {
+    if (this.temPendencias()) { window.App.showToast('Resolva as pendências antes de testar outra configuração.', 'warning'); return; }
     if (!StorageService.isModuloAtivo('tefCartao')) {
       window.App.showToast('💳 O módulo TEF / Cartão está desativado para esta licença pelo administrador.', 'info');
       return;
@@ -639,10 +909,11 @@ export const TefModule = {
     const salvo = this.getConfig();
     const val = (id, chave) => {
       const v = modalAberto ? (document.getElementById(id)?.value || '').trim() : '';
-      return v || salvo[chave] || '';
+      return modalAberto ? v : (salvo[chave] || '');
     };
     const provedor = val('tef-provedor', 'provedor') || 'simulador';
     if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Testando...'; }
+    this._reconciliando = true;
 
     try {
       let r;
@@ -655,6 +926,7 @@ export const TefModule = {
       }
       window.App.showToast((r.ok ? '✅ ' : '❌ ') + r.mensagem, r.ok ? 'success' : 'error');
     } finally {
+      this._reconciliando = false;
       if (btn) { btn.disabled = false; btn.innerHTML = '💳 Testar Conexão com Maquininha'; }
     }
   },

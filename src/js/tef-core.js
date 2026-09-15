@@ -84,11 +84,14 @@ export function tipoStone(tipo) {
  * Lê o pedido devolvido pela Stone (criação ou consulta).
  * @returns {{estado:'aguardando'|'aprovada'|'recusada'|'cancelada', dados, mensagem}}
  */
-export function interpretarPedidoStone(order) {
+export function interpretarPedidoStone(order, valorEsperado = null) {
   const o = order && typeof order === 'object' ? order : {};
   const charges = Array.isArray(o.charges) ? o.charges : [];
-  const paga = charges.find(c => c && c.status === 'paid');
-  if (paga) {
+  const pagas = charges.filter(c => c && c.status === 'paid');
+  const totalPago = pagas.reduce((n, c) => n + Number(c.paid_amount ?? c.amount ?? 0), 0);
+  const esperado = valorEsperado == null ? Number(o.amount || totalPago) : centavos(valorEsperado);
+  const paga = pagas[0];
+  if (paga && totalPago === esperado && esperado > 0 && !charges.some(c => c && ['pending', 'processing'].includes(c.status))) {
     const t = paga.last_transaction || {};
     const card = t.card || {};
     return {
@@ -99,6 +102,7 @@ export function interpretarPedidoStone(order) {
         provedor: 'stone',
         pedidoId: o.id || '',
         chargeId: paga.id || '',
+        chargeIds: pagas.map(c => c.id).filter(Boolean),
         transacaoId: t.id || '',
         nsu: String(t.acquirer_nsu || t.nsu || paga.id || ''),
         autorizacao: String(t.acquirer_auth_code || t.authorization_code || ''),
@@ -106,12 +110,14 @@ export function interpretarPedidoStone(order) {
         finalCartao: card.last_four_digits || '',
         tipo: t.payment_method === 'debit_card' ? 'Débito' : (t.payment_method === 'pix' ? 'Pix' : (t.payment_method === 'voucher' ? 'Voucher' : 'Crédito')),
         parcelas: t.installments || 1,
-        valor: (paga.paid_amount || paga.amount || o.amount || 0) / 100,
+        valor: totalPago / 100,
         rede: 'Stone',
         dataHora: paga.paid_at || paga.updated_at || new Date().toISOString()
       }
     };
   }
+  if (pagas.length) return { estado: 'aguardando', mensagem: 'Pagamento parcial ou divergente. Confira todas as cobranças.', dados: null };
+  if (charges.some(c => !c || !['failed', 'canceled', 'voided'].includes(c.status))) return { estado: 'aguardando', mensagem: 'Há cobranças ainda pendentes.', dados: null };
   const falhou = charges.find(c => c && (c.status === 'failed' || c.status === 'canceled' || c.status === 'voided'));
   if (falhou) {
     const t = falhou.last_transaction || {};

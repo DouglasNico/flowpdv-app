@@ -531,6 +531,7 @@ export const PdvModule = {
   },
 
   adicionarAoCarrinho(produto, quantidade = 1, isFardo = false, origem = 'busca') {
+    if (this.checkoutTefBloqueado()) return;
     const turnoAtual = StorageService.getTurnoAtual();
     if (!turnoAtual) {
       if (window.App && typeof window.App.showToast === 'function') {
@@ -666,6 +667,7 @@ export const PdvModule = {
   },
 
   alterarQuantidade(index, delta) {
+    if (this.checkoutTefBloqueado()) return;
     const item = this.carrinho[index];
     if (!item) return;
 
@@ -782,6 +784,7 @@ export const PdvModule = {
   },
 
   confirmarDesconto() {
+    if (this.checkoutTefBloqueado()) return;
     const inputVal = document.getElementById('input-desconto-valor');
     const rawVal = parseFloat(inputVal ? inputVal.value : 0) || 0;
     const totais = this.calcularTotais();
@@ -1015,7 +1018,20 @@ export const PdvModule = {
     }
   },
 
+  checkoutTefBloqueado() {
+    if (this._confirmandoPagamento) return true;
+    if (this._tefVendaGravada) return false;
+    if (StorageService.temVendaPendente() || window.TefModule?.transacaoAtiva || (this.tefVendaId && window.TefModule?.temPagamentoDaVenda(this.tefVendaId))) {
+      window.App.showToast('Há um pagamento integrado pendente. Conclua a venda ou abra Pendências TEF para consultar/estornar.', 'warning');
+      return true;
+    }
+    return false;
+  },
+
   limparCarrinho() {
+    if (this.checkoutTefBloqueado()) return;
+    this.tefVendaId = null;
+    this._tefVendaGravada = false;
     this.carrinho = [];
     this.clubePerguntaExibida = false;
     this.clienteClubeAtivo = null;
@@ -1328,6 +1344,7 @@ export const PdvModule = {
   },
 
   excluirItemPorIndice(idx, qtd = null) {
+    if (this.checkoutTefBloqueado()) return;
     if (idx < 0 || idx >= this.carrinho.length) return;
     const item = this.carrinho[idx];
     if (!item) return;
@@ -1755,7 +1772,8 @@ export const PdvModule = {
   pagamentoDividido: false,
 
   // Modal de Pagamento [F4]
-  abrirModalPagamento() {
+  abrirModalPagamento(recuperacao = false) {
+    if (!recuperacao && this.checkoutTefBloqueado()) return;
     if (this.carrinho.length === 0) {
       window.App.showToast('Adicione produtos ao carrinho antes de finalizar!', 'warning');
       this.tocarSomBeep(false);
@@ -1968,6 +1986,7 @@ export const PdvModule = {
   },
 
   fecharModalPagamento() {
+    if (this.checkoutTefBloqueado()) return;
     const modal = document.getElementById('modal-pagamento');
     if (modal) modal.classList.remove('active');
     this.pagamentosLancados = [];
@@ -2247,6 +2266,11 @@ export const PdvModule = {
   },
 
   removerPagamentoLancado(index) {
+    if (StorageService.temVendaPendente() || this._finalizandoVenda) return;
+    if (this.pagamentosLancados[index]?.tefInfo || window.TefModule?.transacaoAtiva) {
+      window.TefModule.abrirPendencias();
+      return;
+    }
     if (index >= 0 && index < this.pagamentosLancados.length) {
       const removido = this.pagamentosLancados.splice(index, 1)[0];
       if (removido && removido.troco) {
@@ -2269,6 +2293,7 @@ export const PdvModule = {
   _finalizandoVenda: false,
 
   lancarValorPagamento() {
+    if (window.TefModule?.transacaoAtiva || StorageService.temVendaPendente() || this._finalizandoVenda) return;
     // Evita acionamentos múltiplos/duplos no mesmo milissegundo (Enter duplo ou clique duplo)
     if (this._bloqueioLancarPagamento) {
       console.warn('⚠️ Debounce: Pagamento repetido ignorado.');
@@ -2388,16 +2413,20 @@ export const PdvModule = {
       const isTefAtivo = isTefLicenciado && cfgTef && cfgTef.habilitado && window.TefModule;
 
       if (isTefAtivo) {
+        this.tefVendaId ||= 'VND-' + crypto.randomUUID();
         window.App.showToast(`📟 Enviando R$ ${valorAplicado.toFixed(2).replace('.', ',')} ao Pinpad...`, 'info');
         window.TefModule.iniciarTransacao({
+          vendaId: this.tefVendaId,
+          checkout: JSON.parse(JSON.stringify({ carrinho: this.carrinho, total: totalVenda, pagamentos: this.pagamentosLancados, desconto: this.desconto, clienteClubeAtivo: this.clienteClubeAtivo, troco: this.trocoDinheiroTotal, turnoId: StorageService.getTurnoAtual()?.id })),
           valor: valorAplicado,
           tipo: forma,
           parcelas: 1,
           itens: this.carrinho,
           descricao: `FlowPDV ${StorageService.getConfig()?.nomeEmpresa || ''}`.trim()
         }).then(resTef => {
+          if (resTef.vendaId !== this.tefVendaId) throw new Error('Pagamento recuperável em Pendências TEF. Não cobre novamente.');
           this.pagamentosLancados.push({
-            id: 'PAG-' + Date.now(),
+            id: resTef.operacaoId,
             forma: forma,
             valor: valorAplicado,
             tefInfo: resTef
@@ -2408,7 +2437,8 @@ export const PdvModule = {
             this.solicitarFinalizacaoVenda();
           }
         }).catch(err => {
-          window.App.showToast('❌ Pagamento no Pinpad cancelado ou recusado.', 'warning');
+          window.App.showToast(err.message || 'Resultado TEF incerto. Abra Pendências TEF antes de cobrar novamente.', 'warning');
+          if (window.TefModule.temPendencias()) window.TefModule.abrirPendencias();
         });
         return;
       }
@@ -2618,7 +2648,7 @@ export const PdvModule = {
     return v;
   },
 
-  executarFinalizacaoVendaCompleta(opts = {}) {
+  async executarFinalizacaoVendaCompleta(opts = {}) {
     if (this._finalizandoVenda && !opts.jaTravado) return;
     this._finalizandoVenda = true;
 
@@ -2647,10 +2677,12 @@ export const PdvModule = {
       const isMultiplo = pagamentos.length > 1;
       const formasDescricao = pagamentos.map(p => `${p.forma}: R$ ${p.valor.toFixed(2).replace('.', ',')}`).join(' + ');
 
-      const proximoNumero = StorageService.getProximoNumeroVenda();
+      this.tefVendaId ||= 'VND-' + crypto.randomUUID();
+      const vendaExistente = StorageService.getVendas().find(v => v.id === this.tefVendaId);
+      const proximoNumero = vendaExistente?.numeroVenda || StorageService.getProximoNumeroVenda();
 
-      const venda = {
-        id: 'VND-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+      let venda = {
+        id: this.tefVendaId,
         numeroVenda: proximoNumero,
         turnoId: StorageService.getTurnoAtual()?.id || null,
         data: new Date().toISOString(),
@@ -2669,6 +2701,7 @@ export const PdvModule = {
       };
 
       // Atualizar clientes se houver parcela em Fiado
+      let clientesAtualizados = null;
       const parcelasFiado = pagamentos.filter(p => p.forma === 'Fiado');
       if (parcelasFiado.length > 0) {
         const clientes = StorageService.getClientes() || [];
@@ -2686,23 +2719,32 @@ export const PdvModule = {
             });
           }
         });
-        StorageService.saveClientes(clientes);
-        if (window.ClientesModule) window.ClientesModule.renderTabelaClientes();
+        clientesAtualizados = clientes;
       }
 
       const cfgFiscal = StorageService.getFiscalConfig();
       const deveEmitirFiscal = StorageService.isModuloAtivo('fiscalNfce') && cfgFiscal && cfgFiscal.habilitado === true;
+      const emitirAgora = deveEmitirFiscal && cfgFiscal.autoEmitirAoFinalizar !== false;
       const cpfFinal = this.cpfNotaFinalizacao || (document.getElementById('pag-cpf-nota-input')?.value || '').trim() || (this.clienteClubeAtivo ? this.clienteClubeAtivo.cpfCnpj : '') || '';
       if (cpfFinal) {
         venda.cpfCliente = cpfFinal;
       }
 
       if (deveEmitirFiscal) {
-        venda.statusFiscal = 'pendente';
+        venda.statusFiscal = emitirAgora ? 'pendente' : 'manual';
       }
 
-      StorageService.saveVenda(venda);
-      this.agendarEmissaoFiscal(venda, deveEmitirFiscal && cfgFiscal);
+      if (vendaExistente) venda = vendaExistente;
+      window.TefModule?.validarPagamentos(venda);
+      StorageService.saveVenda(venda, clientesAtualizados);
+      this._tefVendaGravada = true;
+      let erroTef = null;
+      this._confirmandoPagamento = true;
+      try { await window.TefModule?.confirmarVenda(venda); }
+      catch (e) { erroTef = e; }
+      finally { this._confirmandoPagamento = false; }
+      if (clientesAtualizados && window.ClientesModule) window.ClientesModule.renderTabelaClientes();
+      this.agendarEmissaoFiscal(venda, emitirAgora && cfgFiscal);
 
       if (venda.itens && venda.itens.length > 0 && venda.itens[0].comandaOrigemId && window.ComandasModule) {
         window.ComandasModule.liberarComandaAposVenda(venda.itens[0].comandaOrigemId, venda.itens);
@@ -2715,9 +2757,14 @@ export const PdvModule = {
       this.cpfNotaFinalizacao = '';
       window.App.showToast(`Venda finalizada com sucesso (${isMultiplo ? formasDescricao : venda.formaPagamento})!`, 'success');
       this.abrirModalSucessoImpressao(venda);
+      if (erroTef) {
+        window.App.showToast('Venda gravada; confirmação TEF pendente. Não cobre novamente. ' + erroTef.message, 'warning');
+        window.TefModule.abrirPendencias();
+      }
     } catch (err) {
       console.error('[PDV] Falha ao finalizar venda:', err);
-      window.App.showToast('Não foi possível finalizar a venda. Tente novamente.', 'error');
+      const gravada = !StorageService.temVendaPendente() && StorageService.getVendas().some(v => v.id === this.tefVendaId);
+      window.App.showToast((gravada ? 'Venda já gravada. ' : 'Falha na finalização. ') + err.message + '. Não cobre novamente.', 'error');
     } finally {
       this._finalizandoVenda = false;
     }
@@ -2796,6 +2843,10 @@ export const PdvModule = {
   },
 
   finalizarVenda(formaPagamento, dadosTef = null) {
+    if (dadosTef || this.checkoutTefBloqueado()) {
+      window.App.showToast('Use a tela de pagamentos para concluir a venda integrada.', 'warning');
+      return;
+    }
     if (this._finalizandoVenda) return;
     const totais = this.calcularTotais();
     const inputPago = document.getElementById('pag-valor-pago-input');
@@ -2832,6 +2883,7 @@ export const PdvModule = {
   },
 
   executarGravacaoVenda(formaPagamento, dadosTef, valorPago, troco) {
+    if (dadosTef || this.checkoutTefBloqueado()) return;
     if (this._finalizandoVenda) return;
     this._finalizandoVenda = true;
     try {

@@ -1002,6 +1002,10 @@ export const LicencaModule = {
           : {}
       };
 
+      if (StorageService.temVendaPendente() || window.TefModule?.temPendencias()) {
+        window.App.showToast('Resolva as pendências de venda e TEF antes de ativar a licença.', 'warning');
+        return;
+      }
       // Sincronizar Categorias
       let catsNuvem = licEncontrada.categorias || licEncontrada.categoriasLoja || licEncontrada.categorias_loja;
       if (typeof catsNuvem === 'string') {

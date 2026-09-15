@@ -43,7 +43,8 @@ export const App = {
     window.InventarioModule = InventarioModule;
     window.App = this;
 
-    StorageService.init();
+    try { StorageService.init(); }
+    catch (e) { window.alert('Não foi possível recuperar a última venda. Libere espaço em disco e reabra o FlowPDV. Não cobre novamente.\n' + e.message); return; }
     AuthModule.init();
     PdvModule.init();
     EstoqueModule.init();

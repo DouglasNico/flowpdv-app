@@ -432,6 +432,12 @@ export const CaixaModule = {
   },
 
   confirmarFechamentoCaixa(e) {
+    if (StorageService.temVendaPendente() || window.TefModule?.temPendencias()) {
+      e?.preventDefault();
+      window.App.showToast('Resolva as pendências de venda e TEF antes de fechar o caixa.', 'warning');
+      window.TefModule?.abrirPendencias();
+      return;
+    }
     if (e && typeof e.preventDefault === 'function') e.preventDefault();
 
     const turno = StorageService.getTurnoAtual();

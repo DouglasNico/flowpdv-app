@@ -602,6 +602,7 @@ export const CloudSyncModule = {
   },
 
   async sincronizacaoInicialAuto() {
+    if (StorageService.temVendaPendente()) return;
     try {
       const chave = this.getChaveLicenca();
       if (!chave) return;
@@ -994,6 +995,7 @@ export const CloudSyncModule = {
   },
 
   aplicarDadosRecebidos(cloudData, opts = {}) {
+    if (StorageService.temVendaPendente()) return;
     if (this.isProcessandoRecebimento) return;
     if (!this.pacotePertenceALicenca(cloudData)) return;
     this.isProcessandoRecebimento = true;
@@ -1138,6 +1140,7 @@ export const CloudSyncModule = {
   },
 
   enviarAlteracaoNuvem(motivo = 'geral') {
+    if (StorageService.temVendaPendente()) return;
     if (this.isProcessandoRecebimento) return;
 
     if (this.debounceTimer) {
@@ -1147,6 +1150,7 @@ export const CloudSyncModule = {
     const delay = (motivo === 'turno' || motivo === 'turno_excluido' || motivo === 'turno_ativo_startup' || motivo === 'turno_fechado_startup' || motivo === 'produtos' || motivo === 'comandas' || motivo === 'categorias_exclusao' || motivo === 'categoria_criada') ? 50 : 500;
 
     this.debounceTimer = setTimeout(async () => {
+      if (StorageService.temVendaPendente()) return;
       try {
         const chave = this.getChaveLicenca();
         if (!chave) return;
@@ -1220,6 +1224,7 @@ export const CloudSyncModule = {
   },
 
   async salvarBackupGarantidoImediato(chaveAlvo) {
+    if (StorageService.temVendaPendente()) return false;
     try {
       const chave = (chaveAlvo || this.getChaveLicenca() || '').trim().toUpperCase();
       if (!chave) return;

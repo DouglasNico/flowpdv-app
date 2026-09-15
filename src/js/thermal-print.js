@@ -148,17 +148,23 @@ export const ThermalPrintModule = {
         ${titulo ? `<div class="t">${this.escCupom(titulo)}</div>` : ''}
         <pre>${this.escCupom(conteudo)}</pre>
       </body></html>`;
-    this.executarImpressao(html);
+    return this.executarImpressao(html, true);
   },
 
-  executarImpressao(html) {
+  async executarImpressao(html, exigirConfirmacao = false) {
     const papelMm = this.papelCupom().papelMm;
     if (window.electronAPI && typeof window.electronAPI.printThermalReceipt === 'function') {
-      window.electronAPI.printThermalReceipt(html, false, { papelMm }).catch((err) => {
-        console.warn('[ThermalPrint] Falha IPC, usando fallback navegador:', err);
-        this.imprimirViaJanelaNavegador(html);
-      });
+      try {
+        const resultado = await window.electronAPI.printThermalReceipt(html, false, { papelMm });
+        if (!resultado || resultado.success !== true) throw new Error(resultado?.error || 'Impressão cancelada ou não confirmada.');
+        return resultado;
+      } catch (err) {
+        if (exigirConfirmacao) throw err;
+        window.App?.showToast('Venda preservada. Não foi possível imprimir: ' + err.message, 'warning');
+        return { success: false, error: err.message };
+      }
     } else {
+      if (exigirConfirmacao) throw new Error('O comprovante TEF exige impressão confirmada no aplicativo instalado.');
       this.imprimirViaJanelaNavegador(html);
     }
   },

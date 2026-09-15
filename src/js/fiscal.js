@@ -9,6 +9,7 @@
 
 import { StorageService } from './storage.js';
 import { AuditModule } from './audit.js';
+import { validarConfigIntegracao } from './tef-ledger.js';
 import {
   FOCUS_URLS,
   montarPayloadNFCe,
@@ -264,10 +265,12 @@ export const FiscalModule = {
 
   salvarConfigTef(e) {
     if (e && typeof e.preventDefault === 'function') e.preventDefault();
+    if (!window.AuthModule?.isGerente()) { window.App.showToast('Acesso restrito ao gerente.', 'warning'); return; }
+    if (window.TefModule?.temPendencias()) { window.App.showToast('Resolva as pendências TEF antes de alterar a integração.', 'warning'); return; }
 
     const val = (id) => (document.getElementById(id)?.value || '').trim();
     const habilitado = document.getElementById('tef-habilitado')?.checked || false;
-    const provedor = val('tef-provedor') || 'simulador';
+    const provedor = val('tef-provedor') || 'stone';
 
     const novoTef = {
       habilitado,
@@ -299,6 +302,8 @@ export const FiscalModule = {
       }
     }
 
+    const erroIntegracao = validarConfigIntegracao(novoTef);
+    if (erroIntegracao) { window.App.showToast(erroIntegracao, 'error'); return; }
     StorageService.saveTefConfig(novoTef);
     if (window.TefModule) window.TefModule._sitefConfigurado = false;
 
