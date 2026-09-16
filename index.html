@@ -2907,7 +2907,7 @@
               <span style="font-size: 12px; color: var(--text-muted); font-weight: 600;">Use os atalhos do teclado [F1 a F6] para escolher as formas</span>
             </div>
           </div>
-          <button type="button" class="btn-primary-action" onclick="TefModule.abrirPendencias()">Pendências TEF</button>
+          <button type="button" class="btn-primary-action" id="btn-pendencias-tef-pag" style="display: none;" onclick="TefModule.abrirPendencias()">Pendências TEF</button>
           <button type="button" class="btn-close-modal" onclick="PdvModule.fecharModalPagamento()" title="Voltar ao carrinho [ESC]">✕</button>
         </div>
 
@@ -2937,8 +2937,8 @@
             <span class="pag-dividir-kbd"><kbd>*</kbd> Dividir conta</span>
             <button type="button" class="pag-dividir-step" onclick="PdvModule.ajustarDivisaoPagamento(-1)" tabindex="-1" aria-label="Menos pessoas">−</button>
             <input id="pag-pessoas-input" type="number" min="1" step="1" value="1" inputmode="numeric" onchange="PdvModule.alterarDivisaoPagamento(this.value)" aria-label="Quantidade de pessoas">
-            <span>pessoas</span>
             <button type="button" class="pag-dividir-step" onclick="PdvModule.ajustarDivisaoPagamento(1)" tabindex="-1" aria-label="Mais pessoas">+</button>
+            <span>pessoas</span>
             <strong id="pag-por-pessoa">R$ 0,00 / pessoa</strong>
           </div>
 

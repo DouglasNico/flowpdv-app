@@ -52452,6 +52452,7 @@ Venda bloqueada no PDV!`);
       if (classicBarcodeInput) classicBarcodeInput.blur();
       this.selecionarFormaPagamento("Dinheiro");
       this.atualizarFormasPagamentoLicenca();
+      this.atualizarBotaoPendenciasTef();
       if (modal) {
         modal.classList.add("active");
         const inputValor = document.getElementById("pag-valor-pago-input");
@@ -52599,6 +52600,13 @@ Venda bloqueada no PDV!`);
       this.pagamentosLancados = [];
       this.trocoDinheiroTotal = 0;
       this.focarInputLeitor();
+    },
+    atualizarBotaoPendenciasTef() {
+      const btn = document.getElementById("btn-pendencias-tef-pag");
+      if (!btn) return;
+      const tef = window.TefModule;
+      const mostrar = !!(tef && (typeof tef.tefAtivo === "function" && tef.tefAtivo() || typeof tef.temPendencias === "function" && tef.temPendencias()));
+      btn.style.display = mostrar ? "" : "none";
     },
     selecionarFormaPagamento(forma) {
       if (forma === "Voucher") {
@@ -52793,12 +52801,14 @@ Venda bloqueada no PDV!`);
         `;
         }
       }
+      const btnLancar = document.getElementById("btn-lancar-valor-enter");
+      if (btnLancar) btnLancar.style.display = faltaPagar > 5e-3 ? "" : "none";
       const btnConcluirModal = document.getElementById("btn-confirmar-pagamento-modal");
       if (btnConcluirModal) {
         if (faltaPagar > 5e-3) {
-          btnConcluirModal.innerHTML = "\u2795 Lan\xE7ar Parcela [ENTER]";
-          btnConcluirModal.style.background = "linear-gradient(135deg, #0284c7, #0369a1)";
+          btnConcluirModal.style.display = "none";
         } else {
+          btnConcluirModal.style.display = "";
           btnConcluirModal.innerHTML = "\u2705 Concluir Venda [ENTER]";
           btnConcluirModal.style.background = "linear-gradient(135deg, var(--accent-green), #047857)";
         }

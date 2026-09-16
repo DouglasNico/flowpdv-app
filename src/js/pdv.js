@@ -1934,6 +1934,7 @@ export const PdvModule = {
     // Selecionar Dinheiro por padrão (F1)
     this.selecionarFormaPagamento('Dinheiro');
     this.atualizarFormasPagamentoLicenca();
+    this.atualizarBotaoPendenciasTef();
 
     if (modal) {
       modal.classList.add('active');
@@ -2098,6 +2099,14 @@ export const PdvModule = {
     this.pagamentosLancados = [];
     this.trocoDinheiroTotal = 0;
     this.focarInputLeitor();
+  },
+
+  atualizarBotaoPendenciasTef() {
+    const btn = document.getElementById('btn-pendencias-tef-pag');
+    if (!btn) return;
+    const tef = window.TefModule;
+    const mostrar = !!(tef && ((typeof tef.tefAtivo === 'function' && tef.tefAtivo()) || (typeof tef.temPendencias === 'function' && tef.temPendencias())));
+    btn.style.display = mostrar ? '' : 'none';
   },
 
   selecionarFormaPagamento(forma) {
@@ -2316,12 +2325,15 @@ export const PdvModule = {
 
     // Atualizar input de valor
     // Atualizar texto do botão principal do modal de acordo com o saldo
+    const btnLancar = document.getElementById('btn-lancar-valor-enter');
+    if (btnLancar) btnLancar.style.display = faltaPagar > 0.005 ? '' : 'none';
+
     const btnConcluirModal = document.getElementById('btn-confirmar-pagamento-modal');
     if (btnConcluirModal) {
       if (faltaPagar > 0.005) {
-        btnConcluirModal.innerHTML = '➕ Lançar Parcela [ENTER]';
-        btnConcluirModal.style.background = 'linear-gradient(135deg, #0284c7, #0369a1)';
+        btnConcluirModal.style.display = 'none';
       } else {
+        btnConcluirModal.style.display = '';
         btnConcluirModal.innerHTML = '✅ Concluir Venda [ENTER]';
         btnConcluirModal.style.background = 'linear-gradient(135deg, var(--accent-green), #047857)';
       }
