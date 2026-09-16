@@ -25853,6 +25853,43 @@
     return corte > 0 && emMs > 0 && ms >= corte && ms <= emMs;
   }
 
+  // src/js/tipo-terminal.js
+  function normalizarTipoTerminal(valor) {
+    const v = String(valor || "").trim().toLowerCase();
+    if (v === "atendimento" || v === "comanda") return "atendimento";
+    if (v === "completo") return "completo";
+    return "caixa";
+  }
+  function tipoTerminalDe(obj) {
+    if (!obj || obj.tipoTerminal == null || String(obj.tipoTerminal).trim() === "") return null;
+    return normalizarTipoTerminal(obj.tipoTerminal);
+  }
+  function mesclarDadosTerminal(existente, info, opcoes) {
+    const base = existente && typeof existente === "object" ? existente : {};
+    const dados = info && typeof info === "object" ? info : {};
+    const forcar = !!(opcoes && opcoes.forcarTipoTerminal);
+    const tipo = forcar ? tipoTerminalDe(dados) || tipoTerminalDe(base) || "caixa" : tipoTerminalDe(base) || tipoTerminalDe(dados) || "caixa";
+    return {
+      ...base,
+      ...dados,
+      id: dados.id || base.id,
+      tipoTerminal: tipo
+    };
+  }
+  function idComandaPorNumero(modo, numero, tipoEscolhido) {
+    const n = parseInt(String(numero == null ? "" : numero).replace(/\D/g, ""), 10);
+    if (!n || n < 1) return null;
+    const modoNorm = String(modo || "mesas_e_comandas");
+    if (modoNorm === "desativado") return null;
+    let tipo = tipoEscolhido;
+    if (modoNorm === "apenas_mesas") tipo = "mesa";
+    if (modoNorm === "apenas_comandas") tipo = "comanda";
+    if (tipo !== "mesa" && tipo !== "comanda") {
+      tipo = modoNorm === "apenas_mesas" ? "mesa" : "comanda";
+    }
+    return (tipo === "mesa" ? "MESA-" : "CMD-") + n;
+  }
+
   // src/js/storage.js
   var StorageService = {
     init() {
@@ -25932,6 +25969,18 @@
         localStorage.setItem("flowpdv_device_id", devId);
       }
       return devId;
+    },
+    getTipoTerminal() {
+      try {
+        return normalizarTipoTerminal(localStorage.getItem("flowpdv_tipo_terminal"));
+      } catch (e) {
+        return "caixa";
+      }
+    },
+    setTipoTerminal(tipo) {
+      const norm = normalizarTipoTerminal(tipo);
+      localStorage.setItem("flowpdv_tipo_terminal", norm);
+      return norm;
     },
     // Categorias Dinâmicas (SaaS Multi-Tenant com suporte estrito a exclusões)
     getCategorias() {
@@ -26882,6 +26931,8 @@
       "flowpdv_inventarios_enviados",
       "adega_licenca_backup",
       "flowpdv_terminal_heartbeat_ms",
+      "flowpdv_tipo_terminal",
+      "flowpdv_atend_tipo_chip",
       "flowpdv_notas_importadas",
       "flowpdv_contas_excluidas_ids",
       "flowpdv_usuarios_excluidos_ids"
@@ -27299,6 +27350,9 @@
         window.electronAPI.definirTelaCheiaOperador(false);
       }
       this.abrirTelaLogin();
+      if (window.App && typeof window.App.aplicarModoTerminal === "function") {
+        window.App.aplicarModoTerminal();
+      }
       if (window.App && typeof window.App.showToast === "function") {
         window.App.showToast("\u{1F512} Sess\xE3o encerrada.", "info");
       }
@@ -27360,9 +27414,11 @@
       const nameEl = document.getElementById("header-user-name");
       const roleEl = document.getElementById("header-user-role");
       const classicOperator = document.getElementById("classic-operator-name");
+      const atendOperator = document.getElementById("atend-operator-name");
       const u = this.getUsuario();
       if (nameEl) nameEl.textContent = u ? u.nome : "\u2014";
       if (classicOperator) classicOperator.textContent = u ? `Operador: ${u.nome}` : "Operador: \u2014";
+      if (atendOperator) atendOperator.textContent = u ? `Operador: ${u.nome}` : "Operador: \u2014";
       if (roleEl) {
         const cargo = u ? u.cargo : "operador";
         roleEl.textContent = this.isGerente() ? "Gerente" : "Operador";
@@ -50777,6 +50833,10 @@ This typically indicates that your device does not have a healthy Internet conne
       return classicInput || modernInput;
     },
     focarInputLeitor() {
+      if (window.App && typeof window.App.operadorEmAtendimento === "function" && window.App.operadorEmAtendimento()) {
+        if (window.AtendimentoPdvModule) window.AtendimentoPdvModule.focarInput();
+        return;
+      }
       const modalLogin = document.getElementById("modal-login-operador");
       if (modalLogin && modalLogin.classList.contains("active")) {
         const pinInput = document.getElementById("login-pin-input");
@@ -51075,6 +51135,9 @@ This typically indicates that your device does not have a healthy Internet conne
       const trimEntrada = String(entrada || "").trim();
       if (!trimEntrada) return;
       const produtos = StorageService.getProdutos() || [];
+      if (window.ComandasModule && typeof window.ComandasModule.puxarParaCaixaPorAtalho === "function") {
+        if (window.ComandasModule.puxarParaCaixaPorAtalho(trimEntrada)) return;
+      }
       if (trimEntrada.startsWith("*")) {
         const semPrefixo = trimEntrada.substring(1).trim();
         let valor = 0;
@@ -51763,6 +51826,10 @@ Venda bloqueada no PDV!`);
     },
     // Modal: Cancelar Item Específico do Carrinho [F8 / DEL]
     atualizarQtdMaximaCancelamento() {
+      if (this._cancelarItemAtendimento && window.AtendimentoPdvModule) {
+        window.AtendimentoPdvModule.atualizarQtdMaximaCancelamento();
+        return;
+      }
       const inputNum = document.getElementById("input-cancelar-item-num");
       const inputQtd = document.getElementById("input-cancelar-item-qtd");
       const detalhe = document.getElementById("cancelar-item-detalhe-selecionado");
@@ -51783,6 +51850,11 @@ Venda bloqueada no PDV!`);
       }
     },
     abrirModalCancelarItem() {
+      if (window.App && typeof window.App.operadorEmAtendimento === "function" && window.App.operadorEmAtendimento() && window.AtendimentoPdvModule) {
+        window.AtendimentoPdvModule.abrirModalExcluirItem();
+        return;
+      }
+      this._cancelarItemAtendimento = false;
       if (!this.carrinho || this.carrinho.length === 0) {
         window.App.showToast("O carrinho est\xE1 vazio! N\xE3o h\xE1 itens para cancelar.", "warning");
         return;
@@ -51847,6 +51919,10 @@ Venda bloqueada no PDV!`);
       }
     },
     selecionarItemParaCancelar(idx) {
+      if (this._cancelarItemAtendimento && window.AtendimentoPdvModule) {
+        window.AtendimentoPdvModule.selecionarItemParaExcluir(idx);
+        return;
+      }
       const input = document.getElementById("input-cancelar-item-num");
       const inputQtd = document.getElementById("input-cancelar-item-qtd");
       if (input) input.value = idx + 1;
@@ -51857,11 +51933,22 @@ Venda bloqueada no PDV!`);
       }
     },
     fecharModalCancelarItem() {
+      const eraAtendimento = !!this._cancelarItemAtendimento;
+      this._cancelarItemAtendimento = false;
       const modal = document.getElementById("modal-cancelar-item-carrinho");
-      if (modal) modal.classList.remove("active");
-      this.focarInputLeitor();
+      if (modal) {
+        modal.classList.remove("active");
+        const titulo = modal.querySelector("h3");
+        if (titulo) titulo.textContent = "Cancelar Item do Carrinho [DEL]";
+      }
+      if (eraAtendimento && window.AtendimentoPdvModule) window.AtendimentoPdvModule.focarInput();
+      else this.focarInputLeitor();
     },
     confirmarExclusaoItemPorNumero() {
+      if (this._cancelarItemAtendimento && window.AtendimentoPdvModule) {
+        window.AtendimentoPdvModule.confirmarExclusaoItemPorNumero();
+        return;
+      }
       const inputNum = document.getElementById("input-cancelar-item-num");
       const inputQtd = document.getElementById("input-cancelar-item-qtd");
       const num = parseInt(inputNum ? inputNum.value : "", 10);
@@ -51885,6 +51972,10 @@ Venda bloqueada no PDV!`);
       this.excluirItemPorIndice(num - 1, qtd);
     },
     excluirItemPorIndice(idx, qtd = null) {
+      if (this._cancelarItemAtendimento && window.AtendimentoPdvModule) {
+        window.AtendimentoPdvModule.excluirItemPorIndice(idx, qtd);
+        return;
+      }
       if (this.checkoutTefBloqueado()) return;
       if (idx < 0 || idx >= this.carrinho.length) return;
       const item = this.carrinho[idx];
@@ -52236,6 +52327,14 @@ Venda bloqueada no PDV!`);
       this.atualizarHighlightBuscaRapida();
     },
     selecionarProdutoBusca(id, isFardo = false) {
+      if (window.App && typeof window.App.operadorEmAtendimento === "function" && window.App.operadorEmAtendimento()) {
+        if (window.AtendimentoPdvModule) {
+          this.fecharBuscaProdutos();
+          window.AtendimentoPdvModule.adicionarProdutoPorId(id, isFardo);
+          this.tocarSomBeep(true);
+        }
+        return;
+      }
       if (!this.validarCaixaAberto()) return;
       const produtos = StorageService.getProdutos();
       const p = produtos.find((item) => item.id === id);
@@ -59237,6 +59336,7 @@ ${base}`;
             const idxTerm = terminais.findIndex((t) => t.id === myDevId);
             if (idxTerm >= 0) {
               if (this.encerrandoApp) return isAuth;
+              this.aplicarTipoTerminalDaNuvem(terminais[idxTerm]);
               const agora = Date.now();
               const ultimoHb = parseInt(localStorage.getItem("flowpdv_terminal_heartbeat_ms") || "0", 10) || 0;
               const precisaHb = agora - ultimoHb > 20 * 1e3;
@@ -59245,7 +59345,7 @@ ${base}`;
                 const termAtual = terminais[idxTerm];
                 const hostnameMudou = !termAtual.hostname || termAtual.hostname !== infoTerminal.hostname;
                 if (!hostnameMudou && !precisaHb) return;
-                terminais[idxTerm] = { ...termAtual, ...infoTerminal, id: myDevId };
+                terminais[idxTerm] = mesclarDadosTerminal(termAtual, infoTerminal);
                 const targetDocId = docIdFound || cloudData.chaveLicenca || chave;
                 if (targetDocId) {
                   setDoc(doc(db, "licencas", targetDocId), { terminaisAtivos: terminais }, { merge: true }).then(() => {
@@ -59302,8 +59402,56 @@ ${base}`;
         sistema: platform === "win32" ? "Windows" : platform,
         ultimoAcesso: (/* @__PURE__ */ new Date()).toISOString(),
         appAberto: true,
-        offlineEm: null
+        offlineEm: null,
+        tipoTerminal: StorageService.getTipoTerminal()
       };
+    },
+    aplicarTipoTerminalDaNuvem(term) {
+      const tipoNuvem = tipoTerminalDe(term);
+      if (!tipoNuvem) return;
+      const atual = StorageService.getTipoTerminal();
+      if (tipoNuvem === atual) return;
+      StorageService.setTipoTerminal(tipoNuvem);
+      if (window.App && typeof window.App.aplicarModoTerminal === "function") {
+        window.App.aplicarModoTerminal();
+      }
+      if (window.App && typeof window.App.sincronizarSelectTipoTerminal === "function") {
+        window.App.sincronizarSelectTipoTerminal();
+      }
+    },
+    async setTipoTerminalAtual(tipo) {
+      const registroBase = mesclarDadosTerminal({}, { tipoTerminal: tipo });
+      const normalizado = registroBase.tipoTerminal || "caixa";
+      StorageService.setTipoTerminal(normalizado);
+      try {
+        const lic = StorageService.getLicenca() || {};
+        const chave = String(lic.chaveLicenca || lic.clienteId || "").trim().toUpperCase();
+        if (chave) {
+          await this.garantirSessaoNuvem(chave);
+          const myDevId = StorageService.getDeviceId();
+          const info = await this.getDadosTerminalAtual();
+          const snap = await getDoc(doc(db, "licencas", chave));
+          const atuais = snap.exists() ? snap.data().terminaisAtivos || [] : [];
+          let terminais = this.limparTerminaisDuplicados(atuais);
+          const idx = terminais.findIndex((t) => t && t.id === myDevId);
+          const registro = mesclarDadosTerminal(idx >= 0 ? terminais[idx] : {}, {
+            ...info,
+            id: myDevId,
+            tipoTerminal: normalizado,
+            ultimoAcesso: (/* @__PURE__ */ new Date()).toISOString()
+          }, { forcarTipoTerminal: true });
+          if (idx >= 0) terminais[idx] = registro;
+          else terminais.push(registro);
+          terminais = this.limparTerminaisDuplicados(terminais);
+          await setDoc(doc(db, "licencas", chave), { terminaisAtivos: terminais, atualizadoEm: (/* @__PURE__ */ new Date()).toISOString() }, { merge: true });
+        }
+      } catch (e) {
+        console.warn("[CloudLic] Falha ao gravar tipoTerminal:", e);
+      }
+      if (window.App && typeof window.App.aplicarModoTerminal === "function") {
+        window.App.aplicarModoTerminal();
+      }
+      return normalizado;
     },
     /** Sobe hostname + ultimoAcesso na hora (abrir/fechar caixa). Sem espera de 2 min. */
     async forcarHeartbeatTerminal() {
@@ -59320,14 +59468,13 @@ ${base}`;
         const atuais = snap.exists() ? snap.data().terminaisAtivos || [] : [];
         let terminais = this.limparTerminaisDuplicados(atuais);
         const idx = terminais.findIndex((t) => t && t.id === myDevId);
-        const registro = {
-          ...idx >= 0 ? terminais[idx] : {},
+        const registro = mesclarDadosTerminal(idx >= 0 ? terminais[idx] : {}, {
           ...info,
           id: myDevId,
           ultimoAcesso: (/* @__PURE__ */ new Date()).toISOString(),
           appAberto: true,
           offlineEm: null
-        };
+        });
         if (idx >= 0) terminais[idx] = registro;
         else terminais.push(registro);
         terminais = this.limparTerminaisDuplicados(terminais);
@@ -59832,10 +59979,12 @@ ${base}`;
         const jaRegistrado = this.isTerminalRegistrado(terminais, myDevId);
         if (jaRegistrado) {
           const idx = terminais.findIndex((t) => t.id === myDevId);
-          if (idx >= 0) terminais[idx] = infoTerminal;
+          if (idx >= 0) terminais[idx] = mesclarDadosTerminal(terminais[idx], infoTerminal);
         } else if (terminais.length < limite) {
-          terminais.push(infoTerminal);
+          terminais.push(mesclarDadosTerminal({}, infoTerminal));
         }
+        const meuTermAtivar = terminais.find((t) => t && t.id === myDevId);
+        if (meuTermAtivar) this.aplicarTipoTerminalDaNuvem(meuTermAtivar);
         try {
           await desvincularTerminalNuvem({ deviceId: myDevId, chaveManter: novaChaveFinal });
         } catch (e) {
@@ -60064,10 +60213,12 @@ ${base}`;
         if (jaRegistrado || terminais.length < limite) {
           if (jaRegistrado) {
             const idx = terminais.findIndex((t) => t.id === myDevId);
-            if (idx >= 0) terminais[idx] = infoTerminal;
+            if (idx >= 0) terminais[idx] = mesclarDadosTerminal(terminais[idx], infoTerminal);
           } else {
-            terminais.push(infoTerminal);
+            terminais.push(mesclarDadosTerminal({}, infoTerminal));
           }
+          const meuTermRechecar = terminais.find((t) => t && t.id === myDevId);
+          if (meuTermRechecar) this.aplicarTipoTerminalDaNuvem(meuTermRechecar);
           const docsToUpdate = Array.from(new Set([cloudData.docId, cloudData.chaveLicenca, cloudData.id].filter(Boolean)));
           for (const tId of docsToUpdate) {
             try {
@@ -60710,6 +60861,9 @@ ${base}`;
           this.confirmarMovimentosAplicados();
           if (Array.isArray(cloudData.comandas)) {
             StorageService.saveComandas(mesclarComandas(cloudData.comandas, StorageService.getComandas()));
+            if (window.ComandasModule && typeof window.ComandasModule.atualizarTelasAposSync === "function") {
+              window.ComandasModule.atualizarTelasAposSync();
+            }
           }
           const categoriasLocais = StorageService.getCategorias() || [];
           const categoriasConsolidadas = this.mesclarCategorias(cloudData.categorias, categoriasLocais);
@@ -61072,8 +61226,8 @@ ${base}`;
         if (Array.isArray(cloudData.comandas)) {
           StorageService.saveComandas(mesclarComandas(cloudData.comandas, StorageService.getComandas()));
           houveAlteracao = true;
-          if (window.ComandasModule && typeof window.ComandasModule.renderGrid === "function") {
-            window.ComandasModule.renderGrid();
+          if (window.ComandasModule && typeof window.ComandasModule.atualizarTelasAposSync === "function") {
+            window.ComandasModule.atualizarTelasAposSync();
           }
         }
         if (Array.isArray(cloudData.vendas)) {
@@ -67485,6 +67639,61 @@ NSU: ${nsu}`,
       StorageService.saveLicenca(lic);
       StorageService.setModulosLicenca(modulos);
       this.adaptarModoAtendimento();
+      if (window.AtendimentoPdvModule && typeof window.AtendimentoPdvModule.adaptarSalao === "function") {
+        window.AtendimentoPdvModule.adaptarSalao();
+      }
+    },
+    textosModo() {
+      const modo = this.getModoAtendimento();
+      if (modo === "apenas_mesas") {
+        return {
+          modo,
+          unidade: "mesa",
+          caption: "Mesas \xB7 Atendimento no sal\xE3o",
+          intro: "Informe o n\xFAmero da mesa para<br>come\xE7ar ou continuar um pedido.",
+          statusEntrada: "DIGITE A MESA",
+          labelNumero: "N\xDAMERO DA MESA",
+          transferir: "Trocar mesa",
+          preconta: "Total da mesa",
+          atalhoF5: "Trocar mesa",
+          abraPrimeiro: "Abra uma mesa primeiro.",
+          transferirTitulo: "\u{1F504} Transferir itens / Mesa",
+          transferirLabel: "Mesa de destino:",
+          transferirDestino: "outra mesa de destino"
+        };
+      }
+      if (modo === "apenas_comandas") {
+        return {
+          modo,
+          unidade: "comanda",
+          caption: "Comandas \xB7 Atendimento no sal\xE3o",
+          intro: "Informe o n\xFAmero da comanda para<br>come\xE7ar ou continuar um pedido.",
+          statusEntrada: "DIGITE A COMANDA",
+          labelNumero: "N\xDAMERO DA COMANDA",
+          transferir: "Trocar comanda",
+          preconta: "Total da comanda",
+          atalhoF5: "Trocar comanda",
+          abraPrimeiro: "Abra uma comanda primeiro.",
+          transferirTitulo: "\u{1F504} Transferir itens / Comanda",
+          transferirLabel: "Comanda de destino:",
+          transferirDestino: "outra comanda de destino"
+        };
+      }
+      return {
+        modo,
+        unidade: "mesa ou comanda",
+        caption: "Mesas & comandas \xB7 Atendimento no sal\xE3o",
+        intro: "Selecione o tipo e informe o n\xFAmero para<br>come\xE7ar ou continuar um pedido.",
+        statusEntrada: "DIGITE MESA OU COMANDA",
+        labelNumero: null,
+        transferir: "Trocar mesa / comanda",
+        preconta: "Total da conta",
+        atalhoF5: "Trocar mesa / comanda",
+        abraPrimeiro: "Abra uma mesa ou comanda primeiro.",
+        transferirTitulo: "\u{1F504} Transferir itens",
+        transferirLabel: "Mesa / Comanda de destino:",
+        transferirDestino: "outra mesa ou comanda de destino"
+      };
     },
     adaptarModoAtendimento() {
       const modo = this.getModoAtendimento();
@@ -67553,6 +67762,16 @@ NSU: ${nsu}`,
         return todas.filter((c) => c.tipo === "comanda");
       }
       return todas;
+    },
+    atualizarTelasAposSync() {
+      this.renderGridComandas();
+      this.renderPainelDetalhes();
+      if (window.AtendimentoPdvModule && typeof window.AtendimentoPdvModule.estaAtivoOperador === "function" && window.AtendimentoPdvModule.estaAtivoOperador()) {
+        window.AtendimentoPdvModule.renderOperacao();
+      }
+    },
+    renderGrid() {
+      this.atualizarTelasAposSync();
     },
     renderGridComandas() {
       const grid = document.getElementById("comandas-grid-container");
@@ -67664,11 +67883,40 @@ NSU: ${nsu}`,
       this.renderGridComandas();
       this.renderPainelDetalhes();
     },
+    garantirPorNumero(tipo, numero) {
+      const id = idComandaPorNumero(this.getModoAtendimento(), numero, tipo);
+      if (!id) return null;
+      const n = parseInt(String(id).replace(/\D/g, ""), 10);
+      const tipoNorm = id.indexOf("MESA-") === 0 ? "mesa" : "comanda";
+      const lista = this.getComandas();
+      let c = lista.find((item) => item && (item.id === id || item.tipo === tipoNorm && Number(item.numero) === n));
+      if (c) return c;
+      const pad = String(n).padStart(2, "0");
+      c = {
+        id,
+        tipo: tipoNorm,
+        numero: n,
+        nome: tipoNorm === "mesa" ? "Mesa " + pad : "Comanda #" + pad,
+        cliente: "",
+        status: "livre",
+        itens: [],
+        taxaServico: true,
+        total: 0,
+        abertaEm: null,
+        operador: ""
+      };
+      lista.push(c);
+      this.salvarComandas(lista);
+      return c;
+    },
     setDivisaoPessoas(qtd) {
       this.numPessoasDivisao = Math.max(1, parseInt(qtd, 10) || 1);
       this.renderPainelDetalhes();
     },
     renderPainelDetalhes() {
+      if (window.AtendimentoPdvModule?.estaAtivoOperador()) {
+        window.AtendimentoPdvModule.renderOperacao();
+      }
       const container = document.getElementById("comanda-detalhes-painel");
       if (!container) return;
       const comandas = this.getComandasDoModo();
@@ -68189,6 +68437,17 @@ NSU: ${nsu}`,
       const origemNomeEl = document.getElementById("transferir-origem-nome");
       const selectDestino = document.getElementById("transferir-destino-select");
       if (origemNomeEl) origemNomeEl.textContent = cOrigem.nome;
+      const textos = this.textosModo();
+      const titulo = document.getElementById("transferir-modal-titulo");
+      const texto = document.getElementById("transferir-modal-texto");
+      const labelDest = document.getElementById("transferir-destino-label");
+      if (titulo) titulo.textContent = textos.transferirTitulo;
+      if (texto) {
+        texto.innerHTML = `Transfira todos os itens consumidos da <strong id="transferir-origem-nome" style="color: #7c3aed;"></strong> para ${textos.transferirDestino}:`;
+        const nomeEl = document.getElementById("transferir-origem-nome");
+        if (nomeEl) nomeEl.textContent = cOrigem.nome || "";
+      }
+      if (labelDest) labelDest.textContent = textos.transferirLabel;
       if (selectDestino) {
         const outras = this.getComandasDoModo().filter((item) => item.id !== origemId);
         selectDestino.innerHTML = outras.map((item) => `
@@ -68382,7 +68641,7 @@ NSU: ${nsu}`,
             <span class="nowrap">+ R$ ${taxaServicoOpcional.toFixed(2).replace(".", ",")}</span>
           </div>
           <div class="row-flex bold" style="font-size: 12px; margin-top: 3px;">
-            <span>TOTAL C/ SERVI\xC7O:</span>
+            <span>TOTAL:</span>
             <span class="nowrap">R$ ${totalComServico.toFixed(2).replace(".", ",")}</span>
           </div>
         ` : `
@@ -68409,14 +68668,57 @@ NSU: ${nsu}`,
       ThermalPrintModule.executarImpressao(html);
       if (window.App) window.App.showToast(`\u{1F5A8}\uFE0F Pr\xE9-conta da ${c.nome} enviada para a impressora!`, "info");
     },
-    transferirParaPdvCaixa(comandaId) {
+    interpretarAtalhoCaixa(entrada) {
+      const t = String(entrada || "").trim().toUpperCase();
+      const m = t.match(/^\*(MESA|COMANDA|CMD|M|C)(\d{1,4})$/);
+      if (!m) return null;
+      const token = m[1];
+      const tipo = token === "M" || token === "MESA" ? "mesa" : "comanda";
+      return { tipo, numero: parseInt(m[2], 10) };
+    },
+    puxarParaCaixaPorAtalho(entrada) {
+      if (this.getModoAtendimento() === "desativado") return false;
+      if (window.App && typeof window.App.operadorEmAtendimento === "function" && window.App.operadorEmAtendimento()) return false;
+      const atalho = this.interpretarAtalhoCaixa(entrada);
+      if (!atalho) return false;
+      const modo = this.getModoAtendimento();
+      if (modo === "apenas_mesas" && atalho.tipo !== "mesa") {
+        if (window.App) window.App.showToast("Esta loja usa s\xF3 mesas. Digite *M e o n\xFAmero. Ex: *M12", "warning");
+        return true;
+      }
+      if (modo === "apenas_comandas" && atalho.tipo !== "comanda") {
+        if (window.App) window.App.showToast("Esta loja usa s\xF3 comandas. Digite *C e o n\xFAmero. Ex: *C12", "warning");
+        return true;
+      }
+      const id = idComandaPorNumero(modo, atalho.numero, atalho.tipo);
+      const c = (this.getComandas() || []).find((item) => item && item.id === id);
+      const nome = atalho.tipo === "mesa" ? "Mesa " + atalho.numero : "Comanda #" + atalho.numero;
+      if (!c || !c.itens || c.itens.length === 0) {
+        if (window.App) window.App.showToast(`${nome} n\xE3o tem itens para cobrar.`, "warning");
+        return true;
+      }
+      const ok = this.transferirParaPdvCaixa(id, { abrirPagamento: false });
+      if (ok && window.PdvModule && typeof window.PdvModule.tocarSomBeep === "function") {
+        window.PdvModule.tocarSomBeep(true);
+      }
+      return true;
+    },
+    transferirParaPdvCaixa(comandaId, opcoes) {
       const comandas = this.getComandas();
       const c = comandas.find((item) => item.id === comandaId);
       if (!c || !c.itens || c.itens.length === 0) {
         if (window.App) window.App.showToast("Esta mesa n\xE3o possui itens lan\xE7ados para cobrar no caixa!", "warning");
-        return;
+        return false;
       }
-      if (!window.PdvModule) return;
+      if (!window.PdvModule) return false;
+      if (window.PdvModule.carrinho && window.PdvModule.carrinho.length > 0) {
+        const jaDesta = window.PdvModule.carrinho.some((it2) => it2 && it2.comandaOrigemId === c.id);
+        if (!jaDesta) {
+          if (window.App) window.App.showToast("Finalize ou esvazie o carrinho antes de puxar a mesa/comanda.", "warning");
+          return false;
+        }
+      }
+      const abrirPagamento = !(opcoes && opcoes.abrirPagamento === false);
       const taxaServicoValor = c.taxaServico ? parseFloat(c.total || 0) * 0.1 : 0;
       window.PdvModule.carrinho = c.itens.map((it2) => ({
         id: it2.id,
@@ -68442,10 +68744,15 @@ NSU: ${nsu}`,
       window.PdvModule.renderCarrinho();
       if (window.App) window.App.trocarAba("pdv");
       AuditModule.registrarOuAtualizarLogMesa(c, "fechamento_caixa");
-      setTimeout(() => {
-        window.PdvModule.abrirModalPagamento();
-        if (window.App) window.App.showToast(`\u{1F4B0} Itens da ${c.nome} transferidos para o caixa!`, "success");
-      }, 150);
+      if (abrirPagamento) {
+        setTimeout(() => {
+          window.PdvModule.abrirModalPagamento();
+          if (window.App) window.App.showToast(`\u{1F4B0} Itens da ${c.nome} transferidos para o caixa!`, "success");
+        }, 150);
+      } else if (window.App) {
+        window.App.showToast(`${c.nome} no caixa (${c.itens.length} item(ns)). F4 para cobrar.`, "success");
+      }
+      return true;
     },
     /**
      * Baixa só o que foi cobrado. Item lançado na mesa enquanto o caixa
@@ -69069,6 +69376,521 @@ NSU: ${nsu}`,
     }
   };
 
+  // src/js/atendimento-pdv.js
+  var AtendimentoPdvModule = {
+    tipoChip: "comanda",
+    init() {
+      try {
+        const salvo = sessionStorage.getItem("flowpdv_atend_tipo_chip");
+        if (salvo === "mesa" || salvo === "comanda") this.tipoChip = salvo;
+      } catch (e) {
+      }
+      this.bind();
+    },
+    bind() {
+      const numInput = document.getElementById("atend-numero-input");
+      if (numInput && !numInput.dataset.bound) {
+        numInput.dataset.bound = "true";
+        numInput.addEventListener("input", () => {
+          numInput.value = String(numInput.value || "").replace(/\D/g, "");
+        });
+        numInput.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            this.abrirPeloNumero();
+          }
+        });
+      }
+      const codInput = document.getElementById("atend-barcode-input");
+      if (codInput && !codInput.dataset.bound) {
+        codInput.dataset.bound = "true";
+        codInput.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            const valor = String(codInput.value || "").trim();
+            codInput.value = "";
+            this.lancarCodigo(valor);
+          }
+        });
+      }
+      document.querySelectorAll("[data-atend-chip]").forEach((btn) => {
+        if (btn.dataset.bound) return;
+        btn.dataset.bound = "true";
+        btn.addEventListener("click", () => this.setChip(btn.getAttribute("data-atend-chip")));
+      });
+      const btnAbrir = document.getElementById("atend-btn-abrir");
+      if (btnAbrir && !btnAbrir.dataset.bound) {
+        btnAbrir.dataset.bound = "true";
+        btnAbrir.addEventListener("click", () => this.abrirPeloNumero());
+      }
+      const pessoasInput = document.getElementById("atend-pessoas");
+      if (pessoasInput && !pessoasInput.dataset.bound) {
+        pessoasInput.dataset.bound = "true";
+        pessoasInput.addEventListener("keydown", (e) => {
+          if (e.key !== "Enter") return;
+          e.preventDefault();
+          e.stopPropagation();
+          if (this.dividirConta(pessoasInput.value)) {
+            requestAnimationFrame(() => this.focarInput());
+          }
+        });
+      }
+    },
+    estaAtivoOperador() {
+      return !!(window.App && typeof window.App.operadorEmAtendimento === "function" && window.App.operadorEmAtendimento());
+    },
+    mostrar() {
+      this.bind();
+      this.adaptarSalao();
+      this.copiarLogoEOperador();
+      if (!ComandasModule.comandaAtivaId) this.mostrarEntrada();
+      else this.mostrarOperacao();
+      this.focarInput();
+    },
+    ocultar() {
+      const shell = document.getElementById("atendimento-pdv-shell");
+      if (shell) shell.classList.remove("active");
+    },
+    adaptarChips() {
+      this.adaptarSalao();
+    },
+    adaptarSalao() {
+      const textos = ComandasModule.textosModo && ComandasModule.textosModo() || {};
+      const modo = textos.modo || ComandasModule.getModoAtendimento();
+      const wrap2 = document.getElementById("atend-chips-wrap");
+      const misto = modo === "mesas_e_comandas";
+      if (wrap2) wrap2.style.display = misto ? "flex" : "none";
+      if (modo === "apenas_mesas") this.tipoChip = "mesa";
+      if (modo === "apenas_comandas") this.tipoChip = "comanda";
+      this.pintarChips();
+      const label = document.getElementById("atend-numero-label");
+      if (label) {
+        label.textContent = textos.labelNumero || (this.tipoChip === "mesa" ? "N\xDAMERO DA MESA" : "N\xDAMERO DA COMANDA");
+      }
+      const caption = document.getElementById("atend-status-caption");
+      if (caption && textos.caption) caption.textContent = textos.caption;
+      const intro = document.getElementById("atend-intro");
+      if (intro && textos.intro) intro.innerHTML = textos.intro;
+      const transferir = document.getElementById("atend-transferir-label");
+      if (transferir && textos.transferir) transferir.textContent = textos.transferir;
+      const preconta = document.getElementById("atend-preconta-sub");
+      if (preconta && textos.preconta) {
+        preconta.innerHTML = `${textos.preconta} <kbd>F4</kbd>`;
+      }
+      const atalhoF5 = document.getElementById("atend-atalho-f5");
+      if (atalhoF5 && textos.atalhoF5) {
+        atalhoF5.innerHTML = `<kbd>F5</kbd> ${textos.atalhoF5}`;
+      }
+      if (!this.comandaAtual()) this.atualizarStatusEntrada();
+    },
+    textoStatusEntrada() {
+      const textos = ComandasModule.textosModo && ComandasModule.textosModo();
+      if (textos && textos.modo !== "mesas_e_comandas" && textos.statusEntrada) return textos.statusEntrada;
+      if (this.tipoChip === "mesa") return "DIGITE A MESA";
+      if (this.tipoChip === "comanda") return "DIGITE A COMANDA";
+      return "DIGITE MESA OU COMANDA";
+    },
+    atualizarStatusEntrada() {
+      const status = document.getElementById("atend-status-text");
+      if (status) status.textContent = this.textoStatusEntrada();
+    },
+    setChip(tipo) {
+      if (tipo !== "mesa" && tipo !== "comanda") return;
+      const modo = ComandasModule.getModoAtendimento();
+      if (modo === "apenas_mesas" && tipo !== "mesa") return;
+      if (modo === "apenas_comandas" && tipo !== "comanda") return;
+      this.tipoChip = tipo;
+      try {
+        sessionStorage.setItem("flowpdv_atend_tipo_chip", tipo);
+      } catch (e) {
+      }
+      this.pintarChips();
+      const label = document.getElementById("atend-numero-label");
+      if (label && modo === "mesas_e_comandas") {
+        label.textContent = tipo === "mesa" ? "N\xDAMERO DA MESA" : "N\xDAMERO DA COMANDA";
+      }
+      if (!this.comandaAtual()) this.atualizarStatusEntrada();
+      this.focarInput();
+    },
+    pintarChips() {
+      document.querySelectorAll("[data-atend-chip]").forEach((btn) => {
+        btn.classList.toggle("on", btn.getAttribute("data-atend-chip") === this.tipoChip);
+        btn.setAttribute("aria-pressed", String(btn.getAttribute("data-atend-chip") === this.tipoChip));
+      });
+    },
+    mostrarEntrada() {
+      const entrada = document.getElementById("atend-entrada");
+      const op = document.getElementById("atend-operacao");
+      if (entrada) entrada.style.display = "flex";
+      if (op) op.style.display = "none";
+      const num = document.getElementById("atend-numero-input");
+      if (num) num.value = "";
+      this.adaptarSalao();
+      this.atualizarStatusEntrada();
+    },
+    mostrarOperacao() {
+      const entrada = document.getElementById("atend-entrada");
+      const op = document.getElementById("atend-operacao");
+      if (entrada) entrada.style.display = "none";
+      if (op) op.style.display = "";
+      this.renderOperacao();
+    },
+    abrirPeloNumero() {
+      const input = document.getElementById("atend-numero-input");
+      const bruto = input ? input.value : "";
+      const modo = ComandasModule.getModoAtendimento();
+      const id = idComandaPorNumero(modo, bruto, this.tipoChip);
+      if (!id) {
+        if (window.App) window.App.showToast("Digite um n\xFAmero v\xE1lido.", "warning");
+        return;
+      }
+      const tipo = id.indexOf("MESA-") === 0 ? "mesa" : "comanda";
+      const numero = parseInt(String(id).replace(/\D/g, ""), 10);
+      const c = ComandasModule.garantirPorNumero(tipo, numero);
+      if (!c) return;
+      if (ComandasModule.comandaAtivaId !== c.id) ComandasModule.numPessoasDivisao = 1;
+      ComandasModule.comandaAtivaId = c.id;
+      if (!c.itens || c.itens.length === 0) ComandasModule.toggleTaxaServico(c.id, true);
+      this.mostrarOperacao();
+      this.focarInput();
+    },
+    soltar() {
+      ComandasModule.comandaAtivaId = null;
+      this.mostrarEntrada();
+      this.focarInput();
+    },
+    comandaAtual() {
+      const id = ComandasModule.comandaAtivaId;
+      if (!id) return null;
+      return (ComandasModule.getComandas() || []).find((c) => c && c.id === id) || null;
+    },
+    renderOperacao() {
+      const c = this.comandaAtual();
+      const status = document.getElementById("atend-status-text");
+      if (status) {
+        status.textContent = c ? String(c.nome || "").toUpperCase() + (c.status === "fechando" ? " \xB7 EM CONFER\xCANCIA" : " ABERTA") : "DIGITE O N\xDAMERO";
+      }
+      const tbody = document.getElementById("atend-itens-tbody");
+      if (tbody) {
+        const itens = c && Array.isArray(c.itens) ? c.itens : [];
+        if (itens.length === 0) {
+          tbody.innerHTML = '<tr class="atend-empty-row"><td colspan="6" class="atend-empty-msg">Seu pedido come\xE7a aqui.<br>Busque um produto ou leia o c\xF3digo de barras.</td></tr>';
+        } else {
+          tbody.innerHTML = itens.map((it2, idx) => {
+            const qtd = parseFloat(it2.quantidade) || 0;
+            const unit = (parseFloat(it2.precoUnitario) || 0).toFixed(2).replace(".", ",");
+            const tot = (parseFloat(it2.total) || 0).toFixed(2).replace(".", ",");
+            return `<tr>
+            <td>${idx + 1}</td>
+            <td>${this.esc(it2.codigo || "")}</td>
+            <td>${this.esc(it2.nome || "")}</td>
+            <td style="text-align:center;">${qtd}</td>
+            <td style="text-align:right;">${unit}</td>
+            <td style="text-align:right;">${tot}</td>
+          </tr>`;
+          }).join("");
+        }
+      }
+      const qtdItens = c && c.itens ? c.itens.reduce((a, i) => a + (parseFloat(i.quantidade) || 0), 0) : 0;
+      const total = c ? parseFloat(c.total) || 0 : 0;
+      const setTxt = (id, v) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = v;
+      };
+      setTxt("atend-subtotal", total.toFixed(2).replace(".", ","));
+      setTxt("atend-qtd-itens", String(qtdItens));
+      const taxa = c && c.taxaServico ? total * 0.1 : 0;
+      const totalComServico = total + taxa;
+      const pessoas = ComandasModule.numPessoasDivisao || 1;
+      setTxt("atend-total", totalComServico.toFixed(2).replace(".", ","));
+      setTxt("atend-taxa-valor", "R$ " + taxa.toFixed(2).replace(".", ","));
+      setTxt("atend-por-pessoa", "R$ " + (totalComServico / pessoas).toFixed(2).replace(".", ",") + " / pessoa");
+      const divisor = document.getElementById("atend-pessoas");
+      if (divisor) divisor.value = String(pessoas);
+      const checkbox = document.getElementById("atend-taxa-servico");
+      if (checkbox) checkbox.checked = !!(c && c.taxaServico);
+      for (const id of ["atend-pre-conta", "atend-transferir"]) {
+        const btn = document.getElementById(id);
+        if (btn) btn.disabled = !c || !c.itens || c.itens.length === 0;
+      }
+    },
+    dividirConta(valor) {
+      const pessoas = Number(valor);
+      if (!Number.isSafeInteger(pessoas) || pessoas < 1) {
+        if (window.App) window.App.showToast("Informe uma quantidade inteira de pessoas, a partir de 1.", "warning");
+        this.renderOperacao();
+        return false;
+      }
+      ComandasModule.setDivisaoPessoas(pessoas);
+      this.renderOperacao();
+      return true;
+    },
+    alterarTaxa(ativa) {
+      const c = this.comandaAtual();
+      if (!c) return;
+      ComandasModule.toggleTaxaServico(c.id, ativa);
+      this.renderOperacao();
+    },
+    imprimirPreConta() {
+      const c = this.comandaAtual();
+      if (!c || !c.itens || !c.itens.length) return;
+      ComandasModule.imprimirPreConta(c.id);
+      this.renderOperacao();
+    },
+    trocarMesa() {
+      const c = this.comandaAtual();
+      if (!c) return;
+      ComandasModule.abrirModalTransferir(c.id);
+      const modal = document.getElementById("modal-transferir-comanda");
+      if (modal && modal.classList.contains("active")) document.getElementById("transferir-destino-select")?.focus();
+    },
+    esc(s) {
+      return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    },
+    copiarLogoEOperador() {
+      const src = document.getElementById("classic-client-logo");
+      const dest = document.getElementById("atend-client-logo");
+      if (src && dest && src.getAttribute("src")) dest.src = src.getAttribute("src");
+      const u = AuthModule.getUsuario && AuthModule.getUsuario();
+      const op = document.getElementById("atend-operator-name");
+      if (op) op.textContent = u && u.nome ? "Operador: " + u.nome : "Operador: \u2014";
+    },
+    focarInput() {
+      const entrada = document.getElementById("atend-entrada");
+      const naEntrada = entrada && entrada.style.display !== "none";
+      const alvo = document.getElementById(naEntrada ? "atend-numero-input" : "atend-barcode-input");
+      if (!alvo) return;
+      try {
+        alvo.focus({ preventScroll: true });
+      } catch (e) {
+        alvo.focus();
+      }
+    },
+    encontrarProduto(entrada) {
+      const trimEntrada = String(entrada || "").trim();
+      if (!trimEntrada) return null;
+      const produtos = StorageService.getProdutos() || [];
+      let quantidade = 1;
+      let codigo = trimEntrada;
+      if (trimEntrada.includes("*") && !trimEntrada.startsWith("*")) {
+        const partes = trimEntrada.split("*");
+        quantidade = parseFloat(String(partes[0]).replace(",", ".")) || 1;
+        codigo = String(partes[1] || "").trim();
+      }
+      const codNormalizado = String(codigo || "").trim().toUpperCase();
+      const fardo = produtos.find((p) => p.codigoBarrasFardo && String(p.codigoBarrasFardo).trim().toUpperCase() === codNormalizado);
+      if (fardo) return { produto: fardo, quantidade };
+      const exato = produtos.find(
+        (p) => String(p.codigoBarras || "").trim().toUpperCase() === codNormalizado || String(p.codigo || "").trim().toUpperCase() === codNormalizado || String(p.id || "").trim().toUpperCase() === codNormalizado
+      );
+      if (exato) return { produto: exato, quantidade };
+      const porNome = produtos.find((p) => String(p.nome || "").trim().toUpperCase() === codNormalizado);
+      if (porNome) return { produto: porNome, quantidade };
+      return null;
+    },
+    lancarCodigo(entrada) {
+      const c = this.comandaAtual();
+      if (!c) {
+        if (window.App) window.App.showToast(ComandasModule.textosModo && ComandasModule.textosModo().abraPrimeiro || "Abra uma mesa ou comanda primeiro.", "warning");
+        return;
+      }
+      const achou = this.encontrarProduto(entrada);
+      if (!achou) {
+        if (window.App) window.App.showToast("Produto n\xE3o encontrado: " + entrada, "error");
+        return;
+      }
+      this.pintarItemAtual(achou.produto, achou.quantidade);
+      ComandasModule.adicionarItem(c.id, achou.produto, achou.quantidade);
+      this.renderOperacao();
+      this.focarInput();
+    },
+    adicionarProdutoPorId(id, isFardo) {
+      const c = this.comandaAtual();
+      if (!c) {
+        if (window.App) window.App.showToast(ComandasModule.textosModo && ComandasModule.textosModo().abraPrimeiro || "Abra uma mesa ou comanda primeiro.", "warning");
+        return;
+      }
+      const produtos = StorageService.getProdutos() || [];
+      const p = produtos.find((item) => item && item.id === id);
+      if (!p) return;
+      this.pintarItemAtual(p, 1);
+      ComandasModule.adicionarItem(c.id, p, 1);
+      this.renderOperacao();
+      this.focarInput();
+      return isFardo;
+    },
+    pintarItemAtual(produto, qtd) {
+      const set = (id, v) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = v;
+      };
+      const preco = parseFloat(produto.precoVenda || produto.preco || 0);
+      set("atend-codigo-barras", produto.codigoBarras || produto.codigo || produto.id || "");
+      set("atend-valor-unitario", preco.toFixed(2).replace(".", ","));
+      set("atend-total-item", (preco * (parseFloat(qtd) || 1)).toFixed(2).replace(".", ","));
+    },
+    abrirModalExcluirItem() {
+      const c = this.comandaAtual();
+      if (!c || !c.itens || c.itens.length === 0) {
+        if (window.App) window.App.showToast("N\xE3o h\xE1 item para excluir.", "warning");
+        return;
+      }
+      const modal = document.getElementById("modal-cancelar-item-carrinho");
+      if (modal && modal.classList.contains("active")) {
+        this.executarAberturaModalExcluirItem();
+        return;
+      }
+      if (window.AuthModule && typeof window.AuthModule.executarComPermissaoOuPin === "function") {
+        window.AuthModule.executarComPermissaoOuPin("cancelarItem", () => {
+          this.executarAberturaModalExcluirItem();
+        }, "Autoriza\xE7\xE3o: Cancelar Item");
+      } else {
+        this.executarAberturaModalExcluirItem();
+      }
+    },
+    executarAberturaModalExcluirItem() {
+      const c = this.comandaAtual();
+      const itens = c && Array.isArray(c.itens) ? c.itens : [];
+      if (!itens.length) {
+        if (window.App) window.App.showToast("N\xE3o h\xE1 item para excluir.", "warning");
+        return;
+      }
+      if (window.PdvModule) window.PdvModule._cancelarItemAtendimento = true;
+      const pdv = window.PdvModule;
+      const modal = document.getElementById("modal-cancelar-item-carrinho");
+      const lista = document.getElementById("cancelar-item-lista-tbody");
+      const countBadge = document.getElementById("cancelar-item-total-badge");
+      const input = document.getElementById("input-cancelar-item-num");
+      const titulo = modal ? modal.querySelector("h3") : null;
+      if (titulo) titulo.textContent = "Cancelar Item do Pedido [DEL]";
+      if (countBadge) countBadge.textContent = `${itens.length} item(ns)`;
+      if (lista) {
+        lista.innerHTML = itens.map((item, idx) => {
+          const qtd = parseFloat(item.quantidade) || 0;
+          const unit = parseFloat(item.precoUnitario) || 0;
+          const qtdTxt = pdv ? pdv.formatarQtdItem(item) : String(qtd);
+          const peso = pdv ? pdv.itemEhPeso(item) : false;
+          return `<div style="display: flex; align-items: center; justify-content: space-between; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; cursor: pointer; transition: all 0.15s ease;" onclick="PdvModule.selecionarItemParaCancelar(${idx})" onmouseover="this.style.borderColor='#f87171'; this.style.background='#fef2f2';" onmouseout="this.style.borderColor='#e2e8f0'; this.style.background='#ffffff';">
+          <div style="display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; padding-right: 12px;">
+            <span style="background: #0f172a; color: #38bdf8; font-family: 'JetBrains Mono'; font-weight: 900; font-size: 12px; padding: 3px 8px; border-radius: 6px; flex-shrink: 0;">#${idx + 1}</span>
+            <div style="min-width: 0;">
+              <strong style="font-size: 13.5px; color: var(--text-main); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${this.esc(item.nome)}</strong>
+              <span style="font-size: 11.5px; color: var(--text-muted);">Qtd no pedido: <strong style="color: #0f172a;">${qtdTxt}</strong> \xD7 R$ ${unit.toFixed(2).replace(".", ",")}</span>
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 12px; flex-shrink: 0;">
+            <div style="text-align: right; min-width: 85px;">
+              <strong style="font-size: 14.5px; font-family: 'JetBrains Mono'; color: #059669; display: block;">R$ ${(unit * qtd).toFixed(2).replace(".", ",")}</strong>
+              <span style="font-size: 11px; color: var(--text-muted);">${qtdTxt}</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 6px;">
+              ${!peso && qtd > 1 ? `
+                <button type="button" style="background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; height: 32px; padding: 0 10px; font-size: 11.5px; font-weight: 800; border-radius: 6px; cursor: pointer;" onclick="event.stopPropagation(); PdvModule.excluirItemPorIndice(${idx}, 1);" title="Remover apenas 1 unidade deste item">
+                  -1 UN
+                </button>
+              ` : ""}
+              <button type="button" style="background: #ef4444; color: #ffffff; border: none; height: 32px; padding: 0 10px; font-size: 11.5px; font-weight: 800; border-radius: 6px; cursor: pointer;" onclick="event.stopPropagation(); PdvModule.excluirItemPorIndice(${idx});" title="Remover item #${idx + 1}">
+                \u{1F5D1}\uFE0F Remover
+              </button>
+            </div>
+          </div>
+        </div>`;
+        }).join("");
+      }
+      if (modal) modal.classList.add("active");
+      if (input) {
+        input.value = itens.length;
+        this.atualizarQtdMaximaCancelamento();
+        setTimeout(() => {
+          input.focus();
+          input.select();
+        }, 80);
+      }
+    },
+    atualizarQtdMaximaCancelamento() {
+      const c = this.comandaAtual();
+      const itens = c && Array.isArray(c.itens) ? c.itens : [];
+      const inputNum = document.getElementById("input-cancelar-item-num");
+      const inputQtd = document.getElementById("input-cancelar-item-qtd");
+      const detalhe = document.getElementById("cancelar-item-detalhe-selecionado");
+      const num = parseInt(inputNum ? inputNum.value : "", 10);
+      const pdv = window.PdvModule;
+      if (!isNaN(num) && num >= 1 && num <= itens.length) {
+        const item = itens[num - 1];
+        if (inputQtd) {
+          inputQtd.max = item.quantidade;
+          inputQtd.step = pdv && pdv.itemEhPeso(item) ? "0.001" : "1";
+          inputQtd.value = pdv ? pdv.valorQtdInput(item.quantidade) : String(item.quantidade);
+        }
+        if (detalhe) {
+          detalhe.style.display = "block";
+          const qtdTxt = pdv ? pdv.formatarQtdItem(item) : String(item.quantidade);
+          detalhe.innerHTML = `\u{1F4CC} Item #${num}: <strong>${this.esc(item.nome)}</strong> (Qtd total no pedido: <strong>${qtdTxt}</strong> - Total: <strong>R$ ${((parseFloat(item.precoUnitario) || 0) * (parseFloat(item.quantidade) || 0)).toFixed(2).replace(".", ",")}</strong>)`;
+        }
+      } else if (detalhe) {
+        detalhe.style.display = "none";
+      }
+    },
+    selecionarItemParaExcluir(idx) {
+      const input = document.getElementById("input-cancelar-item-num");
+      const inputQtd = document.getElementById("input-cancelar-item-qtd");
+      if (input) input.value = idx + 1;
+      this.atualizarQtdMaximaCancelamento();
+      if (inputQtd) {
+        inputQtd.focus();
+        inputQtd.select();
+      }
+    },
+    confirmarExclusaoItemPorNumero() {
+      const c = this.comandaAtual();
+      const itens = c && Array.isArray(c.itens) ? c.itens : [];
+      const inputNum = document.getElementById("input-cancelar-item-num");
+      const inputQtd = document.getElementById("input-cancelar-item-qtd");
+      const num = parseInt(inputNum ? inputNum.value : "", 10);
+      const qtd = parseFloat(String(inputQtd ? inputQtd.value : "1").replace(",", ".")) || 0;
+      if (isNaN(num) || num < 1 || num > itens.length) {
+        if (window.App) window.App.showToast(`Digite um n\xFAmero v\xE1lido de item (entre 1 e ${itens.length})!`, "warning");
+        if (inputNum) {
+          inputNum.focus();
+          inputNum.select();
+        }
+        return;
+      }
+      if (isNaN(qtd) || qtd <= 0) {
+        if (window.App) window.App.showToast("Digite uma quantidade v\xE1lida para remover!", "warning");
+        if (inputQtd) {
+          inputQtd.focus();
+          inputQtd.select();
+        }
+        return;
+      }
+      this.excluirItemPorIndice(num - 1, qtd);
+    },
+    excluirItemPorIndice(idx, qtd = null) {
+      const c = this.comandaAtual();
+      const itens = c && Array.isArray(c.itens) ? c.itens : [];
+      if (idx < 0 || idx >= itens.length) return;
+      const item = itens[idx];
+      if (!item) return;
+      const qtdItem = parseFloat(item.quantidade) || 0;
+      const qtdRemover = qtd !== null ? Math.min(parseFloat(qtd) || 0, qtdItem) : qtdItem;
+      if (!qtdRemover || qtdRemover <= 0) return;
+      const nomeItem = item.nome;
+      if (qtdRemover + 1e-6 >= qtdItem) {
+        ComandasModule.removerItemComanda(c.id, idx);
+        if (window.App) window.App.showToast(`Item #${idx + 1} (${nomeItem}) removido!`, "info");
+      } else {
+        ComandasModule.alterarQtdItem(c.id, idx, -qtdRemover);
+        if (window.App) window.App.showToast(`Removido ${qtdRemover} de "${nomeItem}".`, "info");
+      }
+      this.renderOperacao();
+      if (window.PdvModule) window.PdvModule.fecharModalCancelarItem();
+    },
+    excluirUltimoItem() {
+      this.abrirModalExcluirItem();
+    }
+  };
+
   // src/js/app.js
   var App = {
     abaAtiva: "pdv",
@@ -69092,6 +69914,7 @@ NSU: ${nsu}`,
       window.EtiquetasModule = EtiquetasModule;
       window.ComandasModule = ComandasModule;
       window.InventarioModule = InventarioModule;
+      window.AtendimentoPdvModule = AtendimentoPdvModule;
       window.App = this;
       try {
         StorageService.init();
@@ -69112,8 +69935,10 @@ NSU: ${nsu}`,
       EtiquetasModule.init();
       ComandasModule.init();
       InventarioModule.init();
+      AtendimentoPdvModule.init();
       LicencaModule.init();
       this.aplicarLayoutPdv(StorageService.getLicenca()?.layoutPdv);
+      this.aplicarModoTerminal();
       BackupModule.init();
       CloudSyncModule.init();
       this.bindNavegacao();
@@ -69150,6 +69975,15 @@ NSU: ${nsu}`,
       document.body.classList.toggle("pdv-layout-classico", classico);
       const moderno = tabPdv.querySelector(".pdv-layout");
       const shell = document.getElementById("classic-pdv-shell");
+      const shellAtend = document.getElementById("atendimento-pdv-shell");
+      const emAtendimento = typeof this.operadorEmAtendimento === "function" && this.operadorEmAtendimento();
+      if (emAtendimento) {
+        if (shellAtend) shellAtend.classList.add("active");
+        if (shell) shell.classList.remove("active");
+        if (moderno) moderno.style.display = "none";
+        return;
+      }
+      if (shellAtend) shellAtend.classList.remove("active");
       if (!moderno || !shell) return;
       if (classico) {
         moderno.style.display = "none";
@@ -69177,8 +70011,52 @@ NSU: ${nsu}`,
       document.body.classList.toggle("pdv-operador-restrito", !ehGerente);
       const abaDestino = ehGerente ? "gerencia" : "pdv";
       this.trocarAba(abaDestino);
+      this.aplicarModoTerminal();
       if (ehGerente && window.GerenciaModule && typeof window.GerenciaModule.trocarSubAba === "function") {
         window.GerenciaModule.trocarSubAba("inicio");
+      }
+    },
+    operadorEmAtendimento() {
+      try {
+        if (!window.AuthModule || typeof window.AuthModule.getUsuario !== "function") return false;
+        const u = window.AuthModule.getUsuario();
+        if (!u) return false;
+        if (typeof window.AuthModule.isGerente === "function" && window.AuthModule.isGerente()) {
+          return false;
+        }
+        const modo = window.ComandasModule && typeof window.ComandasModule.getModoAtendimento === "function" ? window.ComandasModule.getModoAtendimento() : "mesas_e_comandas";
+        if (modo === "desativado") return false;
+        return StorageService.getTipoTerminal() === "atendimento";
+      } catch (e) {
+        return false;
+      }
+    },
+    aplicarModoTerminal() {
+      const ativo = this.operadorEmAtendimento();
+      document.body.classList.toggle("pdv-atendimento-ativo", ativo);
+      this.aplicarLayoutPdv(StorageService.getLicenca()?.layoutPdv);
+      if (ativo && window.AtendimentoPdvModule) {
+        window.AtendimentoPdvModule.mostrar();
+      } else if (window.AtendimentoPdvModule) {
+        window.AtendimentoPdvModule.ocultar();
+      }
+    },
+    sincronizarSelectTipoTerminal() {
+      const sel = document.getElementById("cfg-tipo-terminal");
+      if (sel) sel.value = StorageService.getTipoTerminal();
+    },
+    salvarTipoTerminalLocal(valor) {
+      if (window.LicencaModule && typeof window.LicencaModule.setTipoTerminalAtual === "function") {
+        window.LicencaModule.setTipoTerminalAtual(valor).then(() => {
+          this.sincronizarSelectTipoTerminal();
+          this.aplicarModoTerminal();
+          this.showToast("Fun\xE7\xE3o deste computador salva. O operador v\xEA a tela nova no pr\xF3ximo login.", "success");
+        }).catch(() => {
+          this.showToast("N\xE3o foi poss\xEDvel gravar na nuvem. Tente de novo.", "error");
+        });
+      } else {
+        StorageService.setTipoTerminal(valor);
+        this.aplicarModoTerminal();
       }
     },
     verificarValidadesAoIniciar() {
@@ -69221,10 +70099,18 @@ NSU: ${nsu}`,
       }
       if (nomeAba === "pdv") {
         setTimeout(() => {
-          PdvModule.focarInputLeitor();
+          if (this.operadorEmAtendimento() && window.AtendimentoPdvModule) {
+            window.AtendimentoPdvModule.focarInput();
+          } else {
+            PdvModule.focarInputLeitor();
+          }
         }, 50);
         setTimeout(() => {
-          PdvModule.focarInputLeitor();
+          if (this.operadorEmAtendimento() && window.AtendimentoPdvModule) {
+            window.AtendimentoPdvModule.focarInput();
+          } else {
+            PdvModule.focarInputLeitor();
+          }
         }, 200);
       } else if (nomeAba === "estoque") {
         const manterValidade = this._manterFiltroValidadeEstoque;
@@ -69491,6 +70377,11 @@ NSU: ${nsu}`,
               window._ultimoModalFechadoTimestamp = Date.now();
               return;
             }
+            if (modalAberto.id === "modal-cancelar-item-carrinho" && window.PdvModule) {
+              window.PdvModule.fecharModalCancelarItem();
+              window._ultimoModalFechadoTimestamp = Date.now();
+              return;
+            }
             if (modalAberto.id === "modal-reimpressao-cupom-pdv" && window.PdvModule) {
               window.PdvModule.fecharModalReimpressaoCupom();
               window._ultimoModalFechadoTimestamp = Date.now();
@@ -69500,10 +70391,14 @@ NSU: ${nsu}`,
             window._ultimoModalFechadoTimestamp = Date.now();
             if (this.abaAtiva === "pdv") {
               setTimeout(() => {
-                PdvModule.focarInputLeitor();
+                if (this.operadorEmAtendimento() && window.AtendimentoPdvModule) {
+                  window.AtendimentoPdvModule.focarInput();
+                } else {
+                  PdvModule.focarInputLeitor();
+                }
               }, 50);
+              return;
             }
-            return;
           }
           if (this.abaAtiva === "pdv") {
             if (window._ultimoModalFechadoTimestamp && Date.now() - window._ultimoModalFechadoTimestamp < 400) {
@@ -69512,6 +70407,10 @@ NSU: ${nsu}`,
               return;
             }
             e.preventDefault();
+            if (this.operadorEmAtendimento() && window.AtendimentoPdvModule) {
+              window.AtendimentoPdvModule.soltar();
+              return;
+            }
             PdvModule.solicitarCancelarCarrinho();
             return;
           }
@@ -69699,16 +70598,50 @@ NSU: ${nsu}`,
         }
         if (e.key === "F1") {
           e.preventDefault();
+          if (this.operadorEmAtendimento() && window.AtendimentoPdvModule) {
+            if (!window.AtendimentoPdvModule.comandaAtual()) {
+              const modo = window.ComandasModule && typeof window.ComandasModule.getModoAtendimento === "function" ? window.ComandasModule.getModoAtendimento() : "mesas_e_comandas";
+              if (modo === "mesas_e_comandas") window.AtendimentoPdvModule.setChip("mesa");
+            }
+            return;
+          }
           this.trocarAba("pdv");
         } else if (e.key === "F2") {
           e.preventDefault();
+          if (this.operadorEmAtendimento() && window.AtendimentoPdvModule) {
+            if (!window.AtendimentoPdvModule.comandaAtual()) {
+              const modo = window.ComandasModule && typeof window.ComandasModule.getModoAtendimento === "function" ? window.ComandasModule.getModoAtendimento() : "mesas_e_comandas";
+              if (modo === "mesas_e_comandas") window.AtendimentoPdvModule.setChip("comanda");
+              return;
+            }
+            PdvModule.abrirBuscaProdutos();
+            return;
+          }
           if (this.abaAtiva !== "pdv") this.trocarAba("pdv");
           PdvModule.abrirBuscaProdutos();
         } else if (e.key === "F3") {
           e.preventDefault();
+          if (this.operadorEmAtendimento() && window.AtendimentoPdvModule) {
+            if (AtendimentoPdvModule.comandaAtual()) {
+              const input = document.getElementById("atend-pessoas");
+              if (input) {
+                input.focus();
+                input.select();
+              }
+            }
+            return;
+          }
           this.trocarAba("estoque");
         } else if (e.key === "F4") {
           e.preventDefault();
+          if (this.operadorEmAtendimento()) {
+            if (window.AtendimentoPdvModule && AtendimentoPdvModule.comandaAtual()) {
+              AtendimentoPdvModule.imprimirPreConta();
+            } else {
+              this.showToast("Pagamento s\xF3 no caixa. Este terminal s\xF3 lan\xE7a.", "warning");
+            }
+            return;
+          }
           if (this.abaAtiva === "comandas") {
             if (ComandasModule && ComandasModule.comandaAtivaId) {
               ComandasModule.transferirParaPdvCaixa(ComandasModule.comandaAtivaId);
@@ -69721,38 +70654,59 @@ NSU: ${nsu}`,
           }
         } else if (e.key === "F5") {
           e.preventDefault();
+          if (this.operadorEmAtendimento() && window.AtendimentoPdvModule) {
+            if (AtendimentoPdvModule.comandaAtual()) AtendimentoPdvModule.trocarMesa();
+            return;
+          }
           this.trocarAba("caixa");
         } else if (e.key === "F6") {
           e.preventDefault();
+          if (this.operadorEmAtendimento() && window.AtendimentoPdvModule) {
+            const c = AtendimentoPdvModule.comandaAtual();
+            if (c) AtendimentoPdvModule.alterarTaxa(!c.taxaServico);
+            return;
+          }
           if (this.abaAtiva === "pdv" && window.PdvModule && StorageService.isModuloAtivo("clubeFidelidade")) {
             window.PdvModule.abrirModalClubeFidelidade();
           }
         } else if (e.key === "F7") {
           e.preventDefault();
+          if (this.operadorEmAtendimento()) return;
           if (this.abaAtiva === "pdv") {
             PdvModule.abrirModalCortesia();
           }
         } else if (e.key === "Delete") {
+          if (this.operadorEmAtendimento()) {
+            const modalCancelar = document.getElementById("modal-cancelar-item-carrinho");
+            if (algumModalAberto && !(modalCancelar && modalCancelar.classList.contains("active"))) return;
+            e.preventDefault();
+            window.AtendimentoPdvModule.abrirModalExcluirItem();
+            return;
+          }
           if (this.abaAtiva === "pdv") {
             e.preventDefault();
             PdvModule.abrirModalCancelarItem();
           }
         } else if (e.key === "F8") {
           e.preventDefault();
+          if (this.operadorEmAtendimento()) return;
           if (this.abaAtiva === "pdv") {
             PdvModule.abrirModalDesconto();
           }
         } else if (e.key === "F9") {
           e.preventDefault();
+          if (this.operadorEmAtendimento()) return;
           CaixaModule.realizarSangria();
         } else if (e.key === "F10") {
           e.preventDefault();
+          if (this.operadorEmAtendimento()) return;
           const turno = StorageService.getTurnoAtual();
           if (!turno) CaixaModule.abrirTurnoCaixa();
           else CaixaModule.fecharTurnoCaixa();
         } else if (e.key === "F11") {
         } else if (e.key === "F12") {
           e.preventDefault();
+          if (this.operadorEmAtendimento()) return;
           if (this.abaAtiva === "pdv") {
             PdvModule.abrirModalReimpressaoCupom();
           }
@@ -69848,15 +70802,25 @@ NSU: ${nsu}`,
         if (logo && (logo.startsWith("http") || logo.startsWith("data:image"))) {
           brandIcon.innerHTML = `<img src="${logo}" alt="Logo da Empresa" class="pdv-brand-logo-img" style="max-width: 250px; max-height: 175px; width: auto; height: auto; object-fit: contain; border-radius: 14px; display: block; margin: auto; pointer-events: none; user-select: none;">`;
           const classicLogo = document.getElementById("classic-client-logo");
+          const atendLogo = document.getElementById("atend-client-logo");
           if (classicLogo) {
             classicLogo.src = logo;
             classicLogo.style.display = "block";
           }
+          if (atendLogo) {
+            atendLogo.src = logo;
+            atendLogo.style.display = "block";
+          }
         } else {
           brandIcon.innerHTML = `<span style="font-size: 56px; pointer-events: none; user-select: none; display: block; margin: 0 auto;">${lic && lic.icone ? lic.icone : cfg && cfg.icone ? cfg.icone : "\u{1F3EA}"}</span>`;
           const classicLogo = document.getElementById("classic-client-logo");
+          const atendLogo = document.getElementById("atend-client-logo");
+          const fallbackLogo = "src/assets/logos/para-fundo-claro/FlowPDV-horizontal.png";
           if (classicLogo) {
-            classicLogo.src = "src/assets/logos/para-fundo-claro/FlowPDV-horizontal.png";
+            classicLogo.src = fallbackLogo;
+          }
+          if (atendLogo) {
+            atendLogo.src = fallbackLogo;
           }
         }
       }
@@ -69934,6 +70898,7 @@ NSU: ${nsu}`,
           devHostEl.textContent = "Computador Local";
         }
       }
+      this.sincronizarSelectTipoTerminal();
       if (BackupModule && typeof BackupModule.atualizarStatusBackupUI === "function") {
         BackupModule.atualizarStatusBackupUI();
       }
@@ -70568,6 +71533,7 @@ NSU: ${nsu}`,
   window.ClientesModule = ClientesModule;
   window.LicencaModule = LicencaModule;
   window.ThermalPrintModule = ThermalPrintModule;
+  window.AtendimentoPdvModule = AtendimentoPdvModule;
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", () => App.init());
   } else {

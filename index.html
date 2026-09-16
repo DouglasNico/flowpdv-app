@@ -7,6 +7,7 @@
   <link rel="icon" type="image/png" href="src/assets/logos/para-fundo-claro/FlowPDV-icone.png">
   <link rel="shortcut icon" href="src/assets/logos/para-fundo-claro/FlowPDV-icone.png">
   <link rel="stylesheet" href="src/css/style.css">
+  <link rel="stylesheet" href="src/css/atendimento.css">
 </head>
 <body>
 
@@ -361,6 +362,128 @@
                   <div class="val">R$ <span id="classic-total-venda">0,00</span></div>
                 </div>
               </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="atendimento-pdv-shell" aria-label="PDV de atendimento">
+        <header class="classic-header">
+          <div class="classic-logo-title">
+            <img src="src/assets/logos/para-fundo-claro/FlowPDV-horizontal.png" alt="FlowPDV" class="classic-header-logo"><span class="atend-brand-caption">Terminal de salão</span>
+          </div>
+          <div class="classic-header-info">
+            <span id="atend-clock" class="live-clock">00:00:00</span>
+            <span class="divider">|</span>
+            <span id="atend-operator-name">Operador: ---</span>
+            <button type="button" class="classic-btn-trocar-operador" onclick="AuthModule.logout()">Trocar de Operador</button>
+            <span class="atend-equip-tag">ATENDIMENTO</span>
+          </div>
+          <div class="classic-window-controls">
+            <span onclick="App.solicitarFechamentoApp()" title="Fechar">✕</span>
+          </div>
+        </header>
+
+        <div class="classic-status-bar">
+          <h2 id="atend-status-text">DIGITE MESA OU COMANDA</h2><span id="atend-status-caption" class="atend-status-caption">Mesas &amp; comandas · Atendimento no salão</span>
+        </div>
+
+        <div id="atend-entrada" class="atend-entrada">
+          <div class="atend-entrada-card">
+            <div class="atend-welcome-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10h16M6 10v10m12-10v10M8 10V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v5M4 16h16"/></svg></div>
+            <p class="atend-eyebrow">ATENDIMENTO NO SALÃO</p>
+            <h1>Vamos atender?</h1>
+            <p id="atend-intro" class="atend-intro">Selecione o tipo e informe o número para<br>começar ou continuar um pedido.</p>
+            <div id="atend-chips-wrap" class="atend-chips">
+              <button type="button" data-atend-chip="mesa">Mesa <kbd>F1</kbd></button>
+              <button type="button" data-atend-chip="comanda" class="on">Comanda <kbd>F2</kbd></button>
+            </div>
+            <label id="atend-numero-label" for="atend-numero-input">NÚMERO DA MESA</label>
+            <input type="text" id="atend-numero-input" inputmode="numeric" autocomplete="off" maxlength="8" placeholder="00">
+            <p class="atend-hint">Digite o número ou utilize o leitor de código de barras.</p>
+            <button type="button" id="atend-btn-abrir" class="atend-btn-abrir"><span>Abrir atendimento →</span><kbd>Enter ↵</kbd></button>
+            <p class="atend-foot">Lance os pedidos por aqui. O pagamento é feito no caixa.</p>
+          </div>
+        </div>
+
+        <div id="atend-operacao" class="atend-operacao" style="display: none;">
+          <div class="atend-account-actions" aria-label="Ações da conta">
+            <div class="atend-split-control">
+              <label for="atend-pessoas">Dividir conta <kbd>F3</kbd></label>
+              <div><input id="atend-pessoas" type="number" min="1" step="1" value="1" inputmode="numeric" onchange="AtendimentoPdvModule.dividirConta(this.value)" aria-label="Quantidade de pessoas"><span>pessoas</span><strong id="atend-por-pessoa">R$ 0,00 / pessoa</strong></div>
+            </div>
+            <button type="button" id="atend-pre-conta" onclick="AtendimentoPdvModule.imprimirPreConta()"><span>Imprimir pré-conta</span><small id="atend-preconta-sub">Total da mesa <kbd>F4</kbd></small></button>
+            <button type="button" id="atend-transferir" onclick="AtendimentoPdvModule.trocarMesa()"><span id="atend-transferir-label">Trocar mesa / comanda</span><small>Transferir os itens <kbd>F5</kbd></small></button>
+            <label class="atend-service-control"><span><input type="checkbox" id="atend-taxa-servico" onchange="AtendimentoPdvModule.alterarTaxa(this.checked)">Taxa de serviço · 10%</span><small><span id="atend-taxa-valor">R$ 0,00</span><kbd>F6</kbd></small></label>
+          </div>
+          <div class="classic-main-content">
+            <div class="classic-left-pane">
+              <div class="classic-cart-img">
+                <img id="atend-client-logo" src="src/assets/logos/para-fundo-claro/FlowPDV-horizontal.png" alt="Logo Cliente" onerror="this.src='src/assets/logos/para-fundo-claro/FlowPDV-horizontal.png'">
+              </div>
+              <div class="classic-input-group">
+                <label for="atend-barcode-input">CÓDIGO DE BARRAS</label>
+                <input type="text" id="atend-barcode-input" style="text-transform: uppercase;" autocomplete="off" placeholder="CÓDIGO DE BARRAS"><button type="button" class="atend-search-button" onclick="PdvModule.abrirBuscaProdutos()">Buscar · F2</button>
+              </div>
+              <div class="classic-field-box">
+                <label>VALOR UNITÁRIO</label>
+                <div class="classic-value">R$ <span id="atend-valor-unitario">0,00</span></div>
+              </div>
+              <div class="classic-field-box">
+                <label>TOTAL DO ITEM</label>
+                <div class="classic-value">R$ <span id="atend-total-item">0,00</span></div>
+              </div>
+              <div class="classic-field-box">
+                <label>CÓDIGO DO PRODUTO</label>
+                <div class="classic-value" id="atend-codigo-barras"></div>
+              </div>
+              <div class="classic-shortcuts">
+                <span><kbd>F2</kbd> Buscar produtos</span>
+                <span><kbd>F4</kbd> Imprimir pré-conta</span>
+                <span><kbd>F6</kbd> Taxa de serviço</span>
+                <span><kbd>ESC</kbd> Trocar atendimento</span>
+                <span><kbd>F3</kbd> Dividir conta</span>
+                <span id="atend-atalho-f5"><kbd>F5</kbd> Trocar mesa</span>
+                <span><kbd>DEL</kbd> Excluir item</span>
+              </div>
+            </div>
+            <div class="classic-right-pane">
+              <div class="classic-table-container">
+                <div class="classic-table-header"><span>Itens do pedido</span><button type="button" class="atend-switch" onclick="AtendimentoPdvModule.soltar()">Trocar atendimento <b>Esc</b></button></div>
+                <table class="classic-pdv-table">
+                  <thead>
+                    <tr>
+                      <th>NºItem</th>
+                      <th>Código</th>
+                      <th>Descrição</th>
+                      <th style="text-align: center;">Qtd</th>
+                      <th style="text-align: right;">Vlr. Unit.</th>
+                      <th style="text-align: right;">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody id="atend-itens-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          <div class="classic-bottom-panel">
+            <div class="classic-bottom-right">
+              <div class="classic-totals-row">
+                <div class="classic-total-box subtotal">
+                  <label>SUBTOTAL</label>
+                  <div class="val" id="atend-subtotal">0,00</div>
+                </div>
+              </div>
+              <div class="classic-totals-row split">
+                <div class="classic-total-box sm">
+                  <label>QTD. ITENS</label>
+                  <div class="val"><span id="atend-qtd-itens">0</span></div>
+                </div>
+                <div class="classic-total-box sm">
+                  <label>TOTAL</label>
+                  <div class="val">R$ <span id="atend-total">0,00</span></div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1202,6 +1325,12 @@
                     <span id="cfg-device-info-text" style="font-size: 10.5px; color: #64748b; display: block; margin-top: 2px; font-family: 'JetBrains Mono'; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
                       🖥️ Este Terminal: <strong id="cfg-device-hostname" style="color: #4f46e5;">Carregando...</strong> (<span id="cfg-device-id">TERM-...</span>)
                     </span>
+                    <label for="cfg-tipo-terminal" style="display:block; font-size: 11px; font-weight: 800; color: var(--text-main); margin-top: 8px;">Função deste computador</label>
+                    <select id="cfg-tipo-terminal" onchange="App.salvarTipoTerminalLocal(this.value)" style="width:100%; margin-top:4px; height:30px; border-radius:6px; border:1.5px solid #cbd5e1; font-size:12px; font-weight:700; padding:0 8px; background:#fff;">
+                      <option value="caixa">Caixa (PDV)</option>
+                      <option value="atendimento">Atendimento (mesas/comandas)</option>
+                      <option value="completo">Completo</option>
+                    </select>
                   </div>
                   <button type="button" id="btn-alterar-licenca" class="btn-alterar-licenca-cfg" style="height: 28px; font-size: 11px; width: 100%; justify-content: center; padding: 0 8px;" onclick="LicencaModule.abrirModalTrocarLicenca()" title="Alterar ou ativar outra licença de adega neste computador">
                     🔑 Alterar Licença
@@ -4270,15 +4399,15 @@
     <div class="modal-overlay" id="modal-transferir-comanda">
       <div class="modal-content-box" style="max-width: 440px;">
         <div class="modal-header-bar">
-          <h3>🔄 Transferir Itens / Mesa</h3>
+          <h3 id="transferir-modal-titulo">🔄 Transferir Itens / Mesa</h3>
           <button type="button" class="btn-close-modal" onclick="ComandasModule.fecharModalTransferir()">✕</button>
         </div>
         <div class="modal-body-content">
-          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;">
+          <p id="transferir-modal-texto" style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;">
             Transfira todos os itens consumidos da <strong id="transferir-origem-nome" style="color: #7c3aed;">Mesa Origem</strong> para outra Mesa ou Comanda de destino:
           </p>
           <div class="form-group-custom" style="margin-bottom: 16px;">
-            <label class="form-label-custom">Mesa / Comanda de Destino:</label>
+            <label id="transferir-destino-label" class="form-label-custom">Mesa / Comanda de Destino:</label>
             <select id="transferir-destino-select" class="form-input-custom" style="height: 40px; font-size: 13px; font-weight: 700;">
               <!-- Opções de mesas preenchidas via JS -->
             </select>

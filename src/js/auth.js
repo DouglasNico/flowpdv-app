@@ -410,6 +410,9 @@ export const AuthModule = {
       window.electronAPI.definirTelaCheiaOperador(false);
     }
     this.abrirTelaLogin();
+    if (window.App && typeof window.App.aplicarModoTerminal === 'function') {
+      window.App.aplicarModoTerminal();
+    }
     if (window.App && typeof window.App.showToast === 'function') {
       window.App.showToast('🔒 Sessão encerrada.', 'info');
     }
@@ -480,10 +483,12 @@ export const AuthModule = {
     const nameEl = document.getElementById('header-user-name');
     const roleEl = document.getElementById('header-user-role');
     const classicOperator = document.getElementById('classic-operator-name');
+    const atendOperator = document.getElementById('atend-operator-name');
 
     const u = this.getUsuario();
     if (nameEl) nameEl.textContent = u ? u.nome : '—';
     if (classicOperator) classicOperator.textContent = u ? `Operador: ${u.nome}` : 'Operador: —';
+    if (atendOperator) atendOperator.textContent = u ? `Operador: ${u.nome}` : 'Operador: —';
     if (roleEl) {
       const cargo = u ? u.cargo : 'operador';
       roleEl.textContent = this.isGerente() ? 'Gerente' : 'Operador';

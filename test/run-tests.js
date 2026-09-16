@@ -83,7 +83,10 @@ const {
   interpretarCamposSitef,
   funcaoSitef,
   valorSitef,
-  mensagemRetornoSitef
+  mensagemRetornoSitef,
+  normalizarTipoTerminal,
+  mesclarDadosTerminal,
+  idComandaPorNumero
 } = core;
 
 const testes = [];
@@ -760,6 +763,50 @@ teste('SiTef: menu, campos de retorno e codigos traduzidos', () => {
   assert.match(mensagemRetornoSitef(-5), /Sem comunicação/);
   assert.match(mensagemRetornoSitef(-6), /cliente/);
   assert.match(mensagemRetornoSitef(51), /Negada/);
+});
+
+teste('tipoTerminal ausente vira caixa; comanda vira atendimento', () => {
+  assert.strictEqual(normalizarTipoTerminal(undefined), 'caixa');
+  assert.strictEqual(normalizarTipoTerminal(''), 'caixa');
+  assert.strictEqual(normalizarTipoTerminal('comanda'), 'atendimento');
+  assert.strictEqual(normalizarTipoTerminal('atendimento'), 'atendimento');
+  assert.strictEqual(normalizarTipoTerminal('completo'), 'completo');
+});
+
+teste('mesclar terminal preserva tipoTerminal quando o heartbeat nao traz o campo', () => {
+  const antigo = { id: 'TERM-1', hostname: 'CAIXA-1', tipoTerminal: 'atendimento', usuario: 'Ana' };
+  const info = { id: 'TERM-1', hostname: 'CAIXA-1', usuario: 'Ana', ultimoAcesso: '2026-09-15T12:00:00.000Z', tipoTerminal: 'caixa' };
+  const junto = mesclarDadosTerminal(antigo, info);
+  assert.strictEqual(junto.tipoTerminal, 'atendimento');
+  assert.strictEqual(junto.hostname, 'CAIXA-1');
+});
+
+teste('id da mesa e da comanda nao se misturam; loja so-mesa ignora chip', () => {
+  assert.strictEqual(idComandaPorNumero('apenas_comandas', '12', 'mesa'), 'CMD-12');
+  assert.strictEqual(idComandaPorNumero('apenas_mesas', '5', 'comanda'), 'MESA-5');
+  assert.strictEqual(idComandaPorNumero('mesas_e_comandas', '12', 'mesa'), 'MESA-12');
+  assert.strictEqual(idComandaPorNumero('mesas_e_comandas', '12', 'comanda'), 'CMD-12');
+  assert.strictEqual(idComandaPorNumero('desativado', '12', 'comanda'), null);
+  assert.strictEqual(idComandaPorNumero('mesas_e_comandas', 'abc', 'comanda'), null);
+});
+
+teste('terminal novo herda tipoTerminal local; padrao do storage e caixa', () => {
+  const junto = mesclarDadosTerminal({}, { id: 'TERM-2', hostname: 'SALAO-1', tipoTerminal: 'atendimento' });
+  assert.strictEqual(junto.tipoTerminal, 'atendimento');
+  assert.strictEqual(StorageService.getTipoTerminal(), 'caixa');
+  StorageService.setTipoTerminal('atendimento');
+  assert.strictEqual(StorageService.getTipoTerminal(), 'atendimento');
+  StorageService.setTipoTerminal('xyz');
+  assert.strictEqual(StorageService.getTipoTerminal(), 'caixa');
+});
+
+teste('gravacao explicita de atendimento vence o caixa ja carimbado na nuvem', () => {
+  const antigo = { id: 'TERM-1', hostname: 'CAIXA-1', tipoTerminal: 'caixa' };
+  const info = { id: 'TERM-1', hostname: 'CAIXA-1', tipoTerminal: 'atendimento' };
+  const semForcar = mesclarDadosTerminal(antigo, info);
+  const comForcar = mesclarDadosTerminal(antigo, info, { forcarTipoTerminal: true });
+  assert.strictEqual(semForcar.tipoTerminal, 'caixa');
+  assert.strictEqual(comForcar.tipoTerminal, 'atendimento');
 });
 
 // ---------------------------------------------------------------------------

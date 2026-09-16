@@ -66,13 +66,13 @@ export const CloudSyncModule = {
     // Sempre envia o slot deste terminal: aberto OU fechado.
     // Sem o envio do fechado, o mobile fica com caixa "aberto" eterno se o sync do fechamento falhou.
     const turnoAtual = StorageService.getTurnoAtual();
-    setTimeout(() => {
+      setTimeout(() => {
       this.enviarAlteracaoNuvem(
         turnoAtual && (turnoAtual.status === 'aberto' || turnoAtual.dataAbertura)
           ? 'turno_ativo_startup'
           : 'turno_fechado_startup'
       );
-    }, 500);
+      }, 500);
   },
 
   
@@ -649,6 +649,9 @@ export const CloudSyncModule = {
 
         if (Array.isArray(cloudData.comandas)) {
           StorageService.saveComandas(mesclarComandas(cloudData.comandas, StorageService.getComandas()));
+          if (window.ComandasModule && typeof window.ComandasModule.atualizarTelasAposSync === 'function') {
+            window.ComandasModule.atualizarTelasAposSync();
+          }
         }
 
         const categoriasLocais = StorageService.getCategorias() || [];
@@ -1095,8 +1098,8 @@ export const CloudSyncModule = {
       if (Array.isArray(cloudData.comandas)) {
         StorageService.saveComandas(mesclarComandas(cloudData.comandas, StorageService.getComandas()));
         houveAlteracao = true;
-        if (window.ComandasModule && typeof window.ComandasModule.renderGrid === 'function') {
-          window.ComandasModule.renderGrid();
+        if (window.ComandasModule && typeof window.ComandasModule.atualizarTelasAposSync === 'function') {
+          window.ComandasModule.atualizarTelasAposSync();
         }
       }
 

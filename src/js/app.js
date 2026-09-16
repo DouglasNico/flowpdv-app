@@ -17,6 +17,7 @@ import { TefModule } from './tef.js';
 import { EtiquetasModule } from './etiquetas.js';
 import { ComandasModule } from './comandas.js';
 import { InventarioModule } from './inventario.js';
+import { AtendimentoPdvModule } from './atendimento-pdv.js';
 
 export const App = {
   abaAtiva: 'pdv',
@@ -41,6 +42,7 @@ export const App = {
     window.EtiquetasModule = EtiquetasModule;
     window.ComandasModule = ComandasModule;
     window.InventarioModule = InventarioModule;
+    window.AtendimentoPdvModule = AtendimentoPdvModule;
     window.App = this;
 
     try { StorageService.init(); }
@@ -58,8 +60,10 @@ export const App = {
     EtiquetasModule.init();
     ComandasModule.init();
     InventarioModule.init();
+    AtendimentoPdvModule.init();
     LicencaModule.init();
     this.aplicarLayoutPdv(StorageService.getLicenca()?.layoutPdv);
+    this.aplicarModoTerminal();
     BackupModule.init();
     CloudSyncModule.init();
 
@@ -97,9 +101,20 @@ export const App = {
     const classico = layout === 'classico';
     tabPdv.classList.toggle('pdv-layout-classico', classico);
     document.body.classList.toggle('pdv-layout-classico', classico);
-    
+
     const moderno = tabPdv.querySelector('.pdv-layout');
     const shell = document.getElementById('classic-pdv-shell');
+    const shellAtend = document.getElementById('atendimento-pdv-shell');
+    const emAtendimento = typeof this.operadorEmAtendimento === 'function' && this.operadorEmAtendimento();
+
+    if (emAtendimento) {
+      if (shellAtend) shellAtend.classList.add('active');
+      if (shell) shell.classList.remove('active');
+      if (moderno) moderno.style.display = 'none';
+      return;
+    }
+
+    if (shellAtend) shellAtend.classList.remove('active');
     if (!moderno || !shell) return;
 
     if (classico) {
@@ -128,8 +143,58 @@ export const App = {
 
     const abaDestino = ehGerente ? 'gerencia' : 'pdv';
     this.trocarAba(abaDestino);
+    this.aplicarModoTerminal();
     if (ehGerente && window.GerenciaModule && typeof window.GerenciaModule.trocarSubAba === 'function') {
       window.GerenciaModule.trocarSubAba('inicio');
+    }
+  },
+
+  operadorEmAtendimento() {
+    try {
+      if (!window.AuthModule || typeof window.AuthModule.getUsuario !== 'function') return false;
+      const u = window.AuthModule.getUsuario();
+      if (!u) return false;
+      if (typeof window.AuthModule.isGerente === 'function' && window.AuthModule.isGerente()) {
+        return false;
+      }
+      const modo = window.ComandasModule && typeof window.ComandasModule.getModoAtendimento === 'function'
+        ? window.ComandasModule.getModoAtendimento()
+        : 'mesas_e_comandas';
+      if (modo === 'desativado') return false;
+      return StorageService.getTipoTerminal() === 'atendimento';
+    } catch (e) {
+      return false;
+    }
+  },
+
+  aplicarModoTerminal() {
+    const ativo = this.operadorEmAtendimento();
+    document.body.classList.toggle('pdv-atendimento-ativo', ativo);
+    this.aplicarLayoutPdv(StorageService.getLicenca()?.layoutPdv);
+    if (ativo && window.AtendimentoPdvModule) {
+      window.AtendimentoPdvModule.mostrar();
+    } else if (window.AtendimentoPdvModule) {
+      window.AtendimentoPdvModule.ocultar();
+    }
+  },
+
+  sincronizarSelectTipoTerminal() {
+    const sel = document.getElementById('cfg-tipo-terminal');
+    if (sel) sel.value = StorageService.getTipoTerminal();
+  },
+
+  salvarTipoTerminalLocal(valor) {
+    if (window.LicencaModule && typeof window.LicencaModule.setTipoTerminalAtual === 'function') {
+      window.LicencaModule.setTipoTerminalAtual(valor).then(() => {
+        this.sincronizarSelectTipoTerminal();
+        this.aplicarModoTerminal();
+        this.showToast('Função deste computador salva. O operador vê a tela nova no próximo login.', 'success');
+      }).catch(() => {
+        this.showToast('Não foi possível gravar na nuvem. Tente de novo.', 'error');
+      });
+    } else {
+      StorageService.setTipoTerminal(valor);
+      this.aplicarModoTerminal();
     }
   },
 
@@ -184,10 +249,18 @@ export const App = {
     // Refresh específico por tela
     if (nomeAba === 'pdv') {
       setTimeout(() => {
-        PdvModule.focarInputLeitor();
+        if (this.operadorEmAtendimento() && window.AtendimentoPdvModule) {
+          window.AtendimentoPdvModule.focarInput();
+        } else {
+          PdvModule.focarInputLeitor();
+        }
       }, 50);
       setTimeout(() => {
-        PdvModule.focarInputLeitor();
+        if (this.operadorEmAtendimento() && window.AtendimentoPdvModule) {
+          window.AtendimentoPdvModule.focarInput();
+        } else {
+          PdvModule.focarInputLeitor();
+        }
       }, 200);
     } else if (nomeAba === 'estoque') {
       const manterValidade = this._manterFiltroValidadeEstoque;
@@ -498,6 +571,12 @@ export const App = {
             return;
           }
 
+          if (modalAberto.id === 'modal-cancelar-item-carrinho' && window.PdvModule) {
+            window.PdvModule.fecharModalCancelarItem();
+            window._ultimoModalFechadoTimestamp = Date.now();
+            return;
+          }
+
           // Se for o modal de reimpressão de cupons [F12], fecha através do método do PDV
           if (modalAberto.id === 'modal-reimpressao-cupom-pdv' && window.PdvModule) {
             window.PdvModule.fecharModalReimpressaoCupom();
@@ -507,22 +586,29 @@ export const App = {
 
           modalAberto.classList.remove('active');
           window._ultimoModalFechadoTimestamp = Date.now();
-          if (this.abaAtiva === 'pdv') {
-            setTimeout(() => {
+        if (this.abaAtiva === 'pdv') {
+          setTimeout(() => {
+            if (this.operadorEmAtendimento() && window.AtendimentoPdvModule) {
+              window.AtendimentoPdvModule.focarInput();
+            } else {
               PdvModule.focarInputLeitor();
-            }, 50);
-          }
+            }
+          }, 50);
           return;
+        }
         }
 
         if (this.abaAtiva === 'pdv') {
-          // BLINDAGEM: se qualquer modal acabou de ser fechado nos últimos 400ms, jamais cancela o carrinho
           if (window._ultimoModalFechadoTimestamp && (Date.now() - window._ultimoModalFechadoTimestamp < 400)) {
             e.preventDefault();
             e.stopPropagation();
             return;
           }
           e.preventDefault();
+          if (this.operadorEmAtendimento() && window.AtendimentoPdvModule) {
+            window.AtendimentoPdvModule.soltar();
+            return;
+          }
           PdvModule.solicitarCancelarCarrinho();
           return;
         }
@@ -743,16 +829,51 @@ export const App = {
       // Atalhos de função F1 a F11 globais (somente se nenhum modal estiver aberto)
       if (e.key === 'F1') {
         e.preventDefault();
+        if (this.operadorEmAtendimento() && window.AtendimentoPdvModule) {
+          if (!window.AtendimentoPdvModule.comandaAtual()) {
+            const modo = window.ComandasModule && typeof window.ComandasModule.getModoAtendimento === 'function'
+              ? window.ComandasModule.getModoAtendimento()
+              : 'mesas_e_comandas';
+            if (modo === 'mesas_e_comandas') window.AtendimentoPdvModule.setChip('mesa');
+          }
+          return;
+        }
         this.trocarAba('pdv');
       } else if (e.key === 'F2') {
         e.preventDefault();
+        if (this.operadorEmAtendimento() && window.AtendimentoPdvModule) {
+          if (!window.AtendimentoPdvModule.comandaAtual()) {
+            const modo = window.ComandasModule && typeof window.ComandasModule.getModoAtendimento === 'function'
+              ? window.ComandasModule.getModoAtendimento()
+              : 'mesas_e_comandas';
+            if (modo === 'mesas_e_comandas') window.AtendimentoPdvModule.setChip('comanda');
+            return;
+          }
+          PdvModule.abrirBuscaProdutos();
+          return;
+        }
         if (this.abaAtiva !== 'pdv') this.trocarAba('pdv');
         PdvModule.abrirBuscaProdutos();
       } else if (e.key === 'F3') {
         e.preventDefault();
+        if (this.operadorEmAtendimento() && window.AtendimentoPdvModule) {
+          if (AtendimentoPdvModule.comandaAtual()) {
+            const input = document.getElementById('atend-pessoas');
+            if (input) { input.focus(); input.select(); }
+          }
+          return;
+        }
         this.trocarAba('estoque');
       } else if (e.key === 'F4') {
         e.preventDefault();
+        if (this.operadorEmAtendimento()) {
+          if (window.AtendimentoPdvModule && AtendimentoPdvModule.comandaAtual()) {
+            AtendimentoPdvModule.imprimirPreConta();
+          } else {
+            this.showToast('Pagamento só no caixa. Este terminal só lança.', 'warning');
+          }
+          return;
+        }
         if (this.abaAtiva === 'comandas') {
           if (ComandasModule && ComandasModule.comandaAtivaId) {
             ComandasModule.transferirParaPdvCaixa(ComandasModule.comandaAtivaId);
@@ -765,32 +886,52 @@ export const App = {
         }
       } else if (e.key === 'F5') {
         e.preventDefault();
+        if (this.operadorEmAtendimento() && window.AtendimentoPdvModule) {
+          if (AtendimentoPdvModule.comandaAtual()) AtendimentoPdvModule.trocarMesa();
+          return;
+        }
         this.trocarAba('caixa');
       } else if (e.key === 'F6') {
         e.preventDefault();
+        if (this.operadorEmAtendimento() && window.AtendimentoPdvModule) {
+          const c = AtendimentoPdvModule.comandaAtual();
+          if (c) AtendimentoPdvModule.alterarTaxa(!c.taxaServico);
+          return;
+        }
         if (this.abaAtiva === 'pdv' && window.PdvModule && StorageService.isModuloAtivo('clubeFidelidade')) {
           window.PdvModule.abrirModalClubeFidelidade();
         }
       } else if (e.key === 'F7') {
         e.preventDefault();
+        if (this.operadorEmAtendimento()) return;
         if (this.abaAtiva === 'pdv') {
           PdvModule.abrirModalCortesia();
         }
       } else if (e.key === 'Delete') {
+        if (this.operadorEmAtendimento()) {
+          const modalCancelar = document.getElementById('modal-cancelar-item-carrinho');
+          if (algumModalAberto && !(modalCancelar && modalCancelar.classList.contains('active'))) return;
+          e.preventDefault();
+          window.AtendimentoPdvModule.abrirModalExcluirItem();
+          return;
+        }
         if (this.abaAtiva === 'pdv') {
           e.preventDefault();
           PdvModule.abrirModalCancelarItem();
         }
       } else if (e.key === 'F8') {
         e.preventDefault();
+        if (this.operadorEmAtendimento()) return;
         if (this.abaAtiva === 'pdv') {
           PdvModule.abrirModalDesconto();
         }
       } else if (e.key === 'F9') {
         e.preventDefault();
+        if (this.operadorEmAtendimento()) return;
         CaixaModule.realizarSangria();
       } else if (e.key === 'F10') {
         e.preventDefault();
+        if (this.operadorEmAtendimento()) return;
         const turno = StorageService.getTurnoAtual();
         if (!turno) CaixaModule.abrirTurnoCaixa();
         else CaixaModule.fecharTurnoCaixa();
@@ -798,6 +939,7 @@ export const App = {
         // F11 nativo de Tela Cheia
       } else if (e.key === 'F12') {
         e.preventDefault();
+        if (this.operadorEmAtendimento()) return;
         if (this.abaAtiva === 'pdv') {
           PdvModule.abrirModalReimpressaoCupom();
         }
@@ -906,15 +1048,25 @@ export const App = {
       if (logo && (logo.startsWith('http') || logo.startsWith('data:image'))) {
         brandIcon.innerHTML = `<img src="${logo}" alt="Logo da Empresa" class="pdv-brand-logo-img" style="max-width: 250px; max-height: 175px; width: auto; height: auto; object-fit: contain; border-radius: 14px; display: block; margin: auto; pointer-events: none; user-select: none;">`;
         const classicLogo = document.getElementById('classic-client-logo');
+        const atendLogo = document.getElementById('atend-client-logo');
         if (classicLogo) {
           classicLogo.src = logo;
           classicLogo.style.display = 'block';
         }
+        if (atendLogo) {
+          atendLogo.src = logo;
+          atendLogo.style.display = 'block';
+        }
       } else {
         brandIcon.innerHTML = `<span style="font-size: 56px; pointer-events: none; user-select: none; display: block; margin: 0 auto;">${(lic && lic.icone) ? lic.icone : ((cfg && cfg.icone ? cfg.icone : "🏪"))}</span>`;
         const classicLogo = document.getElementById('classic-client-logo');
+        const atendLogo = document.getElementById('atend-client-logo');
+        const fallbackLogo = 'src/assets/logos/para-fundo-claro/FlowPDV-horizontal.png';
         if (classicLogo) {
-          classicLogo.src = 'src/assets/logos/para-fundo-claro/FlowPDV-horizontal.png';
+          classicLogo.src = fallbackLogo;
+        }
+        if (atendLogo) {
+          atendLogo.src = fallbackLogo;
         }
       }
     }
@@ -1011,6 +1163,7 @@ export const App = {
         devHostEl.textContent = 'Computador Local';
       }
     }
+    this.sincronizarSelectTipoTerminal();
 
     if (BackupModule && typeof BackupModule.atualizarStatusBackupUI === 'function') {
       BackupModule.atualizarStatusBackupUI();
@@ -1754,6 +1907,7 @@ window.CaixaModule = CaixaModule;
 window.ClientesModule = ClientesModule;
 window.LicencaModule = LicencaModule;
 window.ThermalPrintModule = ThermalPrintModule;
+window.AtendimentoPdvModule = AtendimentoPdvModule;
 
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => App.init());

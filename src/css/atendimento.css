@@ -1,0 +1,153 @@
+body.pdv-atendimento-ativo { zoom:1; height:100vh; }
+/* Visual exclusivo do terminal de salão. */
+#atendimento-pdv-shell { --sal-ink:#172b45; --sal-muted:#65758a; --sal-line:#dfe7ee; --sal-green:#087f68; }
+#atendimento-pdv-shell.active { background:#f3f6f9; color:var(--sal-ink); font-family:'Segoe UI',sans-serif; }
+#atendimento-pdv-shell * { box-sizing:border-box; }
+#atendimento-pdv-shell button { font-family:inherit; cursor:pointer; }
+#atendimento-pdv-shell button:focus-visible { outline:3px solid #31bba3; outline-offset:3px; }
+#atendimento-pdv-shell .classic-header { min-height:76px; padding:14px 30px; gap:20px; border-bottom:1px solid var(--sal-line); box-shadow:none; flex-shrink:0; }
+#atendimento-pdv-shell .classic-header-logo { width:142px; height:38px; object-fit:contain; }
+#atendimento-pdv-shell .classic-logo-title { gap:22px; }
+#atendimento-pdv-shell .atend-brand-caption { border-left:1px solid var(--sal-line); padding-left:22px; color:var(--sal-muted); font-size:13px; font-weight:600; }
+#atendimento-pdv-shell .classic-header-info { margin-left:auto; gap:16px; font-size:12px; font-weight:600; color:var(--sal-muted); }
+#atendimento-pdv-shell .live-clock { font-variant-numeric:tabular-nums; color:var(--sal-ink); font-size:15px; }
+#atendimento-pdv-shell .classic-btn-trocar-operador { background:#fff; border:1px solid var(--sal-line); border-radius:8px; padding:10px 14px; color:var(--sal-ink); font-size:12px; }
+#atendimento-pdv-shell .classic-window-controls span { width:36px; height:36px; border-radius:8px; font-size:18px; }
+#atendimento-pdv-shell .atend-equip-tag { color:#08735e; background:#e8f5ef; border:0; border-radius:20px; padding:7px 11px; font-size:10px; }
+#atendimento-pdv-shell .classic-status-bar { display:flex; align-items:center; justify-content:space-between; padding:17px 30px; background:#fff; border-bottom:1px solid var(--sal-line); gap:12px; flex-shrink:0; }
+#atendimento-pdv-shell .classic-status-bar h2 { font-size:13px; letter-spacing:.08em; font-weight:700; color:var(--sal-ink); }
+#atendimento-pdv-shell .classic-status-bar h2::before { content:''; display:inline-block; width:7px; height:7px; border-radius:50%; background:#13a484; margin-right:10px; }
+#atendimento-pdv-shell .atend-status-caption { color:var(--sal-muted); font-size:12px; }
+#atendimento-pdv-shell .atend-entrada { background:radial-gradient(ellipse at 50% 35%,#e6f1ef 0,transparent 65%),#f3f6f9; padding:24px; overflow:auto; }
+#atendimento-pdv-shell .atend-entrada-card { width:min(470px,100%); padding:30px 36px 24px; border:1px solid #e0e8ec; border-radius:22px; box-shadow:0 18px 60px #17354a0d; text-align:left; margin:auto; flex-shrink:0; }
+#atendimento-pdv-shell .atend-welcome-icon { display:flex; align-items:center; justify-content:center; width:48px; height:48px; background:#e8f5ef; color:var(--sal-green); border-radius:14px; margin-bottom:18px; }
+#atendimento-pdv-shell .atend-welcome-icon svg { width:26px; height:26px; }
+#atendimento-pdv-shell .atend-eyebrow { font-size:10px; letter-spacing:.16em; color:var(--sal-green); font-weight:800; margin:0 0 8px; }
+#atendimento-pdv-shell .atend-entrada-card h1 { margin:0; color:var(--sal-ink); font-size:29px; font-weight:700; letter-spacing:-1px; line-height:1.2; }
+#atendimento-pdv-shell .atend-intro { margin:10px 0 23px; font-size:13px; line-height:1.6; color:var(--sal-muted); }
+#atendimento-pdv-shell .atend-chips { background:#f0f4f7; padding:5px; gap:4px; border-radius:11px; margin-bottom:24px; }
+#atendimento-pdv-shell .atend-chips button { flex:1; min-width:0; border:1px solid transparent; background:transparent; border-radius:8px; padding:12px; color:var(--sal-muted); font-size:13px; letter-spacing:0; font-weight:600; justify-content:space-between; }
+#atendimento-pdv-shell .atend-chips button.on { background:#fff; color:var(--sal-green); border-color:#dce6e8; box-shadow:0 2px 4px #172b4508; }
+#atendimento-pdv-shell .atend-chips kbd { background:#edf2f5; color:#718096; box-shadow:none; min-width:26px; height:22px; padding:0 5px; border:1px solid #dfe7ee; font-size:10px; font-weight:600; }
+#atendimento-pdv-shell .atend-entrada-card label { font-size:10px; letter-spacing:.09em; color:var(--sal-muted); margin-bottom:9px; }
+#atendimento-pdv-shell #atend-numero-input { height:82px; padding:10px; font-size:38px; border:1px solid #cad8df; border-radius:11px; background:#fbfcfd; color:var(--sal-ink); font-weight:600; }
+#atendimento-pdv-shell #atend-numero-input:focus { border-color:var(--sal-green); box-shadow:0 0 0 4px #087f680c; }
+#atendimento-pdv-shell .atend-hint { margin:10px 0 0; color:var(--sal-muted); font-size:11px; text-align:center; }
+#atendimento-pdv-shell .atend-btn-abrir { width:100%; height:50px; margin-top:22px; display:flex; justify-content:space-between; align-items:center; padding:0 20px; border-radius:10px; background:var(--sal-green); font-size:14px; font-weight:600; }
+#atendimento-pdv-shell .atend-btn-abrir:hover { background:#066552; }
+#atendimento-pdv-shell .atend-btn-abrir kbd { font-family:inherit; font-size:11px; opacity:.75; }
+#atendimento-pdv-shell .atend-foot { border-top:1px solid #edf1f4; padding-top:17px; margin-top:20px; text-align:center; font-size:11px; line-height:1.5; color:var(--sal-muted); }
+#atendimento-pdv-shell .atend-operacao { display:grid; grid-template-columns:minmax(280px,36%) minmax(0,1fr); grid-template-rows:auto minmax(0,1fr) auto; padding:22px 26px; gap:12px 16px; overflow:auto; min-height:0; flex:1; }
+#atendimento-pdv-shell .atend-account-actions { grid-column:1 / -1; }
+#atendimento-pdv-shell .classic-main-content { display:contents; padding:0; gap:0; min-height:0; }
+#atendimento-pdv-shell .classic-left-pane { grid-column:1; grid-row:2 / 4; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); grid-template-rows:minmax(180px,1.8fr) minmax(72px,.7fr) minmax(88px,.9fr) minmax(48px,.35fr) minmax(88px,.75fr); align-content:stretch; align-self:stretch; width:auto; min-width:0; max-width:none; height:auto; min-height:0; gap:10px; overflow:hidden; }
+#atendimento-pdv-shell .classic-cart-img { grid-column:1 / -1; height:100%; min-height:0; max-height:none; padding:14px 18px; display:flex; align-items:center; justify-content:center; overflow:hidden; background:#fff; border:1px solid var(--sal-line); border-radius:14px; box-shadow:none; }
+#atendimento-pdv-shell .classic-field-box { height:100%; border:1px solid var(--sal-line); border-radius:12px; box-shadow:none; padding:12px 16px; gap:4px; justify-content:center; min-height:0; }
+#atendimento-pdv-shell .classic-field-box label { color:var(--sal-muted); font-size:11px; letter-spacing:.08em; font-weight:700; }
+#atendimento-pdv-shell .classic-field-box .classic-value { font-family:inherit; font-variant-numeric:tabular-nums; font-size:26px; min-height:0; line-height:1.2; font-weight:650; color:var(--sal-ink); overflow-wrap:anywhere; }
+#atendimento-pdv-shell #atend-codigo-barras { font-size:20px; min-height:0; }
+#atendimento-pdv-shell .classic-right-pane { grid-column:2; grid-row:2; display:flex; flex-direction:column; min-width:0; min-height:0; }
+#atendimento-pdv-shell .classic-table-container { flex:1; min-height:0; border:1px solid var(--sal-line); border-radius:14px; box-shadow:none; background:#fff; overflow:auto; }
+#atendimento-pdv-shell .classic-table-header { text-align:left; background:#fff; color:var(--sal-ink); padding:19px 20px; border-bottom:1px solid var(--sal-line); font-size:15px; font-weight:650; letter-spacing:0; text-transform:none; display:flex; align-items:center; justify-content:space-between; gap:12px; }
+#atendimento-pdv-shell .atend-switch { background:#f3f7f9; border:1px solid var(--sal-line); border-radius:8px; padding:9px 12px; color:var(--sal-ink); font-size:11px; }
+#atendimento-pdv-shell .classic-pdv-table { display:table; flex:none; table-layout:fixed; background:#fff; }
+#atendimento-pdv-shell .classic-pdv-table thead { display:table-header-group; }
+#atendimento-pdv-shell .classic-pdv-table tbody { display:table-row-group; height:auto; background:#fff; overflow:visible; }
+#atendimento-pdv-shell .classic-pdv-table thead tr,#atendimento-pdv-shell .classic-pdv-table tbody tr { display:table-row; border-bottom:1px solid #edf1f4; background:#fff; }
+#atendimento-pdv-shell .classic-pdv-table thead th { position:sticky; top:0; background:#f7f9fb; color:var(--sal-muted); padding:13px 10px; font-size:10px; letter-spacing:.02em; }
+#atendimento-pdv-shell .classic-pdv-table th:nth-child(1) { width:7%; }
+#atendimento-pdv-shell .classic-pdv-table th:nth-child(2) { width:17%; }
+#atendimento-pdv-shell .classic-pdv-table th:nth-child(3) { width:34%; }
+#atendimento-pdv-shell .classic-pdv-table th:nth-child(4) { width:10%; }
+#atendimento-pdv-shell .classic-pdv-table th:nth-child(5),#atendimento-pdv-shell .classic-pdv-table th:nth-child(6) { width:16%; }
+#atendimento-pdv-shell .classic-pdv-table tbody td { padding:16px 10px; font-family:inherit; font-size:13px; font-weight:500; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; color:var(--sal-ink); }
+#atendimento-pdv-shell .classic-pdv-table tbody td:last-child { font-weight:700; }
+#atendimento-pdv-shell .classic-pdv-table tbody tr:hover { background:#f7fbfa; }
+#atendimento-pdv-shell #atend-itens-tbody tr.atend-empty-row { display:table-row; }
+#atendimento-pdv-shell #atend-itens-tbody tr.atend-empty-row td.atend-empty-msg { display:table-cell; padding:65px 20px; font-weight:400; color:var(--sal-muted); font-size:14px; }
+#atendimento-pdv-shell .classic-bottom-panel { display:contents; padding:0; gap:0; min-height:0; }
+#atendimento-pdv-shell .classic-left-pane .classic-input-group { grid-column:1 / -1; height:100%; display:flex; align-items:center; align-content:center; flex-wrap:wrap; padding:12px 14px; gap:6px; border:1px solid var(--sal-line); border-radius:12px; box-shadow:none; background:#fff; }
+#atendimento-pdv-shell .classic-input-group label { width:100%; font-size:10px; color:var(--sal-muted); font-weight:800; letter-spacing:.08em; }
+#atendimento-pdv-shell .classic-input-group input { height:48px; font-family:inherit; font-size:17px; font-weight:500; border:1px solid #cad8df; }
+#atendimento-pdv-shell .classic-input-group input:focus { border-color:var(--sal-green); box-shadow:0 0 0 3px #087f6812; }
+#atendimento-pdv-shell .atend-search-button { height:48px; padding:0 15px; border:0; border-radius:8px; background:var(--sal-ink); color:#fff; font-weight:600; font-size:12px; }
+#atendimento-pdv-shell .classic-shortcuts { grid-column:1 / -1; align-self:stretch; align-content:center; display:grid; grid-template-columns:1.15fr 1.25fr 1.1fr auto; gap:8px 10px; border:1px solid var(--sal-line); border-radius:12px; padding:12px 14px; box-shadow:none; background:#fff; font-size:12px; font-weight:600; color:var(--sal-ink); min-height:0; }
+#atendimento-pdv-shell .classic-shortcuts span { display:flex; align-items:center; gap:5px; min-width:0; white-space:nowrap; overflow:hidden; }
+#atendimento-pdv-shell .classic-shortcuts kbd { flex-shrink:0; font:700 10px 'Segoe UI',sans-serif; color:var(--sal-green); background:#e8f5ef; border:1px solid #cbe6da; padding:1px 5px; border-radius:4px; min-width:22px; text-align:center; }
+#atendimento-pdv-shell .classic-bottom-right { grid-column:2; grid-row:3; display:flex; flex-direction:column; gap:12px; min-width:0; }
+#atendimento-pdv-shell .classic-total-box { border:1px solid var(--sal-line); border-radius:12px; padding:16px 22px; box-shadow:none; }
+#atendimento-pdv-shell .classic-total-box label { font-size:13px; font-weight:700; align-self:auto; margin:0; color:var(--sal-muted); }
+#atendimento-pdv-shell .classic-total-box .val { font-family:inherit; font-variant-numeric:tabular-nums; font-size:28px; font-weight:700; }
+#atendimento-pdv-shell .classic-total-box.subtotal { padding:16px 22px; }
+#atendimento-pdv-shell .classic-total-box.subtotal .val { font-size:30px; }
+#atendimento-pdv-shell .classic-total-box.sm { flex-direction:row; align-items:center; justify-content:space-between; gap:10px; flex:1; }
+#atendimento-pdv-shell .classic-total-box.sm:last-child { flex:1.4; background:#e8f5ef; border:1px solid #cbe6da; }
+#atendimento-pdv-shell .classic-total-box.sm:last-child label { color:#176652 !important; font-size:14px !important; }
+#atendimento-pdv-shell .classic-total-box.sm:last-child .val { color:#08735e !important; font-size:40px !important; white-space:nowrap; }
+@media(max-width:1100px) {
+ #atendimento-pdv-shell .atend-brand-caption,#atendimento-pdv-shell .atend-equip-tag { display:none; }
+ #atendimento-pdv-shell .atend-operacao { padding:16px; gap:12px; }
+}
+@media(max-width:760px) {
+ #atendimento-pdv-shell .classic-header { padding:12px 16px; gap:10px; min-height:62px; flex-wrap:wrap; }
+ #atendimento-pdv-shell .classic-header-logo { width:110px; height:30px; }
+ #atendimento-pdv-shell .classic-header-info { gap:8px; flex-wrap:wrap; }
+ #atendimento-pdv-shell .live-clock,#atendimento-pdv-shell .divider { display:none; }
+ #atendimento-pdv-shell .classic-status-bar { padding:13px 16px; }
+ #atendimento-pdv-shell .atend-status-caption { display:none; }
+ #atendimento-pdv-shell .atend-operacao { display:flex; flex-direction:column; }
+ #atendimento-pdv-shell .classic-main-content { display:flex; flex-direction:column; flex:none; min-height:0; gap:12px; }
+ #atendimento-pdv-shell .classic-left-pane { grid-row:auto; width:100%; min-width:0; max-width:none; grid-template-rows:minmax(140px,180px) auto auto auto auto; }
+ #atendimento-pdv-shell .classic-cart-img { min-height:140px; max-height:180px; }
+ #atendimento-pdv-shell .classic-right-pane { grid-row:auto; min-height:260px; }
+ #atendimento-pdv-shell .classic-field-box { padding:10px; height:auto; }
+ #atendimento-pdv-shell .classic-field-box .classic-value { font-size:18px; }
+ #atendimento-pdv-shell .classic-table-container { max-height:400px; }
+ #atendimento-pdv-shell .classic-bottom-panel { display:block; }
+ #atendimento-pdv-shell .classic-bottom-right { grid-column:auto; grid-row:auto; }
+ #atendimento-pdv-shell .classic-shortcuts { grid-template-columns:1fr 1fr; }
+ #atendimento-pdv-shell .atend-entrada-card { padding:24px; }
+ #atendimento-pdv-shell .classic-pdv-table tbody td { font-size:11px; padding:12px 6px; }
+}
+@media(max-height:720px) and (min-width:761px) {
+ #atendimento-pdv-shell .classic-header { min-height:60px; padding-block:10px; }
+ #atendimento-pdv-shell .classic-status-bar { padding-block:12px; }
+ #atendimento-pdv-shell .atend-entrada-card { padding:22px 30px; }
+ #atendimento-pdv-shell .atend-welcome-icon { display:none; }
+ #atendimento-pdv-shell .atend-intro { margin-bottom:16px; }
+ #atendimento-pdv-shell .atend-chips { margin-bottom:16px; }
+
+ #atendimento-pdv-shell .classic-field-box { padding:10px 14px; gap:4px; }
+}
+/* Ações da conta: compartilham os mesmos serviços da gestão de mesas. */
+#atendimento-pdv-shell .atend-account-actions { display:grid; grid-column:1 / -1; grid-template-columns:1.5fr 1fr 1fr 1.15fr; gap:12px; flex-shrink:0; }
+#atendimento-pdv-shell .atend-account-actions > * { min-width:0; min-height:82px; margin:0; border:1px solid var(--sal-line); background:#fff; border-radius:12px; padding:16px 18px; text-align:left; color:var(--sal-ink); display:flex; flex-direction:column; justify-content:center; gap:10px; font-size:15px; font-weight:650; }
+#atendimento-pdv-shell .atend-account-actions button:hover:not(:disabled) { background:#edf7f3; border-color:#a9d6c6; }
+#atendimento-pdv-shell .atend-account-actions button:disabled { opacity:.45; cursor:not-allowed; }
+#atendimento-pdv-shell .atend-account-actions kbd { font:700 12px 'Segoe UI',sans-serif; color:var(--sal-green); background:#e8f5ef; border:1px solid #cbe6da; padding:3px 8px; border-radius:6px; white-space:nowrap; }
+#atendimento-pdv-shell .atend-account-actions small,#atendimento-pdv-shell .atend-split-control > label { display:flex; justify-content:space-between; align-items:center; gap:6px; }
+#atendimento-pdv-shell .atend-account-actions small { font-size:13px; color:var(--sal-muted); font-weight:500; }
+#atendimento-pdv-shell .atend-split-control > div { display:flex; align-items:center; flex-wrap:wrap; gap:8px; font-size:13px; font-weight:500; color:var(--sal-muted); }
+#atendimento-pdv-shell #atend-pessoas { width:70px; height:38px; padding:4px 8px; border:1px solid #cad8df; border-radius:8px; color:var(--sal-ink); background:#f8fafc; font:650 16px 'Segoe UI',sans-serif; }
+#atendimento-pdv-shell #atend-por-pessoa { color:var(--sal-green); margin-left:auto; font-size:16px; font-weight:700; font-variant-numeric:tabular-nums; }
+#atendimento-pdv-shell .atend-service-control { cursor:pointer; }
+#atendimento-pdv-shell .atend-service-control > span { display:flex; align-items:center; gap:8px; }
+#atendimento-pdv-shell #atend-taxa-servico { accent-color:var(--sal-green); width:17px; height:17px; flex-shrink:0; }
+#atendimento-pdv-shell .atend-service-control:has(input:checked) { border-color:#a9d6c6; background:#edf7f3; }
+@media(max-width:1100px) {
+ #atendimento-pdv-shell .atend-account-actions { grid-template-columns:1fr 1fr; gap:10px; }
+ #atendimento-pdv-shell .atend-account-actions > * { padding:10px 13px; }
+
+}
+
+@media(max-width:480px) {
+ #atendimento-pdv-shell .atend-account-actions { grid-template-columns:1fr; }
+}
+#atendimento-pdv-shell .classic-left-pane > .classic-field-box:has(#atend-codigo-barras) { grid-column:1 / -1; }
+#atendimento-pdv-shell .classic-cart-img img { display:block; width:100%; height:100%; max-width:100%; max-height:100%; object-fit:contain; object-position:center; }
+body.pdv-atendimento-ativo .toast-container {
+  top: 88px;
+  bottom: auto;
+  right: 24px;
+  left: auto;
+}

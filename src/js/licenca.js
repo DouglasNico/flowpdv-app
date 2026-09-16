@@ -3,6 +3,7 @@
  */
 
 import { StorageService } from './storage.js';
+import { mesclarDadosTerminal, tipoTerminalDe } from './tipo-terminal.js';
 import { db, doc, getDoc, onSnapshot, setDoc, updateDoc, buscarLicencaNuvem, desvincularTerminalNuvem, garantirSessaoLoja } from './firebase-config.js';
 
 export const LicencaModule = {
@@ -210,6 +211,7 @@ export const LicencaModule = {
 
           if (idxTerm >= 0) {
             if (this.encerrandoApp) return isAuth;
+            this.aplicarTipoTerminalDaNuvem(terminais[idxTerm]);
             const agora = Date.now();
             const ultimoHb = parseInt(localStorage.getItem('flowpdv_terminal_heartbeat_ms') || '0', 10) || 0;
             const precisaHb = (agora - ultimoHb) > (20 * 1000);
@@ -219,7 +221,7 @@ export const LicencaModule = {
               const hostnameMudou = !termAtual.hostname || termAtual.hostname !== infoTerminal.hostname;
               if (!hostnameMudou && !precisaHb) return;
 
-              terminais[idxTerm] = { ...termAtual, ...infoTerminal, id: myDevId };
+              terminais[idxTerm] = mesclarDadosTerminal(termAtual, infoTerminal);
               const targetDocId = docIdFound || cloudData.chaveLicenca || chave;
               if (targetDocId) {
                 setDoc(doc(db, "licencas", targetDocId), { terminaisAtivos: terminais }, { merge: true })
@@ -278,8 +280,58 @@ export const LicencaModule = {
       sistema: platform === 'win32' ? 'Windows' : platform,
       ultimoAcesso: new Date().toISOString(),
       appAberto: true,
-      offlineEm: null
+      offlineEm: null,
+      tipoTerminal: StorageService.getTipoTerminal()
     };
+  },
+
+  aplicarTipoTerminalDaNuvem(term) {
+    const tipoNuvem = tipoTerminalDe(term);
+    if (!tipoNuvem) return;
+    const atual = StorageService.getTipoTerminal();
+    if (tipoNuvem === atual) return;
+    StorageService.setTipoTerminal(tipoNuvem);
+    if (window.App && typeof window.App.aplicarModoTerminal === 'function') {
+      window.App.aplicarModoTerminal();
+    }
+    if (window.App && typeof window.App.sincronizarSelectTipoTerminal === 'function') {
+      window.App.sincronizarSelectTipoTerminal();
+    }
+  },
+
+  async setTipoTerminalAtual(tipo) {
+    const registroBase = mesclarDadosTerminal({}, { tipoTerminal: tipo });
+    const normalizado = registroBase.tipoTerminal || 'caixa';
+    StorageService.setTipoTerminal(normalizado);
+    try {
+      const lic = StorageService.getLicenca() || {};
+      const chave = String(lic.chaveLicenca || lic.clienteId || '').trim().toUpperCase();
+      if (chave) {
+        await this.garantirSessaoNuvem(chave);
+        const myDevId = StorageService.getDeviceId();
+        const info = await this.getDadosTerminalAtual();
+        const snap = await getDoc(doc(db, 'licencas', chave));
+        const atuais = snap.exists() ? (snap.data().terminaisAtivos || []) : [];
+        let terminais = this.limparTerminaisDuplicados(atuais);
+        const idx = terminais.findIndex(t => t && t.id === myDevId);
+        const registro = mesclarDadosTerminal(idx >= 0 ? terminais[idx] : {}, {
+          ...info,
+          id: myDevId,
+          tipoTerminal: normalizado,
+          ultimoAcesso: new Date().toISOString()
+        }, { forcarTipoTerminal: true });
+        if (idx >= 0) terminais[idx] = registro;
+        else terminais.push(registro);
+        terminais = this.limparTerminaisDuplicados(terminais);
+        await setDoc(doc(db, 'licencas', chave), { terminaisAtivos: terminais, atualizadoEm: new Date().toISOString() }, { merge: true });
+      }
+    } catch (e) {
+      console.warn('[CloudLic] Falha ao gravar tipoTerminal:', e);
+    }
+    if (window.App && typeof window.App.aplicarModoTerminal === 'function') {
+      window.App.aplicarModoTerminal();
+    }
+    return normalizado;
   },
 
   /** Sobe hostname + ultimoAcesso na hora (abrir/fechar caixa). Sem espera de 2 min. */
@@ -297,14 +349,13 @@ export const LicencaModule = {
       const atuais = snap.exists() ? (snap.data().terminaisAtivos || []) : [];
       let terminais = this.limparTerminaisDuplicados(atuais);
       const idx = terminais.findIndex(t => t && t.id === myDevId);
-      const registro = {
-        ...(idx >= 0 ? terminais[idx] : {}),
+      const registro = mesclarDadosTerminal(idx >= 0 ? terminais[idx] : {}, {
         ...info,
         id: myDevId,
         ultimoAcesso: new Date().toISOString(),
         appAberto: true,
         offlineEm: null
-      };
+      });
       if (idx >= 0) terminais[idx] = registro;
       else terminais.push(registro);
       terminais = this.limparTerminaisDuplicados(terminais);
@@ -899,12 +950,13 @@ export const LicencaModule = {
       const jaRegistrado = this.isTerminalRegistrado(terminais, myDevId);
 
       if (jaRegistrado) {
-        // Atualiza os dados da máquina caso tenha mudado hostname/acesso
         const idx = terminais.findIndex(t => t.id === myDevId);
-        if (idx >= 0) terminais[idx] = infoTerminal;
+        if (idx >= 0) terminais[idx] = mesclarDadosTerminal(terminais[idx], infoTerminal);
       } else if (terminais.length < limite) {
-        terminais.push(infoTerminal);
+        terminais.push(mesclarDadosTerminal({}, infoTerminal));
       }
+      const meuTermAtivar = terminais.find(t => t && t.id === myDevId);
+      if (meuTermAtivar) this.aplicarTipoTerminalDaNuvem(meuTermAtivar);
 
       // 🛡️ DESVINCULAÇÃO UNIVERSAL ABSOLUTA:
       // O computador (myDevId) só pode pertencer à nova licença ativada.
@@ -1171,10 +1223,12 @@ export const LicencaModule = {
       if (jaRegistrado || terminais.length < limite) {
         if (jaRegistrado) {
           const idx = terminais.findIndex(t => t.id === myDevId);
-          if (idx >= 0) terminais[idx] = infoTerminal;
+          if (idx >= 0) terminais[idx] = mesclarDadosTerminal(terminais[idx], infoTerminal);
         } else {
-          terminais.push(infoTerminal);
+          terminais.push(mesclarDadosTerminal({}, infoTerminal));
         }
+        const meuTermRechecar = terminais.find(t => t && t.id === myDevId);
+        if (meuTermRechecar) this.aplicarTipoTerminalDaNuvem(meuTermRechecar);
         const docsToUpdate = Array.from(new Set([cloudData.docId, cloudData.chaveLicenca, cloudData.id].filter(Boolean)));
         for (const tId of docsToUpdate) {
           try {

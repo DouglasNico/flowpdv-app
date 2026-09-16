@@ -7,6 +7,7 @@ import { StorageService } from './storage.js';
 import { AuthModule } from './auth.js';
 import { ThermalPrintModule } from './thermal-print.js';
 import { AuditModule } from './audit.js';
+import { idComandaPorNumero } from './tipo-terminal.js';
 
 export const ComandasModule = {
   comandaAtivaId: null,
@@ -108,6 +109,62 @@ export const ComandasModule = {
     StorageService.saveLicenca(lic);
     StorageService.setModulosLicenca(modulos);
     this.adaptarModoAtendimento();
+    if (window.AtendimentoPdvModule && typeof window.AtendimentoPdvModule.adaptarSalao === 'function') {
+      window.AtendimentoPdvModule.adaptarSalao();
+    }
+  },
+
+  textosModo() {
+    const modo = this.getModoAtendimento();
+    if (modo === 'apenas_mesas') {
+      return {
+        modo,
+        unidade: 'mesa',
+        caption: 'Mesas · Atendimento no salão',
+        intro: 'Informe o número da mesa para<br>começar ou continuar um pedido.',
+        statusEntrada: 'DIGITE A MESA',
+        labelNumero: 'NÚMERO DA MESA',
+        transferir: 'Trocar mesa',
+        preconta: 'Total da mesa',
+        atalhoF5: 'Trocar mesa',
+        abraPrimeiro: 'Abra uma mesa primeiro.',
+        transferirTitulo: '🔄 Transferir itens / Mesa',
+        transferirLabel: 'Mesa de destino:',
+        transferirDestino: 'outra mesa de destino'
+      };
+    }
+    if (modo === 'apenas_comandas') {
+      return {
+        modo,
+        unidade: 'comanda',
+        caption: 'Comandas · Atendimento no salão',
+        intro: 'Informe o número da comanda para<br>começar ou continuar um pedido.',
+        statusEntrada: 'DIGITE A COMANDA',
+        labelNumero: 'NÚMERO DA COMANDA',
+        transferir: 'Trocar comanda',
+        preconta: 'Total da comanda',
+        atalhoF5: 'Trocar comanda',
+        abraPrimeiro: 'Abra uma comanda primeiro.',
+        transferirTitulo: '🔄 Transferir itens / Comanda',
+        transferirLabel: 'Comanda de destino:',
+        transferirDestino: 'outra comanda de destino'
+      };
+    }
+    return {
+      modo,
+      unidade: 'mesa ou comanda',
+      caption: 'Mesas & comandas · Atendimento no salão',
+      intro: 'Selecione o tipo e informe o número para<br>começar ou continuar um pedido.',
+      statusEntrada: 'DIGITE MESA OU COMANDA',
+      labelNumero: null,
+      transferir: 'Trocar mesa / comanda',
+      preconta: 'Total da conta',
+      atalhoF5: 'Trocar mesa / comanda',
+      abraPrimeiro: 'Abra uma mesa ou comanda primeiro.',
+      transferirTitulo: '🔄 Transferir itens',
+      transferirLabel: 'Mesa / Comanda de destino:',
+      transferirDestino: 'outra mesa ou comanda de destino'
+    };
   },
 
   adaptarModoAtendimento() {
@@ -185,6 +242,18 @@ export const ComandasModule = {
       return todas.filter(c => c.tipo === 'comanda');
     }
     return todas;
+  },
+
+  atualizarTelasAposSync() {
+    this.renderGridComandas();
+    this.renderPainelDetalhes();
+    if (window.AtendimentoPdvModule && typeof window.AtendimentoPdvModule.estaAtivoOperador === 'function' && window.AtendimentoPdvModule.estaAtivoOperador()) {
+      window.AtendimentoPdvModule.renderOperacao();
+    }
+  },
+
+  renderGrid() {
+    this.atualizarTelasAposSync();
   },
 
   renderGridComandas() {
@@ -319,12 +388,43 @@ export const ComandasModule = {
     this.renderPainelDetalhes();
   },
 
+  garantirPorNumero(tipo, numero) {
+    const id = idComandaPorNumero(this.getModoAtendimento(), numero, tipo);
+    if (!id) return null;
+    const n = parseInt(String(id).replace(/\D/g, ''), 10);
+    const tipoNorm = id.indexOf('MESA-') === 0 ? 'mesa' : 'comanda';
+    const lista = this.getComandas();
+    let c = lista.find(item => item && (item.id === id || (item.tipo === tipoNorm && Number(item.numero) === n)));
+    if (c) return c;
+    const pad = String(n).padStart(2, '0');
+    c = {
+      id,
+      tipo: tipoNorm,
+      numero: n,
+      nome: tipoNorm === 'mesa' ? ('Mesa ' + pad) : ('Comanda #' + pad),
+      cliente: '',
+      status: 'livre',
+      itens: [],
+      taxaServico: true,
+      total: 0,
+      abertaEm: null,
+      operador: ''
+    };
+    lista.push(c);
+    this.salvarComandas(lista);
+    return c;
+  },
+
   setDivisaoPessoas(qtd) {
     this.numPessoasDivisao = Math.max(1, parseInt(qtd, 10) || 1);
     this.renderPainelDetalhes();
   },
 
   renderPainelDetalhes() {
+    // Mantém o terminal atualizado após taxa, impressão e transferência.
+    if (window.AtendimentoPdvModule?.estaAtivoOperador()) {
+      window.AtendimentoPdvModule.renderOperacao();
+    }
     const container = document.getElementById('comanda-detalhes-painel');
     if (!container) return;
 
@@ -909,6 +1009,18 @@ export const ComandasModule = {
 
     if (origemNomeEl) origemNomeEl.textContent = cOrigem.nome;
 
+    const textos = this.textosModo();
+    const titulo = document.getElementById('transferir-modal-titulo');
+    const texto = document.getElementById('transferir-modal-texto');
+    const labelDest = document.getElementById('transferir-destino-label');
+    if (titulo) titulo.textContent = textos.transferirTitulo;
+    if (texto) {
+      texto.innerHTML = `Transfira todos os itens consumidos da <strong id="transferir-origem-nome" style="color: #7c3aed;"></strong> para ${textos.transferirDestino}:`;
+      const nomeEl = document.getElementById('transferir-origem-nome');
+      if (nomeEl) nomeEl.textContent = cOrigem.nome || '';
+    }
+    if (labelDest) labelDest.textContent = textos.transferirLabel;
+
     if (selectDestino) {
       const outras = this.getComandasDoModo().filter(item => item.id !== origemId);
       selectDestino.innerHTML = outras.map(item => `
@@ -1129,7 +1241,7 @@ export const ComandasModule = {
             <span class="nowrap">+ R$ ${taxaServicoOpcional.toFixed(2).replace('.', ',')}</span>
           </div>
           <div class="row-flex bold" style="font-size: 12px; margin-top: 3px;">
-            <span>TOTAL C/ SERVIÇO:</span>
+            <span>TOTAL:</span>
             <span class="nowrap">R$ ${totalComServico.toFixed(2).replace('.', ',')}</span>
           </div>
         ` : `
@@ -1158,15 +1270,65 @@ export const ComandasModule = {
     if (window.App) window.App.showToast(`🖨️ Pré-conta da ${c.nome} enviada para a impressora!`, 'info');
   },
 
-  transferirParaPdvCaixa(comandaId) {
+  interpretarAtalhoCaixa(entrada) {
+    const t = String(entrada || '').trim().toUpperCase();
+    const m = t.match(/^\*(MESA|COMANDA|CMD|M|C)(\d{1,4})$/);
+    if (!m) return null;
+    const token = m[1];
+    const tipo = (token === 'M' || token === 'MESA') ? 'mesa' : 'comanda';
+    return { tipo, numero: parseInt(m[2], 10) };
+  },
+
+  puxarParaCaixaPorAtalho(entrada) {
+    if (this.getModoAtendimento() === 'desativado') return false;
+    if (window.App && typeof window.App.operadorEmAtendimento === 'function' && window.App.operadorEmAtendimento()) return false;
+    const atalho = this.interpretarAtalhoCaixa(entrada);
+    if (!atalho) return false;
+
+    const modo = this.getModoAtendimento();
+    if (modo === 'apenas_mesas' && atalho.tipo !== 'mesa') {
+      if (window.App) window.App.showToast('Esta loja usa só mesas. Digite *M e o número. Ex: *M12', 'warning');
+      return true;
+    }
+    if (modo === 'apenas_comandas' && atalho.tipo !== 'comanda') {
+      if (window.App) window.App.showToast('Esta loja usa só comandas. Digite *C e o número. Ex: *C12', 'warning');
+      return true;
+    }
+
+    const id = idComandaPorNumero(modo, atalho.numero, atalho.tipo);
+    const c = (this.getComandas() || []).find(item => item && item.id === id);
+    const nome = atalho.tipo === 'mesa' ? ('Mesa ' + atalho.numero) : ('Comanda #' + atalho.numero);
+    if (!c || !c.itens || c.itens.length === 0) {
+      if (window.App) window.App.showToast(`${nome} não tem itens para cobrar.`, 'warning');
+      return true;
+    }
+
+    const ok = this.transferirParaPdvCaixa(id, { abrirPagamento: false });
+    if (ok && window.PdvModule && typeof window.PdvModule.tocarSomBeep === 'function') {
+      window.PdvModule.tocarSomBeep(true);
+    }
+    return true;
+  },
+
+  transferirParaPdvCaixa(comandaId, opcoes) {
     const comandas = this.getComandas();
     const c = comandas.find(item => item.id === comandaId);
     if (!c || !c.itens || c.itens.length === 0) {
       if (window.App) window.App.showToast('Esta mesa não possui itens lançados para cobrar no caixa!', 'warning');
-      return;
+      return false;
     }
 
-    if (!window.PdvModule) return;
+    if (!window.PdvModule) return false;
+
+    if (window.PdvModule.carrinho && window.PdvModule.carrinho.length > 0) {
+      const jaDesta = window.PdvModule.carrinho.some(it => it && it.comandaOrigemId === c.id);
+      if (!jaDesta) {
+        if (window.App) window.App.showToast('Finalize ou esvazie o carrinho antes de puxar a mesa/comanda.', 'warning');
+        return false;
+      }
+    }
+
+    const abrirPagamento = !(opcoes && opcoes.abrirPagamento === false);
 
     // 1. Carrega itens no carrinho do PDV
     const taxaServicoValor = c.taxaServico ? (parseFloat(c.total || 0) * 0.10) : 0;
@@ -1203,10 +1365,15 @@ export const ComandasModule = {
     AuditModule.registrarOuAtualizarLogMesa(c, 'fechamento_caixa');
 
     // 3. Abre o modal de pagamento [F4] automaticamente
-    setTimeout(() => {
-      window.PdvModule.abrirModalPagamento();
-      if (window.App) window.App.showToast(`💰 Itens da ${c.nome} transferidos para o caixa!`, 'success');
-    }, 150);
+    if (abrirPagamento) {
+      setTimeout(() => {
+        window.PdvModule.abrirModalPagamento();
+        if (window.App) window.App.showToast(`💰 Itens da ${c.nome} transferidos para o caixa!`, 'success');
+      }, 150);
+    } else if (window.App) {
+      window.App.showToast(`${c.nome} no caixa (${c.itens.length} item(ns)). F4 para cobrar.`, 'success');
+    }
+    return true;
   },
 
   /**

@@ -3,6 +3,7 @@
  */
 
 import { carimbarAlterados } from './merge-core.js';
+import { normalizarTipoTerminal } from './tipo-terminal.js';
 
 export const StorageService = {
   init() {
@@ -103,7 +104,20 @@ export const StorageService = {
     return devId;
   },
 
-  
+  getTipoTerminal() {
+    try {
+      return normalizarTipoTerminal(localStorage.getItem('flowpdv_tipo_terminal'));
+    } catch (e) {
+      return 'caixa';
+    }
+  },
+
+  setTipoTerminal(tipo) {
+    const norm = normalizarTipoTerminal(tipo);
+    localStorage.setItem('flowpdv_tipo_terminal', norm);
+    return norm;
+  },
+
   // Categorias Dinâmicas (SaaS Multi-Tenant com suporte estrito a exclusões)
   getCategorias() {
     const excluidas = (this.getCategoriasExcluidas() || []).map(c => String(c).toLowerCase().trim());
@@ -1090,6 +1104,8 @@ export const StorageService = {
     'flowpdv_inventarios_enviados',
     'adega_licenca_backup',
     'flowpdv_terminal_heartbeat_ms',
+    'flowpdv_tipo_terminal',
+    'flowpdv_atend_tipo_chip',
     'flowpdv_notas_importadas',
     'flowpdv_contas_excluidas_ids',
     'flowpdv_usuarios_excluidos_ids'

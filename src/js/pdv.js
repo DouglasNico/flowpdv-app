@@ -78,6 +78,10 @@ export const PdvModule = {
   },
 
   focarInputLeitor() {
+    if (window.App && typeof window.App.operadorEmAtendimento === 'function' && window.App.operadorEmAtendimento()) {
+      if (window.AtendimentoPdvModule) window.AtendimentoPdvModule.focarInput();
+      return;
+    }
     // 1. Se a tela de login estiver aberta, focar no PIN e jamais no leitor
     const modalLogin = document.getElementById('modal-login-operador');
     if (modalLogin && modalLogin.classList.contains('active')) {
@@ -416,6 +420,10 @@ export const PdvModule = {
     if (!trimEntrada) return;
 
     const produtos = StorageService.getProdutos() || [];
+
+    if (window.ComandasModule && typeof window.ComandasModule.puxarParaCaixaPorAtalho === 'function') {
+      if (window.ComandasModule.puxarParaCaixaPorAtalho(trimEntrada)) return;
+    }
 
     // 1. ATALHO EXCLUSIVO PARA ITEM AVULSO / DIVERSO (Começa obrigatoriamente com '*')
     // Exemplos suportados: "*15" (1x R$ 15,00), "*15.50" (1x R$ 15,50), "*15*3" (3x R$ 15,00)
@@ -1213,6 +1221,10 @@ export const PdvModule = {
 
   // Modal: Cancelar Item Específico do Carrinho [F8 / DEL]
   atualizarQtdMaximaCancelamento() {
+    if (this._cancelarItemAtendimento && window.AtendimentoPdvModule) {
+      window.AtendimentoPdvModule.atualizarQtdMaximaCancelamento();
+      return;
+    }
     const inputNum = document.getElementById('input-cancelar-item-num');
     const inputQtd = document.getElementById('input-cancelar-item-qtd');
     const detalhe = document.getElementById('cancelar-item-detalhe-selecionado');
@@ -1235,6 +1247,11 @@ export const PdvModule = {
   },
 
   abrirModalCancelarItem() {
+    if (window.App && typeof window.App.operadorEmAtendimento === 'function' && window.App.operadorEmAtendimento() && window.AtendimentoPdvModule) {
+      window.AtendimentoPdvModule.abrirModalExcluirItem();
+      return;
+    }
+    this._cancelarItemAtendimento = false;
     if (!this.carrinho || this.carrinho.length === 0) {
       window.App.showToast('O carrinho está vazio! Não há itens para cancelar.', 'warning');
       return;
@@ -1306,6 +1323,10 @@ export const PdvModule = {
   },
 
   selecionarItemParaCancelar(idx) {
+    if (this._cancelarItemAtendimento && window.AtendimentoPdvModule) {
+      window.AtendimentoPdvModule.selecionarItemParaExcluir(idx);
+      return;
+    }
     const input = document.getElementById('input-cancelar-item-num');
     const inputQtd = document.getElementById('input-cancelar-item-qtd');
     if (input) input.value = idx + 1;
@@ -1317,12 +1338,23 @@ export const PdvModule = {
   },
 
   fecharModalCancelarItem() {
+    const eraAtendimento = !!this._cancelarItemAtendimento;
+    this._cancelarItemAtendimento = false;
     const modal = document.getElementById('modal-cancelar-item-carrinho');
-    if (modal) modal.classList.remove('active');
-    this.focarInputLeitor();
+    if (modal) {
+      modal.classList.remove('active');
+      const titulo = modal.querySelector('h3');
+      if (titulo) titulo.textContent = 'Cancelar Item do Carrinho [DEL]';
+    }
+    if (eraAtendimento && window.AtendimentoPdvModule) window.AtendimentoPdvModule.focarInput();
+    else this.focarInputLeitor();
   },
 
   confirmarExclusaoItemPorNumero() {
+    if (this._cancelarItemAtendimento && window.AtendimentoPdvModule) {
+      window.AtendimentoPdvModule.confirmarExclusaoItemPorNumero();
+      return;
+    }
     const inputNum = document.getElementById('input-cancelar-item-num');
     const inputQtd = document.getElementById('input-cancelar-item-qtd');
     const num = parseInt(inputNum ? inputNum.value : '', 10);
@@ -1344,6 +1376,10 @@ export const PdvModule = {
   },
 
   excluirItemPorIndice(idx, qtd = null) {
+    if (this._cancelarItemAtendimento && window.AtendimentoPdvModule) {
+      window.AtendimentoPdvModule.excluirItemPorIndice(idx, qtd);
+      return;
+    }
     if (this.checkoutTefBloqueado()) return;
     if (idx < 0 || idx >= this.carrinho.length) return;
     const item = this.carrinho[idx];
@@ -1751,6 +1787,14 @@ export const PdvModule = {
   },
 
   selecionarProdutoBusca(id, isFardo = false) {
+    if (window.App && typeof window.App.operadorEmAtendimento === 'function' && window.App.operadorEmAtendimento()) {
+      if (window.AtendimentoPdvModule) {
+        this.fecharBuscaProdutos();
+        window.AtendimentoPdvModule.adicionarProdutoPorId(id, isFardo);
+        this.tocarSomBeep(true);
+      }
+      return;
+    }
     if (!this.validarCaixaAberto()) return;
     const produtos = StorageService.getProdutos();
     const p = produtos.find(item => item.id === id);

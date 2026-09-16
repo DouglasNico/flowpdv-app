@@ -5,3 +5,4 @@ export { StorageService } from '../src/js/storage.js';
 export * from '../src/js/fiscal-core.js';
 export * from '../src/js/tef-core.js';
 export * from '../src/js/tef-ledger.js';
+export * from '../src/js/tipo-terminal.js';
