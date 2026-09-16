@@ -251,18 +251,22 @@ export const AtendimentoPdvModule = {
             <td>${idx + 1}</td>
             <td>${this.esc((ComandasModule.codigoBarrasProduto && ComandasModule.codigoBarrasProduto(it)) || it.codigoBarras || it.codigo || '')}</td>
             <td>${this.esc(it.nome || '')}</td>
-            <td style="text-align:center;">${qtd}</td>
+            <td style="text-align:center;">${(window.PdvModule && typeof window.PdvModule.formatarNumeroQtd === 'function') ? window.PdvModule.formatarNumeroQtd(qtd) : qtd}</td>
             <td style="text-align:right;">${unit}</td>
             <td style="text-align:right;">${tot}</td>
           </tr>`;
         }).join('');
       }
     }
-    const qtdItens = c && c.itens ? c.itens.reduce((a, i) => a + (parseFloat(i.quantidade) || 0), 0) : 0;
+    const qtdItens = (window.PdvModule && typeof window.PdvModule.contarItens === 'function')
+      ? window.PdvModule.contarItens(c && c.itens)
+      : ((c && c.itens) ? c.itens.reduce((a, i) => a + (parseFloat(i.quantidade) || 0), 0) : 0);
     const total = c ? (parseFloat(c.total) || 0) : 0;
     const setTxt = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
     setTxt('atend-subtotal', total.toFixed(2).replace('.', ','));
-    setTxt('atend-qtd-itens', String(qtdItens));
+    setTxt('atend-qtd-itens', (window.PdvModule && typeof window.PdvModule.formatarNumeroQtd === 'function')
+      ? window.PdvModule.formatarNumeroQtd(qtdItens)
+      : String(qtdItens));
     const taxa = c && c.taxaServico ? total * 0.10 : 0;
     const totalComServico = total + taxa;
     const pessoas = Math.max(1, parseInt((c && c.numPessoas) || ComandasModule.numPessoasDivisao, 10) || 1);

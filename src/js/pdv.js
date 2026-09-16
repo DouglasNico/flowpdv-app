@@ -48,6 +48,14 @@ export const PdvModule = {
     return id === 'TAXA-SERVICO-10' || codigo === 'SERV10';
   },
 
+  contarItens(itens) {
+    return (itens || []).reduce((acc, item) => {
+      if (this.itemEhTaxaServico(item)) return acc;
+      if (this.itemEhPeso(item)) return acc + 1;
+      return acc + (parseFloat(item.quantidade) || 0);
+    }, 0);
+  },
+
   rotuloUnidade(item) {
     return this.itemEhPeso(item) ? 'KG' : 'UN';
   },
@@ -750,7 +758,7 @@ export const PdvModule = {
 
     AuthModule.executarComPermissaoOuPin('cancelarVenda', () => {
       const msgEl = document.getElementById('cancelar-carrinho-msg');
-      const totalItens = this.carrinho.reduce((acc, i) => acc + i.quantidade, 0);
+      const totalItens = this.contarItens(this.carrinho);
       const totais = this.calcularTotais();
 
       if (msgEl) {
@@ -769,9 +777,9 @@ export const PdvModule = {
   },
 
   confirmarCancelamentoCarrinho() {
-    const totalItens = this.carrinho.reduce((acc, i) => acc + i.quantidade, 0);
+    const totalItens = this.contarItens(this.carrinho);
     const totais = this.calcularTotais();
-    const itensNomes = this.carrinho.map(i => `${i.quantidade}x ${i.nome}`).join(', ');
+    const itensNomes = this.carrinho.map(i => `${this.formatarQtdItem(i)} ${i.nome}`).join(', ');
 
     // Log de Auditoria
     AuditModule.registrarLog('cancelamento_venda', `Cancelou venda em andamento no PDV (${totalItens} itens, Total R$ ${totais.total.toFixed(2)}): ${itensNomes}`, {
@@ -991,8 +999,8 @@ export const PdvModule = {
       const dataObj = new Date(v.data);
       const dataFmt = dataObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
       const horaFmt = dataObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-      const totalItens = (v.itens || []).reduce((acc, i) => acc + (i.quantidade || 1), 0);
-      const resumoItens = (v.itens || []).map(i => `${i.quantidade}x ${i.nome}`).slice(0, 3).join(', ') + ((v.itens || []).length > 3 ? '...' : '');
+      const totalItens = this.contarItens(v.itens);
+      const resumoItens = (v.itens || []).map(i => `${this.formatarQtdItem(i)} ${i.nome}`).slice(0, 3).join(', ') + ((v.itens || []).length > 3 ? '...' : '');
 
       let badgePag = '<span class="reimpressao-card-badge" style="background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0;">💵 Dinheiro</span>';
       if (v.formaPagamento === 'PIX') {
@@ -1109,11 +1117,7 @@ export const PdvModule = {
       }
     });
 
-    const totalItens = this.carrinho.reduce((acc, item) => {
-      if (this.itemEhTaxaServico(item)) return acc;
-      if (this.itemEhPeso(item)) return acc + 1;
-      return acc + (parseFloat(item.quantidade) || 0);
-    }, 0);
+    const totalItens = this.contarItens(this.carrinho);
     const totalDescontos = this.desconto + descontoClube;
     const total = Math.max(0, subtotal - totalDescontos);
 
@@ -1152,13 +1156,13 @@ export const PdvModule = {
 
     if (totalEl) totalEl.textContent = `R$ ${totais.total.toFixed(2).replace('.', ',')}`;
     if (subtotalEl) subtotalEl.textContent = `R$ ${totais.subtotal.toFixed(2).replace('.', ',')}`;
-    if (countEl) countEl.textContent = `${totais.totalItens} ${totais.totalItens === 1 ? 'item' : 'itens'}`;
-    if (totalItensBox) totalItensBox.textContent = totais.totalItens;
+    if (countEl) countEl.textContent = `${this.formatarNumeroQtd(totais.totalItens)} ${totais.totalItens === 1 ? 'item' : 'itens'}`;
+    if (totalItensBox) totalItensBox.textContent = this.formatarNumeroQtd(totais.totalItens);
 
     const classicSubtotalEl = document.getElementById('classic-subtotal');
     if (classicSubtotalEl) classicSubtotalEl.textContent = totais.subtotal.toFixed(2).replace('.', ',');
     const classicQtdItensEl = document.getElementById('classic-qtd-itens');
-    if (classicQtdItensEl) classicQtdItensEl.textContent = totais.totalItens;
+    if (classicQtdItensEl) classicQtdItensEl.textContent = this.formatarNumeroQtd(totais.totalItens);
     const classicTotalVendaEl = document.getElementById('classic-total-venda');
     if (classicTotalVendaEl) classicTotalVendaEl.textContent = totais.total.toFixed(2).replace('.', ',');
 

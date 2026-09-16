@@ -490,6 +490,7 @@ export const GerenciaModule = {
           const qtd = parseFloat(item.quantidade) || 1;
           const preco = parseFloat(item.precoUnitario) || 0;
           const subtotal = qtd * preco;
+          const ehPeso = window.PdvModule && typeof window.PdvModule.itemEhPeso === 'function' && window.PdvModule.itemEhPeso(item);
 
           const categoriaReal = (item.categoria && item.categoria.toLowerCase() !== 'geral' ? item.categoria : null) || 
                                 (item.id && catMapById[item.id]) || 
@@ -510,9 +511,10 @@ export const GerenciaModule = {
           }
 
           mapaProdutos[nome].quantidade += qtd;
+          if (ehPeso) mapaProdutos[nome].ehPeso = true;
           mapaProdutos[nome].faturamento += subtotal;
           faturamentoTotal += subtotal;
-          totalItensVendidos += qtd;
+          totalItensVendidos += ehPeso ? 1 : qtd;
         });
       }
     });
@@ -619,7 +621,7 @@ export const GerenciaModule = {
               ${StorageService.getIconeCategoria(item.categoria)} ${item.categoria || 'Geral'}
             </span>
           </td>
-          <td style="font-family: 'JetBrains Mono'; font-weight: 700; color: var(--text-main); text-align: center;">${item.quantidade} un</td>
+          <td style="font-family: 'JetBrains Mono'; font-weight: 700; color: var(--text-main); text-align: center;">${item.quantidade}${item.ehPeso ? ' kg' : ' un'}</td>
           <td style="font-family: 'JetBrains Mono'; font-weight: 800; color: #059669; font-size: 14.5px;">R$ ${StorageService.formatarMoeda(item.faturamento)}</td>
           <td>
             <div style="display: flex; align-items: center; gap: 8px;">

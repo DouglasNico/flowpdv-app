@@ -50811,6 +50811,13 @@ This typically indicates that your device does not have a healthy Internet conne
       const codigo = String(item.codigo || item.codigoBarras || "").trim().toUpperCase();
       return id === "TAXA-SERVICO-10" || codigo === "SERV10";
     },
+    contarItens(itens) {
+      return (itens || []).reduce((acc, item) => {
+        if (this.itemEhTaxaServico(item)) return acc;
+        if (this.itemEhPeso(item)) return acc + 1;
+        return acc + (parseFloat(item.quantidade) || 0);
+      }, 0);
+    },
     rotuloUnidade(item) {
       return this.itemEhPeso(item) ? "KG" : "UN";
     },
@@ -51408,7 +51415,7 @@ Venda bloqueada no PDV!`);
       }
       AuthModule.executarComPermissaoOuPin("cancelarVenda", () => {
         const msgEl = document.getElementById("cancelar-carrinho-msg");
-        const totalItens = this.carrinho.reduce((acc, i) => acc + i.quantidade, 0);
+        const totalItens = this.contarItens(this.carrinho);
         const totais = this.calcularTotais();
         if (msgEl) {
           msgEl.innerHTML = `Tem certeza que deseja cancelar e remover <strong>${totalItens} item(ns)</strong> (Total: <strong>R$ ${totais.total.toFixed(2).replace(".", ",")}</strong>) do carrinho?`;
@@ -51423,9 +51430,9 @@ Venda bloqueada no PDV!`);
       this.focarInputLeitor();
     },
     confirmarCancelamentoCarrinho() {
-      const totalItens = this.carrinho.reduce((acc, i) => acc + i.quantidade, 0);
+      const totalItens = this.contarItens(this.carrinho);
       const totais = this.calcularTotais();
-      const itensNomes = this.carrinho.map((i) => `${i.quantidade}x ${i.nome}`).join(", ");
+      const itensNomes = this.carrinho.map((i) => `${this.formatarQtdItem(i)} ${i.nome}`).join(", ");
       AuditModule.registrarLog("cancelamento_venda", `Cancelou venda em andamento no PDV (${totalItens} itens, Total R$ ${totais.total.toFixed(2)}): ${itensNomes}`, {
         totalItens,
         valorTotal: totais.total,
@@ -51619,8 +51626,8 @@ Venda bloqueada no PDV!`);
         const dataObj = new Date(v.data);
         const dataFmt = dataObj.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
         const horaFmt = dataObj.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-        const totalItens = (v.itens || []).reduce((acc, i) => acc + (i.quantidade || 1), 0);
-        const resumoItens = (v.itens || []).map((i) => `${i.quantidade}x ${i.nome}`).slice(0, 3).join(", ") + ((v.itens || []).length > 3 ? "..." : "");
+        const totalItens = this.contarItens(v.itens);
+        const resumoItens = (v.itens || []).map((i) => `${this.formatarQtdItem(i)} ${i.nome}`).slice(0, 3).join(", ") + ((v.itens || []).length > 3 ? "..." : "");
         let badgePag = '<span class="reimpressao-card-badge" style="background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0;">\u{1F4B5} Dinheiro</span>';
         if (v.formaPagamento === "PIX") {
           badgePag = '<span class="reimpressao-card-badge" style="background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd;">\u{1F4F1} PIX</span>';
@@ -51725,11 +51732,7 @@ Venda bloqueada no PDV!`);
           }
         }
       });
-      const totalItens = this.carrinho.reduce((acc, item) => {
-        if (this.itemEhTaxaServico(item)) return acc;
-        if (this.itemEhPeso(item)) return acc + 1;
-        return acc + (parseFloat(item.quantidade) || 0);
-      }, 0);
+      const totalItens = this.contarItens(this.carrinho);
       const totalDescontos = this.desconto + descontoClube;
       const total = Math.max(0, subtotal - totalDescontos);
       return { subtotal, totalItens, total, desconto: this.desconto, descontoClube };
@@ -51762,12 +51765,12 @@ Venda bloqueada no PDV!`);
       const totais = this.calcularTotais();
       if (totalEl) totalEl.textContent = `R$ ${totais.total.toFixed(2).replace(".", ",")}`;
       if (subtotalEl) subtotalEl.textContent = `R$ ${totais.subtotal.toFixed(2).replace(".", ",")}`;
-      if (countEl) countEl.textContent = `${totais.totalItens} ${totais.totalItens === 1 ? "item" : "itens"}`;
-      if (totalItensBox) totalItensBox.textContent = totais.totalItens;
+      if (countEl) countEl.textContent = `${this.formatarNumeroQtd(totais.totalItens)} ${totais.totalItens === 1 ? "item" : "itens"}`;
+      if (totalItensBox) totalItensBox.textContent = this.formatarNumeroQtd(totais.totalItens);
       const classicSubtotalEl = document.getElementById("classic-subtotal");
       if (classicSubtotalEl) classicSubtotalEl.textContent = totais.subtotal.toFixed(2).replace(".", ",");
       const classicQtdItensEl = document.getElementById("classic-qtd-itens");
-      if (classicQtdItensEl) classicQtdItensEl.textContent = totais.totalItens;
+      if (classicQtdItensEl) classicQtdItensEl.textContent = this.formatarNumeroQtd(totais.totalItens);
       const classicTotalVendaEl = document.getElementById("classic-total-venda");
       if (classicTotalVendaEl) classicTotalVendaEl.textContent = totais.total.toFixed(2).replace(".", ",");
       const descontoBox = document.getElementById("pdv-desconto-box");
@@ -58546,7 +58549,7 @@ ${base}`;
               ${(venda.itens || []).map((item, idx) => `
                 <tr style="border-top: 1px solid #e2e8f0; background: ${idx % 2 === 0 ? "#fff" : "#f8fafc"};">
                   <td style="padding: 8px 10px; font-weight: 700; color: var(--text-main);">${item.nome}</td>
-                  <td style="padding: 8px 10px; text-align: center; font-weight: 800; color: #0284c7;">${item.quantidade}x</td>
+                  <td style="padding: 8px 10px; text-align: center; font-weight: 800; color: #0284c7;">${window.PdvModule && typeof window.PdvModule.formatarQtdItem === "function" ? window.PdvModule.formatarQtdItem(item) : item.quantidade + "x"}</td>
                   <td style="padding: 8px 10px; text-align: right; font-family: 'JetBrains Mono';">R$ ${(item.precoUnitario || 0).toFixed(2).replace(".", ",")}</td>
                   <td style="padding: 8px 10px; text-align: right; font-weight: 800; font-family: 'JetBrains Mono'; color: var(--text-main);">R$ ${((item.precoUnitario || 0) * (item.quantidade || 1)).toFixed(2).replace(".", ",")}</td>
                 </tr>
@@ -62182,6 +62185,7 @@ ${base}`;
             const qtd = parseFloat(item.quantidade) || 1;
             const preco = parseFloat(item.precoUnitario) || 0;
             const subtotal = qtd * preco;
+            const ehPeso = window.PdvModule && typeof window.PdvModule.itemEhPeso === "function" && window.PdvModule.itemEhPeso(item);
             const categoriaReal = (item.categoria && item.categoria.toLowerCase() !== "geral" ? item.categoria : null) || item.id && catMapById[item.id] || item.codigoBarras && catMapByEan[item.codigoBarras] || catMapByName[nomeLimpo] || catMapByName[nome.toLowerCase().trim()] || item.categoria || "Geral";
             if (!mapaProdutos[nome]) {
               mapaProdutos[nome] = {
@@ -62193,9 +62197,10 @@ ${base}`;
               };
             }
             mapaProdutos[nome].quantidade += qtd;
+            if (ehPeso) mapaProdutos[nome].ehPeso = true;
             mapaProdutos[nome].faturamento += subtotal;
             faturamentoTotal += subtotal;
-            totalItensVendidos += qtd;
+            totalItensVendidos += ehPeso ? 1 : qtd;
           });
         }
       });
@@ -62286,7 +62291,7 @@ ${base}`;
               ${StorageService.getIconeCategoria(item.categoria)} ${item.categoria || "Geral"}
             </span>
           </td>
-          <td style="font-family: 'JetBrains Mono'; font-weight: 700; color: var(--text-main); text-align: center;">${item.quantidade} un</td>
+          <td style="font-family: 'JetBrains Mono'; font-weight: 700; color: var(--text-main); text-align: center;">${item.quantidade}${item.ehPeso ? " kg" : " un"}</td>
           <td style="font-family: 'JetBrains Mono'; font-weight: 800; color: #059669; font-size: 14.5px;">R$ ${StorageService.formatarMoeda(item.faturamento)}</td>
           <td>
             <div style="display: flex; align-items: center; gap: 8px;">
@@ -68421,10 +68426,16 @@ NSU: ${nsu}`,
       if (!c) return;
       if (!c.itens) c.itens = [];
       const preco = parseFloat(produto.precoVenda || produto.preco || 0);
+      const ehPeso = !!(produto.permiteFracionado === true || produto.unidade && String(produto.unidade).toLowerCase() === "kg");
+      const unidadeProd = ehPeso ? "kg" : produto.unidade || "un";
       const itemExistente = c.itens.find((i) => i.id === produto.id);
       if (itemExistente) {
         itemExistente.quantidade += quantidade;
         itemExistente.total = itemExistente.quantidade * itemExistente.precoUnitario;
+        if (ehPeso) {
+          itemExistente.unidade = "kg";
+          itemExistente.permiteFracionado = true;
+        }
       } else {
         const codigoBarras = String(produto.codigoBarras || produto.codigo || "").trim();
         c.itens.push({
@@ -68435,6 +68446,8 @@ NSU: ${nsu}`,
           precoUnitario: preco,
           quantidade,
           total: preco * quantidade,
+          unidade: unidadeProd,
+          permiteFracionado: ehPeso,
           horaAdicionado: (/* @__PURE__ */ new Date()).toISOString()
         });
       }
@@ -68717,18 +68730,21 @@ NSU: ${nsu}`,
           <thead>
             <tr class="bold" style="border-bottom: 1px dashed #000;">
               <td style="text-align: left; padding-bottom: 3px;">ITEM</td>
-              <td style="text-align: center; width: 34px; padding-bottom: 3px;" class="nowrap">QTD</td>
+              <td style="text-align: center; width: 52px; padding-bottom: 3px;" class="nowrap">QTD</td>
               <td style="text-align: right; width: 72px; padding-bottom: 3px;" class="nowrap">TOTAL</td>
             </tr>
           </thead>
           <tbody>
-            ${c.itens.map((it2) => `
+            ${c.itens.map((it2) => {
+        const pdv = window.PdvModule;
+        const qtdTxt = pdv && typeof pdv.formatarQtdItem === "function" ? pdv.formatarQtdItem(it2) : String(it2.quantidade) + "x";
+        return `
               <tr>
                 <td style="text-align: left; padding-right: 4px;">${it2.nome}</td>
-                <td style="text-align: center;" class="nowrap">${it2.quantidade}x</td>
+                <td style="text-align: center;" class="nowrap">${qtdTxt}</td>
                 <td style="text-align: right; font-weight: bold;" class="nowrap">R$ ${parseFloat(it2.total).toFixed(2).replace(".", ",")}</td>
-              </tr>
-            `).join("")}
+              </tr>`;
+      }).join("")}
           </tbody>
         </table>
 
@@ -69726,21 +69742,21 @@ NSU: ${nsu}`,
             <td>${idx + 1}</td>
             <td>${this.esc(ComandasModule.codigoBarrasProduto && ComandasModule.codigoBarrasProduto(it2) || it2.codigoBarras || it2.codigo || "")}</td>
             <td>${this.esc(it2.nome || "")}</td>
-            <td style="text-align:center;">${qtd}</td>
+            <td style="text-align:center;">${window.PdvModule && typeof window.PdvModule.formatarNumeroQtd === "function" ? window.PdvModule.formatarNumeroQtd(qtd) : qtd}</td>
             <td style="text-align:right;">${unit}</td>
             <td style="text-align:right;">${tot}</td>
           </tr>`;
           }).join("");
         }
       }
-      const qtdItens = c && c.itens ? c.itens.reduce((a, i) => a + (parseFloat(i.quantidade) || 0), 0) : 0;
+      const qtdItens = window.PdvModule && typeof window.PdvModule.contarItens === "function" ? window.PdvModule.contarItens(c && c.itens) : c && c.itens ? c.itens.reduce((a, i) => a + (parseFloat(i.quantidade) || 0), 0) : 0;
       const total = c ? parseFloat(c.total) || 0 : 0;
       const setTxt = (id, v) => {
         const el = document.getElementById(id);
         if (el) el.textContent = v;
       };
       setTxt("atend-subtotal", total.toFixed(2).replace(".", ","));
-      setTxt("atend-qtd-itens", String(qtdItens));
+      setTxt("atend-qtd-itens", window.PdvModule && typeof window.PdvModule.formatarNumeroQtd === "function" ? window.PdvModule.formatarNumeroQtd(qtdItens) : String(qtdItens));
       const taxa = c && c.taxaServico ? total * 0.1 : 0;
       const totalComServico = total + taxa;
       const pessoas = Math.max(1, parseInt(c && c.numPessoas || ComandasModule.numPessoasDivisao, 10) || 1);

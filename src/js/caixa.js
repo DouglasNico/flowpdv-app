@@ -1596,7 +1596,7 @@ export const CaixaModule = {
               ${(venda.itens || []).map((item, idx) => `
                 <tr style="border-top: 1px solid #e2e8f0; background: ${idx % 2 === 0 ? '#fff' : '#f8fafc'};">
                   <td style="padding: 8px 10px; font-weight: 700; color: var(--text-main);">${item.nome}</td>
-                  <td style="padding: 8px 10px; text-align: center; font-weight: 800; color: #0284c7;">${item.quantidade}x</td>
+                  <td style="padding: 8px 10px; text-align: center; font-weight: 800; color: #0284c7;">${(window.PdvModule && typeof window.PdvModule.formatarQtdItem === 'function') ? window.PdvModule.formatarQtdItem(item) : (item.quantidade + 'x')}</td>
                   <td style="padding: 8px 10px; text-align: right; font-family: 'JetBrains Mono';">R$ ${(item.precoUnitario || 0).toFixed(2).replace('.', ',')}</td>
                   <td style="padding: 8px 10px; text-align: right; font-weight: 800; font-family: 'JetBrains Mono'; color: var(--text-main);">R$ ${((item.precoUnitario || 0) * (item.quantidade || 1)).toFixed(2).replace('.', ',')}</td>
                 </tr>

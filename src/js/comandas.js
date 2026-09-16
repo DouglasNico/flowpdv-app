@@ -885,11 +885,17 @@ export const ComandasModule = {
 
     if (!c.itens) c.itens = [];
     const preco = parseFloat(produto.precoVenda || produto.preco || 0);
+    const ehPeso = !!(produto.permiteFracionado === true || (produto.unidade && String(produto.unidade).toLowerCase() === 'kg'));
+    const unidadeProd = ehPeso ? 'kg' : (produto.unidade || 'un');
 
     const itemExistente = c.itens.find(i => i.id === produto.id);
     if (itemExistente) {
       itemExistente.quantidade += quantidade;
       itemExistente.total = itemExistente.quantidade * itemExistente.precoUnitario;
+      if (ehPeso) {
+        itemExistente.unidade = 'kg';
+        itemExistente.permiteFracionado = true;
+      }
     } else {
       const codigoBarras = String(produto.codigoBarras || produto.codigo || '').trim();
       c.itens.push({
@@ -900,6 +906,8 @@ export const ComandasModule = {
         precoUnitario: preco,
         quantidade: quantidade,
         total: preco * quantidade,
+        unidade: unidadeProd,
+        permiteFracionado: ehPeso,
         horaAdicionado: new Date().toISOString()
       });
     }
@@ -1230,18 +1238,23 @@ export const ComandasModule = {
           <thead>
             <tr class="bold" style="border-bottom: 1px dashed #000;">
               <td style="text-align: left; padding-bottom: 3px;">ITEM</td>
-              <td style="text-align: center; width: 34px; padding-bottom: 3px;" class="nowrap">QTD</td>
+              <td style="text-align: center; width: 52px; padding-bottom: 3px;" class="nowrap">QTD</td>
               <td style="text-align: right; width: 72px; padding-bottom: 3px;" class="nowrap">TOTAL</td>
             </tr>
           </thead>
           <tbody>
-            ${c.itens.map(it => `
+            ${c.itens.map(it => {
+              const pdv = window.PdvModule;
+              const qtdTxt = (pdv && typeof pdv.formatarQtdItem === 'function')
+                ? pdv.formatarQtdItem(it)
+                : (String(it.quantidade) + 'x');
+              return `
               <tr>
                 <td style="text-align: left; padding-right: 4px;">${it.nome}</td>
-                <td style="text-align: center;" class="nowrap">${it.quantidade}x</td>
+                <td style="text-align: center;" class="nowrap">${qtdTxt}</td>
                 <td style="text-align: right; font-weight: bold;" class="nowrap">R$ ${parseFloat(it.total).toFixed(2).replace('.', ',')}</td>
-              </tr>
-            `).join('')}
+              </tr>`;
+            }).join('')}
           </tbody>
         </table>
 
