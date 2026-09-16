@@ -10,6 +10,7 @@ import { idComandaPorNumero } from './tipo-terminal.js';
 
 export const AtendimentoPdvModule = {
   tipoChip: 'comanda',
+  _operacaoAbertaPeloOperador: false,
 
   init() {
     try {
@@ -73,12 +74,24 @@ export const AtendimentoPdvModule = {
     return !!(window.App && typeof window.App.operadorEmAtendimento === 'function' && window.App.operadorEmAtendimento());
   },
 
+  resetarSessao() {
+    this._operacaoAbertaPeloOperador = false;
+    ComandasModule.comandaAtivaId = null;
+  },
+
   mostrar() {
     this.bind();
     this.adaptarSalao();
     this.copiarLogoEOperador();
-    if (!ComandasModule.comandaAtivaId) this.mostrarEntrada();
-    else this.mostrarOperacao();
+    if (!this._operacaoAbertaPeloOperador) {
+      ComandasModule.comandaAtivaId = null;
+      this.mostrarEntrada();
+    } else if (this.comandaAtual()) {
+      this.mostrarOperacao();
+    } else {
+      this._operacaoAbertaPeloOperador = false;
+      this.mostrarEntrada();
+    }
     this.focarInput();
   },
 
@@ -200,11 +213,13 @@ export const AtendimentoPdvModule = {
     ComandasModule.comandaAtivaId = c.id;
     ComandasModule.numPessoasDivisao = Math.max(1, parseInt(c.numPessoas, 10) || 1);
     if (!c.itens || c.itens.length === 0) ComandasModule.toggleTaxaServico(c.id, true);
+    this._operacaoAbertaPeloOperador = true;
     this.mostrarOperacao();
     this.focarInput();
   },
 
   soltar() {
+    this._operacaoAbertaPeloOperador = false;
     ComandasModule.comandaAtivaId = null;
     this.mostrarEntrada();
     this.focarInput();

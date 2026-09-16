@@ -67855,7 +67855,9 @@ NSU: ${nsu}`,
       this.renderGridComandas();
       this.renderPainelDetalhes();
       if (window.AtendimentoPdvModule && typeof window.AtendimentoPdvModule.estaAtivoOperador === "function" && window.AtendimentoPdvModule.estaAtivoOperador()) {
-        window.AtendimentoPdvModule.renderOperacao();
+        if (window.AtendimentoPdvModule._operacaoAbertaPeloOperador && typeof window.AtendimentoPdvModule.renderOperacao === "function") {
+          window.AtendimentoPdvModule.renderOperacao();
+        }
       }
     },
     renderGrid() {
@@ -68005,7 +68007,7 @@ NSU: ${nsu}`,
       this.renderPainelDetalhes();
     },
     renderPainelDetalhes() {
-      if (window.AtendimentoPdvModule?.estaAtivoOperador()) {
+      if (window.AtendimentoPdvModule?.estaAtivoOperador() && window.AtendimentoPdvModule._operacaoAbertaPeloOperador) {
         window.AtendimentoPdvModule.renderOperacao();
       }
       const container = document.getElementById("comanda-detalhes-painel");
@@ -68013,8 +68015,13 @@ NSU: ${nsu}`,
       const comandas = this.getComandasDoModo();
       let c = comandas.find((item) => item.id === this.comandaAtivaId);
       if (!c && this.comandaAtivaId && comandas.length > 0) {
-        this.comandaAtivaId = comandas[0].id;
-        c = comandas[0];
+        if (window.AtendimentoPdvModule?.estaAtivoOperador()) {
+          this.comandaAtivaId = null;
+          c = null;
+        } else {
+          this.comandaAtivaId = comandas[0].id;
+          c = comandas[0];
+        }
       }
       if (!c) {
         const modo = this.getModoAtendimento();
@@ -69493,6 +69500,7 @@ NSU: ${nsu}`,
   // src/js/atendimento-pdv.js
   var AtendimentoPdvModule = {
     tipoChip: "comanda",
+    _operacaoAbertaPeloOperador: false,
     init() {
       try {
         const salvo = sessionStorage.getItem("flowpdv_atend_tipo_chip");
@@ -69553,12 +69561,23 @@ NSU: ${nsu}`,
     estaAtivoOperador() {
       return !!(window.App && typeof window.App.operadorEmAtendimento === "function" && window.App.operadorEmAtendimento());
     },
+    resetarSessao() {
+      this._operacaoAbertaPeloOperador = false;
+      ComandasModule.comandaAtivaId = null;
+    },
     mostrar() {
       this.bind();
       this.adaptarSalao();
       this.copiarLogoEOperador();
-      if (!ComandasModule.comandaAtivaId) this.mostrarEntrada();
-      else this.mostrarOperacao();
+      if (!this._operacaoAbertaPeloOperador) {
+        ComandasModule.comandaAtivaId = null;
+        this.mostrarEntrada();
+      } else if (this.comandaAtual()) {
+        this.mostrarOperacao();
+      } else {
+        this._operacaoAbertaPeloOperador = false;
+        this.mostrarEntrada();
+      }
       this.focarInput();
     },
     ocultar() {
@@ -69672,10 +69691,12 @@ NSU: ${nsu}`,
       ComandasModule.comandaAtivaId = c.id;
       ComandasModule.numPessoasDivisao = Math.max(1, parseInt(c.numPessoas, 10) || 1);
       if (!c.itens || c.itens.length === 0) ComandasModule.toggleTaxaServico(c.id, true);
+      this._operacaoAbertaPeloOperador = true;
       this.mostrarOperacao();
       this.focarInput();
     },
     soltar() {
+      this._operacaoAbertaPeloOperador = false;
       ComandasModule.comandaAtivaId = null;
       this.mostrarEntrada();
       this.focarInput();
@@ -70159,6 +70180,9 @@ NSU: ${nsu}`,
         });
       }
       document.body.classList.toggle("pdv-operador-restrito", !ehGerente);
+      if (window.AtendimentoPdvModule && typeof window.AtendimentoPdvModule.resetarSessao === "function") {
+        window.AtendimentoPdvModule.resetarSessao();
+      }
       const abaDestino = ehGerente ? "gerencia" : "pdv";
       this.trocarAba(abaDestino);
       this.aplicarModoTerminal();

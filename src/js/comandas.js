@@ -248,7 +248,9 @@ export const ComandasModule = {
     this.renderGridComandas();
     this.renderPainelDetalhes();
     if (window.AtendimentoPdvModule && typeof window.AtendimentoPdvModule.estaAtivoOperador === 'function' && window.AtendimentoPdvModule.estaAtivoOperador()) {
-      window.AtendimentoPdvModule.renderOperacao();
+      if (window.AtendimentoPdvModule._operacaoAbertaPeloOperador && typeof window.AtendimentoPdvModule.renderOperacao === 'function') {
+        window.AtendimentoPdvModule.renderOperacao();
+      }
     }
   },
 
@@ -426,7 +428,7 @@ export const ComandasModule = {
 
   renderPainelDetalhes() {
     // Mantém o terminal atualizado após taxa, impressão e transferência.
-    if (window.AtendimentoPdvModule?.estaAtivoOperador()) {
+    if (window.AtendimentoPdvModule?.estaAtivoOperador() && window.AtendimentoPdvModule._operacaoAbertaPeloOperador) {
       window.AtendimentoPdvModule.renderOperacao();
     }
     const container = document.getElementById('comanda-detalhes-painel');
@@ -435,10 +437,15 @@ export const ComandasModule = {
     const comandas = this.getComandasDoModo();
     let c = comandas.find(item => item.id === this.comandaAtivaId);
 
-    // Se o item selecionado não pertence ao modo ativo, seleciona o primeiro do modo
+    // Se o item selecionado não pertence ao modo ativo, no salão não escolhe mesa sozinho.
     if (!c && this.comandaAtivaId && comandas.length > 0) {
-      this.comandaAtivaId = comandas[0].id;
-      c = comandas[0];
+      if (window.AtendimentoPdvModule?.estaAtivoOperador()) {
+        this.comandaAtivaId = null;
+        c = null;
+      } else {
+        this.comandaAtivaId = comandas[0].id;
+        c = comandas[0];
+      }
     }
 
     if (!c) {

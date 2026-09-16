@@ -141,6 +141,10 @@ export const App = {
     }
     document.body.classList.toggle('pdv-operador-restrito', !ehGerente);
 
+    if (window.AtendimentoPdvModule && typeof window.AtendimentoPdvModule.resetarSessao === 'function') {
+      window.AtendimentoPdvModule.resetarSessao();
+    }
+
     const abaDestino = ehGerente ? 'gerencia' : 'pdv';
     this.trocarAba(abaDestino);
     this.aplicarModoTerminal();
