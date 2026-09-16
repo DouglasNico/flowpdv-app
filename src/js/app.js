@@ -180,7 +180,9 @@ export const App = {
 
   sincronizarSelectTipoTerminal() {
     const sel = document.getElementById('cfg-tipo-terminal');
-    if (sel) sel.value = StorageService.getTipoTerminal();
+    if (!sel) return;
+    const tipo = StorageService.getTipoTerminal();
+    sel.value = tipo === 'atendimento' ? 'atendimento' : 'caixa';
   },
 
   salvarTipoTerminalLocal(valor) {

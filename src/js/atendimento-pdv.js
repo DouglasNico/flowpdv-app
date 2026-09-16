@@ -188,8 +188,17 @@ export const AtendimentoPdvModule = {
     }
     const tipo = id.indexOf('MESA-') === 0 ? 'mesa' : 'comanda';
     const numero = parseInt(String(id).replace(/\D/g, ''), 10);
-    const c = ComandasModule.garantirPorNumero(tipo, numero);
-    if (!c) return;
+    const c = ComandasModule.buscarPorNumero(tipo, numero);
+    if (!c) {
+      const rotulo = tipo === 'mesa' ? 'Mesa' : 'Comanda';
+      if (window.App) window.App.showToast(`${rotulo} ${numero} não existe. Confira o número ou peça ao gestor para cadastrar.`, 'error');
+      if (window.PdvModule && typeof window.PdvModule.tocarSomBeep === 'function') window.PdvModule.tocarSomBeep(false);
+      if (input) {
+        input.focus();
+        input.select();
+      }
+      return;
+    }
     if (ComandasModule.comandaAtivaId !== c.id) ComandasModule.numPessoasDivisao = 1;
     ComandasModule.comandaAtivaId = c.id;
     if (!c.itens || c.itens.length === 0) ComandasModule.toggleTaxaServico(c.id, true);
@@ -227,7 +236,7 @@ export const AtendimentoPdvModule = {
           const tot = (parseFloat(it.total) || 0).toFixed(2).replace('.', ',');
           return `<tr>
             <td>${idx + 1}</td>
-            <td>${this.esc(it.codigo || '')}</td>
+            <td>${this.esc((ComandasModule.codigoBarrasProduto && ComandasModule.codigoBarrasProduto(it)) || it.codigoBarras || it.codigo || '')}</td>
             <td>${this.esc(it.nome || '')}</td>
             <td style="text-align:center;">${qtd}</td>
             <td style="text-align:right;">${unit}</td>

@@ -388,31 +388,29 @@ export const ComandasModule = {
     this.renderPainelDetalhes();
   },
 
-  garantirPorNumero(tipo, numero) {
+  buscarPorNumero(tipo, numero) {
     const id = idComandaPorNumero(this.getModoAtendimento(), numero, tipo);
     if (!id) return null;
     const n = parseInt(String(id).replace(/\D/g, ''), 10);
     const tipoNorm = id.indexOf('MESA-') === 0 ? 'mesa' : 'comanda';
-    const lista = this.getComandas();
-    let c = lista.find(item => item && (item.id === id || (item.tipo === tipoNorm && Number(item.numero) === n)));
-    if (c) return c;
-    const pad = String(n).padStart(2, '0');
-    c = {
-      id,
-      tipo: tipoNorm,
-      numero: n,
-      nome: tipoNorm === 'mesa' ? ('Mesa ' + pad) : ('Comanda #' + pad),
-      cliente: '',
-      status: 'livre',
-      itens: [],
-      taxaServico: true,
-      total: 0,
-      abertaEm: null,
-      operador: ''
-    };
-    lista.push(c);
-    this.salvarComandas(lista);
-    return c;
+    return (this.getComandas() || []).find(item => item && (item.id === id || (item.tipo === tipoNorm && Number(item.numero) === n))) || null;
+  },
+
+  garantirPorNumero(tipo, numero) {
+    return this.buscarPorNumero(tipo, numero);
+  },
+
+  codigoBarrasProduto(it) {
+    if (!it) return '';
+    try {
+      const produtos = StorageService.getProdutos() || [];
+      const prod = produtos.find(p => p && p.id === it.id);
+      const barras = prod && String(prod.codigoBarras || '').trim();
+      if (barras) return barras;
+    } catch (e) {}
+    const salvo = String(it.codigoBarras || it.codigo || '').trim();
+    if (salvo && salvo !== String(it.id || '') && salvo !== 'SERV10') return salvo;
+    return '';
   },
 
   setDivisaoPessoas(qtd) {
@@ -880,9 +878,11 @@ export const ComandasModule = {
       itemExistente.quantidade += quantidade;
       itemExistente.total = itemExistente.quantidade * itemExistente.precoUnitario;
     } else {
+      const codigoBarras = String(produto.codigoBarras || produto.codigo || '').trim();
       c.itens.push({
         id: produto.id,
-        codigo: produto.codigoBarras || produto.codigo || produto.id,
+        codigo: codigoBarras,
+        codigoBarras,
         nome: produto.nome,
         precoUnitario: preco,
         quantidade: quantidade,
@@ -1333,21 +1333,33 @@ export const ComandasModule = {
     // 1. Carrega itens no carrinho do PDV
     const taxaServicoValor = c.taxaServico ? (parseFloat(c.total || 0) * 0.10) : 0;
 
-    window.PdvModule.carrinho = c.itens.map(it => ({
-      id: it.id,
-      codigo: it.codigo,
-      nome: it.nome,
-      precoUnitario: it.precoUnitario,
-      quantidade: it.quantidade,
-      unidade: 'UN',
-      comandaOrigemId: c.id
-    }));
+    const produtos = (typeof StorageService.getProdutos === 'function' ? StorageService.getProdutos() : []) || [];
+    window.PdvModule.carrinho = c.itens.map(it => {
+      const prod = produtos.find(p => p && p.id === it.id);
+      const codigoBarras = this.codigoBarrasProduto(it);
+      const unidadeProd = prod && (prod.permiteFracionado === true || (prod.unidade && String(prod.unidade).toLowerCase() === 'kg'))
+        ? 'kg'
+        : ((prod && prod.unidade) || 'un');
+      return {
+        id: it.id,
+        codigo: codigoBarras,
+        codigoBarras,
+        nome: it.nome,
+        categoria: (prod && prod.categoria) || 'Geral',
+        precoUnitario: it.precoUnitario,
+        quantidade: it.quantidade,
+        unidade: unidadeProd,
+        permiteFracionado: !!(prod && (prod.permiteFracionado === true || (prod.unidade && String(prod.unidade).toLowerCase() === 'kg'))),
+        comandaOrigemId: c.id
+      };
+    });
 
     // Se tiver taxa de serviço de 10%, adiciona como item de acréscimo de serviço
     if (taxaServicoValor > 0) {
       window.PdvModule.carrinho.push({
         id: 'TAXA-SERVICO-10',
         codigo: 'SERV10',
+        codigoBarras: 'SERV10',
         nome: `Taxa de Serviço 10% (${c.nome})`,
         precoUnitario: taxaServicoValor,
         quantidade: 1,
@@ -1358,6 +1370,12 @@ export const ComandasModule = {
 
     window.PdvModule.desconto = 0;
     window.PdvModule.renderCarrinho();
+    const codigoEl = document.getElementById('classic-codigo-barras');
+    if (codigoEl) codigoEl.textContent = String(c.nome || '').toUpperCase();
+    if (window.PdvModule && typeof window.PdvModule.atualizarUltimoProdutoClassico === 'function') {
+      const itens = (window.PdvModule.carrinho || []).filter((i) => i && i.id !== 'TAXA-SERVICO-10');
+      window.PdvModule.atualizarUltimoProdutoClassico(itens[itens.length - 1] || null);
+    }
 
     // 2. Vai para a aba do PDV
     if (window.App) window.App.trocarAba('pdv');

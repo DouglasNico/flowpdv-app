@@ -283,23 +283,43 @@
               <div class="classic-cart-img">
                 <img id="classic-client-logo" src="src/assets/logos/para-fundo-claro/FlowPDV-horizontal.png" alt="Logo Cliente" onerror="this.src='src/assets/logos/para-fundo-claro/FlowPDV-horizontal.png'">
               </div>
-            <div class="classic-field-box">
-              <label>CÓDIGO DE BARRAS</label>
-              <div class="classic-value" id="classic-codigo-barras"></div>
-            </div>
-            <div class="classic-field-box">
-              <label>VALOR UNITÁRIO</label>
-              <div class="classic-value">R$ <span id="classic-valor-unitario">0,00</span></div>
-            </div>
-            <div class="classic-field-box">
-              <label>TOTAL DO ITEM</label>
-              <div class="classic-value">R$ <span id="classic-total-item">0,00</span></div>
+            <div class="classic-ops-card">
+              <div class="classic-input-group">
+                <label for="classic-pdv-barcode-input">CÓDIGO DE BARRAS</label>
+                <div class="classic-barcode-row">
+                  <input type="text" id="classic-pdv-barcode-input" style="text-transform: uppercase;" autocomplete="off" autofocus placeholder="Bipar ou digitar código">
+                  <button type="button" class="classic-search-button" onclick="PdvModule.abrirBuscaProdutos()">Buscar · F2</button>
+                </div>
+              </div>
+              <div class="classic-field-row">
+                <div class="classic-field-box">
+                  <label>VALOR UNITÁRIO</label>
+                  <div class="classic-value">R$ <span id="classic-valor-unitario">0,00</span></div>
+                </div>
+                <div class="classic-field-box">
+                  <label>TOTAL DO ITEM</label>
+                  <div class="classic-value">R$ <span id="classic-total-item">0,00</span></div>
+                </div>
+              </div>
+              <div class="classic-ops-block">
+                <label>CÓDIGO DO PRODUTO</label>
+                <div class="classic-field-box classic-ops-codigo">
+                  <div class="classic-value" id="classic-codigo-barras"></div>
+                </div>
+              </div>
+              <div class="classic-ops-block">
+                <label>ÚLTIMO PRODUTO</label>
+                <div class="classic-field-box classic-ultimo-produto is-empty" id="classic-ultimo-produto">
+                  <div class="classic-ultimo-nome" id="classic-ultimo-nome">Aguardando leitura...</div>
+                  <div class="classic-ultimo-qtd" id="classic-ultimo-qtd"></div>
+                </div>
+              </div>
             </div>
           </div>
 
           <div class="classic-right-pane">
             <div class="classic-table-container">
-              <div class="classic-table-header">LISTA DE PRODUTOS</div>
+              <div class="classic-table-header" id="classic-table-header">LISTA DE PRODUTOS</div>
               <table class="classic-pdv-table">
                 <thead>
                   <tr>
@@ -315,53 +335,36 @@
                   <!-- Itens -->
                 </tbody>
               </table>
+              <div class="classic-totals-strip">
+                <div class="classic-total-box subtotal">
+                  <label>SUBTOTAL</label>
+                  <div class="val" id="classic-subtotal">0,00</div>
+                </div>
+                <div class="classic-total-box sm">
+                  <label>QTD. ITENS</label>
+                  <div class="val"><span id="classic-qtd-itens">0</span></div>
+                </div>
+                <div class="classic-total-box sm total">
+                  <label>TOTAL DA VENDA</label>
+                  <div class="val">R$ <span id="classic-total-venda">0,00</span></div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
         <div class="classic-bottom-panel">
-          <div class="classic-bottom-left">
-            <div class="classic-input-group">
-              <label>CÓDIGO</label>
-              <input type="text" id="classic-pdv-barcode-input" style="text-transform: uppercase;" autocomplete="off" autofocus>
-            </div>
-            <div class="classic-shortcuts" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 15px;">
-              <div class="shortcut-col">
-                <span><strong>F2</strong> - Buscar Prod</span>
-                <span><strong>F4</strong> - Finalizar Venda</span>
-                <span><strong>F6</strong> - Clube Fidelidade</span>
-              </div>
-              <div class="shortcut-col">
-                <span><strong>F7</strong> - Cortesia</span>
-                <span><strong>F8</strong> - Desconto</span>
-                <span><strong>F9</strong> - Sangria</span>
-              </div>
-              <div class="shortcut-col">
-                <span><strong>F10</strong> - Abrir/Fechar Caixa</span>
-                <span><strong>F12</strong> - Reimprimir Cupom</span>
-                <span><strong>DEL</strong> - Excluir Item</span>
-                <span><strong>ESC</strong> - Cancelar Venda</span>
-              </div>
-            </div>
-          </div>
-          
-          <div class="classic-bottom-right">
-            <div class="classic-totals-row">
-              <div class="classic-total-box subtotal">
-                <label>SUBTOTAL</label>
-                <div class="val" id="classic-subtotal">0,00</div>
-              </div>
-            </div>
-            <div class="classic-totals-row split">
-                <div class="classic-total-box sm">
-                  <label>QTD. ITENS</label>
-                  <div class="val"><span id="classic-qtd-itens">0</span></div>
-                </div>
-                <div class="classic-total-box sm">
-                  <label>TOTAL DA VENDA</label>
-                  <div class="val">R$ <span id="classic-total-venda">0,00</span></div>
-                </div>
-              </div>
+          <div class="classic-shortcuts-bar" aria-label="Atalhos">
+            <span><kbd>F2</kbd> Buscar produtos</span>
+            <span><kbd>F4</kbd> Finalizar venda</span>
+            <span><kbd>F6</kbd> Clube fidelidade</span>
+            <span><kbd>F7</kbd> Cortesia</span>
+            <span><kbd>F8</kbd> Desconto</span>
+            <span><kbd>F9</kbd> Sangria</span>
+            <span><kbd>F10</kbd> Abrir/fechar caixa</span>
+            <span><kbd>F12</kbd> Reimprimir cupom</span>
+            <span><kbd>DEL</kbd> Excluir item</span>
+            <span><kbd>ESC</kbd> Cancelar venda</span>
           </div>
         </div>
       </div>
@@ -1329,7 +1332,6 @@
                     <select id="cfg-tipo-terminal" onchange="App.salvarTipoTerminalLocal(this.value)" style="width:100%; margin-top:4px; height:30px; border-radius:6px; border:1.5px solid #cbd5e1; font-size:12px; font-weight:700; padding:0 8px; background:#fff;">
                       <option value="caixa">Caixa (PDV)</option>
                       <option value="atendimento">Atendimento (mesas/comandas)</option>
-                      <option value="completo">Completo</option>
                     </select>
                   </div>
                   <button type="button" id="btn-alterar-licenca" class="btn-alterar-licenca-cfg" style="height: 28px; font-size: 11px; width: 100%; justify-content: center; padding: 0 8px;" onclick="LicencaModule.abrirModalTrocarLicenca()" title="Alterar ou ativar outra licença de adega neste computador">

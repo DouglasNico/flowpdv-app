@@ -65,6 +65,16 @@ export const PdvModule = {
     return this.itemEhPeso(item) ? preco + '/kg' : preco;
   },
 
+  atualizarUltimoProdutoClassico(item) {
+    const box = document.getElementById('classic-ultimo-produto');
+    const nomeEl = document.getElementById('classic-ultimo-nome');
+    const qtdEl = document.getElementById('classic-ultimo-qtd');
+    const temItem = !!(item && item.nome);
+    if (nomeEl) nomeEl.textContent = temItem ? item.nome : 'Aguardando leitura...';
+    if (qtdEl) qtdEl.textContent = temItem ? this.formatarQtdItem(item) : '';
+    if (box) box.classList.toggle('is-empty', !temItem);
+  },
+
   getInputLeitorAtivo() {
     const tabPdv = document.getElementById('tab-pdv');
     const isClassic = document.body.classList.contains('pdv-layout-classico') || 
@@ -230,13 +240,23 @@ export const PdvModule = {
   },
 
   // Status centralizado do layout clássico (Bug 1 e 2)
+  origemComandaCarrinho() {
+    const id = (this.carrinho || []).map((it) => it && it.comandaOrigemId).find(Boolean);
+    if (!id || !window.ComandasModule || typeof window.ComandasModule.getComandas !== 'function') return null;
+    return (window.ComandasModule.getComandas() || []).find((c) => c && c.id === id) || { id, nome: id };
+  },
+
   atualizarStatusClassico() {
     const statusEl = document.getElementById('classic-status-text');
     if (!statusEl) return;
     const turnoAberto = StorageService.getTurnoAtual();
+    const origem = this.origemComandaCarrinho();
     if (!turnoAberto) {
       statusEl.textContent = 'CAIXA FECHADO';
       statusEl.style.color = '#dc2626';
+    } else if (origem) {
+      statusEl.textContent = String(origem.nome || 'MESA').toUpperCase();
+      statusEl.style.color = '#c2410c';
     } else if (this.carrinho.length > 0) {
       statusEl.textContent = 'VENDA EM ANDAMENTO';
       statusEl.style.color = '#0284c7';
@@ -649,6 +669,9 @@ export const PdvModule = {
       classicUnit.textContent = this.itemEhPeso(produto) ? precoTxt + '/kg' : precoTxt;
     }
     if (classicTotalItem) classicTotalItem.textContent = (precoUnitario * quantidade).toFixed(2).replace('.', ',');
+    const ultimo = this.carrinho.find((i) => i.id === produto.id && !!i.isFardo === !!isFardo)
+      || this.carrinho[this.carrinho.length - 1];
+    this.atualizarUltimoProdutoClassico(ultimo);
 
     this.renderCarrinho();
     if (this.carrinho.length === 1 && !this.clubePerguntaExibida && StorageService.isModuloAtivo('clubeFidelidade')) {
@@ -1057,6 +1080,7 @@ export const PdvModule = {
       const el = document.getElementById(id);
       if (el) el.textContent = val;
     });
+    this.atualizarUltimoProdutoClassico(null);
   },
 
   calcularTotais() {
@@ -1844,7 +1868,7 @@ export const PdvModule = {
 
     if (totalEl) totalEl.textContent = `R$ ${totais.total.toFixed(2).replace('.', ',')}`;
     if (itemsBadge) {
-      const qtdTotal = this.carrinho.reduce((acc, i) => acc + i.quantidade, 0);
+      const qtdTotal = totais.totalItens;
       itemsBadge.textContent = `🛒 ${qtdTotal} ${qtdTotal === 1 ? 'item' : 'itens'}`;
     }
 

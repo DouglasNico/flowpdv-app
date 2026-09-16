@@ -25857,7 +25857,6 @@
   function normalizarTipoTerminal(valor) {
     const v = String(valor || "").trim().toLowerCase();
     if (v === "atendimento" || v === "comanda") return "atendimento";
-    if (v === "completo") return "completo";
     return "caixa";
   }
   function tipoTerminalDe(obj) {
@@ -50823,6 +50822,15 @@ This typically indicates that your device does not have a healthy Internet conne
       const preco = (parseFloat(item && item.precoUnitario) || 0).toFixed(2).replace(".", ",");
       return this.itemEhPeso(item) ? preco + "/kg" : preco;
     },
+    atualizarUltimoProdutoClassico(item) {
+      const box = document.getElementById("classic-ultimo-produto");
+      const nomeEl = document.getElementById("classic-ultimo-nome");
+      const qtdEl = document.getElementById("classic-ultimo-qtd");
+      const temItem = !!(item && item.nome);
+      if (nomeEl) nomeEl.textContent = temItem ? item.nome : "Aguardando leitura...";
+      if (qtdEl) qtdEl.textContent = temItem ? this.formatarQtdItem(item) : "";
+      if (box) box.classList.toggle("is-empty", !temItem);
+    },
     getInputLeitorAtivo() {
       const tabPdv = document.getElementById("tab-pdv");
       const isClassic = document.body.classList.contains("pdv-layout-classico") || tabPdv && tabPdv.classList.contains("pdv-layout-classico");
@@ -50960,13 +50968,22 @@ This typically indicates that your device does not have a healthy Internet conne
       }
     },
     // Status centralizado do layout clássico (Bug 1 e 2)
+    origemComandaCarrinho() {
+      const id = (this.carrinho || []).map((it2) => it2 && it2.comandaOrigemId).find(Boolean);
+      if (!id || !window.ComandasModule || typeof window.ComandasModule.getComandas !== "function") return null;
+      return (window.ComandasModule.getComandas() || []).find((c) => c && c.id === id) || { id, nome: id };
+    },
     atualizarStatusClassico() {
       const statusEl = document.getElementById("classic-status-text");
       if (!statusEl) return;
       const turnoAberto = StorageService.getTurnoAtual();
+      const origem = this.origemComandaCarrinho();
       if (!turnoAberto) {
         statusEl.textContent = "CAIXA FECHADO";
         statusEl.style.color = "#dc2626";
+      } else if (origem) {
+        statusEl.textContent = String(origem.nome || "MESA").toUpperCase();
+        statusEl.style.color = "#c2410c";
       } else if (this.carrinho.length > 0) {
         statusEl.textContent = "VENDA EM ANDAMENTO";
         statusEl.style.color = "#0284c7";
@@ -51322,6 +51339,8 @@ Venda bloqueada no PDV!`);
         classicUnit.textContent = this.itemEhPeso(produto) ? precoTxt + "/kg" : precoTxt;
       }
       if (classicTotalItem) classicTotalItem.textContent = (precoUnitario * quantidade).toFixed(2).replace(".", ",");
+      const ultimo = this.carrinho.find((i) => i.id === produto.id && !!i.isFardo === !!isFardo) || this.carrinho[this.carrinho.length - 1];
+      this.atualizarUltimoProdutoClassico(ultimo);
       this.renderCarrinho();
       if (this.carrinho.length === 1 && !this.clubePerguntaExibida && StorageService.isModuloAtivo("clubeFidelidade")) {
         this.clubePerguntaExibida = true;
@@ -51682,6 +51701,7 @@ Venda bloqueada no PDV!`);
         const el = document.getElementById(id);
         if (el) el.textContent = val;
       });
+      this.atualizarUltimoProdutoClassico(null);
     },
     calcularTotais() {
       let subtotal = 0;
@@ -52378,7 +52398,7 @@ Venda bloqueada no PDV!`);
       const itemsBadge = document.getElementById("pag-items-badge-modal");
       if (totalEl) totalEl.textContent = `R$ ${totais.total.toFixed(2).replace(".", ",")}`;
       if (itemsBadge) {
-        const qtdTotal = this.carrinho.reduce((acc, i) => acc + i.quantidade, 0);
+        const qtdTotal = totais.totalItens;
         itemsBadge.textContent = `\u{1F6D2} ${qtdTotal} ${qtdTotal === 1 ? "item" : "itens"}`;
       }
       const secFiscal = document.getElementById("pag-secao-fiscal-opcoes");
@@ -67883,31 +67903,28 @@ NSU: ${nsu}`,
       this.renderGridComandas();
       this.renderPainelDetalhes();
     },
-    garantirPorNumero(tipo, numero) {
+    buscarPorNumero(tipo, numero) {
       const id = idComandaPorNumero(this.getModoAtendimento(), numero, tipo);
       if (!id) return null;
       const n = parseInt(String(id).replace(/\D/g, ""), 10);
       const tipoNorm = id.indexOf("MESA-") === 0 ? "mesa" : "comanda";
-      const lista = this.getComandas();
-      let c = lista.find((item) => item && (item.id === id || item.tipo === tipoNorm && Number(item.numero) === n));
-      if (c) return c;
-      const pad = String(n).padStart(2, "0");
-      c = {
-        id,
-        tipo: tipoNorm,
-        numero: n,
-        nome: tipoNorm === "mesa" ? "Mesa " + pad : "Comanda #" + pad,
-        cliente: "",
-        status: "livre",
-        itens: [],
-        taxaServico: true,
-        total: 0,
-        abertaEm: null,
-        operador: ""
-      };
-      lista.push(c);
-      this.salvarComandas(lista);
-      return c;
+      return (this.getComandas() || []).find((item) => item && (item.id === id || item.tipo === tipoNorm && Number(item.numero) === n)) || null;
+    },
+    garantirPorNumero(tipo, numero) {
+      return this.buscarPorNumero(tipo, numero);
+    },
+    codigoBarrasProduto(it2) {
+      if (!it2) return "";
+      try {
+        const produtos = StorageService.getProdutos() || [];
+        const prod = produtos.find((p) => p && p.id === it2.id);
+        const barras = prod && String(prod.codigoBarras || "").trim();
+        if (barras) return barras;
+      } catch (e) {
+      }
+      const salvo = String(it2.codigoBarras || it2.codigo || "").trim();
+      if (salvo && salvo !== String(it2.id || "") && salvo !== "SERV10") return salvo;
+      return "";
     },
     setDivisaoPessoas(qtd) {
       this.numPessoasDivisao = Math.max(1, parseInt(qtd, 10) || 1);
@@ -68328,9 +68345,11 @@ NSU: ${nsu}`,
         itemExistente.quantidade += quantidade;
         itemExistente.total = itemExistente.quantidade * itemExistente.precoUnitario;
       } else {
+        const codigoBarras = String(produto.codigoBarras || produto.codigo || "").trim();
         c.itens.push({
           id: produto.id,
-          codigo: produto.codigoBarras || produto.codigo || produto.id,
+          codigo: codigoBarras,
+          codigoBarras,
           nome: produto.nome,
           precoUnitario: preco,
           quantidade,
@@ -68720,19 +68739,29 @@ NSU: ${nsu}`,
       }
       const abrirPagamento = !(opcoes && opcoes.abrirPagamento === false);
       const taxaServicoValor = c.taxaServico ? parseFloat(c.total || 0) * 0.1 : 0;
-      window.PdvModule.carrinho = c.itens.map((it2) => ({
-        id: it2.id,
-        codigo: it2.codigo,
-        nome: it2.nome,
-        precoUnitario: it2.precoUnitario,
-        quantidade: it2.quantidade,
-        unidade: "UN",
-        comandaOrigemId: c.id
-      }));
+      const produtos = (typeof StorageService.getProdutos === "function" ? StorageService.getProdutos() : []) || [];
+      window.PdvModule.carrinho = c.itens.map((it2) => {
+        const prod = produtos.find((p) => p && p.id === it2.id);
+        const codigoBarras = this.codigoBarrasProduto(it2);
+        const unidadeProd = prod && (prod.permiteFracionado === true || prod.unidade && String(prod.unidade).toLowerCase() === "kg") ? "kg" : prod && prod.unidade || "un";
+        return {
+          id: it2.id,
+          codigo: codigoBarras,
+          codigoBarras,
+          nome: it2.nome,
+          categoria: prod && prod.categoria || "Geral",
+          precoUnitario: it2.precoUnitario,
+          quantidade: it2.quantidade,
+          unidade: unidadeProd,
+          permiteFracionado: !!(prod && (prod.permiteFracionado === true || prod.unidade && String(prod.unidade).toLowerCase() === "kg")),
+          comandaOrigemId: c.id
+        };
+      });
       if (taxaServicoValor > 0) {
         window.PdvModule.carrinho.push({
           id: "TAXA-SERVICO-10",
           codigo: "SERV10",
+          codigoBarras: "SERV10",
           nome: `Taxa de Servi\xE7o 10% (${c.nome})`,
           precoUnitario: taxaServicoValor,
           quantidade: 1,
@@ -68742,6 +68771,12 @@ NSU: ${nsu}`,
       }
       window.PdvModule.desconto = 0;
       window.PdvModule.renderCarrinho();
+      const codigoEl = document.getElementById("classic-codigo-barras");
+      if (codigoEl) codigoEl.textContent = String(c.nome || "").toUpperCase();
+      if (window.PdvModule && typeof window.PdvModule.atualizarUltimoProdutoClassico === "function") {
+        const itens = (window.PdvModule.carrinho || []).filter((i) => i && i.id !== "TAXA-SERVICO-10");
+        window.PdvModule.atualizarUltimoProdutoClassico(itens[itens.length - 1] || null);
+      }
       if (window.App) window.App.trocarAba("pdv");
       AuditModule.registrarOuAtualizarLogMesa(c, "fechamento_caixa");
       if (abrirPagamento) {
@@ -69546,8 +69581,17 @@ NSU: ${nsu}`,
       }
       const tipo = id.indexOf("MESA-") === 0 ? "mesa" : "comanda";
       const numero = parseInt(String(id).replace(/\D/g, ""), 10);
-      const c = ComandasModule.garantirPorNumero(tipo, numero);
-      if (!c) return;
+      const c = ComandasModule.buscarPorNumero(tipo, numero);
+      if (!c) {
+        const rotulo = tipo === "mesa" ? "Mesa" : "Comanda";
+        if (window.App) window.App.showToast(`${rotulo} ${numero} n\xE3o existe. Confira o n\xFAmero ou pe\xE7a ao gestor para cadastrar.`, "error");
+        if (window.PdvModule && typeof window.PdvModule.tocarSomBeep === "function") window.PdvModule.tocarSomBeep(false);
+        if (input) {
+          input.focus();
+          input.select();
+        }
+        return;
+      }
       if (ComandasModule.comandaAtivaId !== c.id) ComandasModule.numPessoasDivisao = 1;
       ComandasModule.comandaAtivaId = c.id;
       if (!c.itens || c.itens.length === 0) ComandasModule.toggleTaxaServico(c.id, true);
@@ -69582,7 +69626,7 @@ NSU: ${nsu}`,
             const tot = (parseFloat(it2.total) || 0).toFixed(2).replace(".", ",");
             return `<tr>
             <td>${idx + 1}</td>
-            <td>${this.esc(it2.codigo || "")}</td>
+            <td>${this.esc(ComandasModule.codigoBarrasProduto && ComandasModule.codigoBarrasProduto(it2) || it2.codigoBarras || it2.codigo || "")}</td>
             <td>${this.esc(it2.nome || "")}</td>
             <td style="text-align:center;">${qtd}</td>
             <td style="text-align:right;">${unit}</td>
@@ -70043,7 +70087,9 @@ NSU: ${nsu}`,
     },
     sincronizarSelectTipoTerminal() {
       const sel = document.getElementById("cfg-tipo-terminal");
-      if (sel) sel.value = StorageService.getTipoTerminal();
+      if (!sel) return;
+      const tipo = StorageService.getTipoTerminal();
+      sel.value = tipo === "atendimento" ? "atendimento" : "caixa";
     },
     salvarTipoTerminalLocal(valor) {
       if (window.LicencaModule && typeof window.LicencaModule.setTipoTerminalAtual === "function") {

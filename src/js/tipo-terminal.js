@@ -1,12 +1,11 @@
 /**
- * Papel deste computador: caixa (padrão), atendimento (mesas/comandas) ou completo.
- * Default ausente = caixa, para não mudar loja que nunca configurou.
+ * Papel deste computador: caixa (padrão) ou atendimento (mesas/comandas).
+ * Default ausente = caixa. "completo" antigo vira caixa.
  */
 
 export function normalizarTipoTerminal(valor) {
   const v = String(valor || '').trim().toLowerCase();
   if (v === 'atendimento' || v === 'comanda') return 'atendimento';
-  if (v === 'completo') return 'completo';
   return 'caixa';
 }
 
