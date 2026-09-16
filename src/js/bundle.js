@@ -70791,23 +70791,11 @@ NSU: ${nsu}`,
             PdvModule.removerUltimoPagamento();
             return;
           }
-          if (e.key === "Backspace") {
-            const inputVal = document.getElementById("pag-valor-pago-input");
-            if (document.activeElement === inputVal && (!inputVal.value || inputVal.value === "")) {
-              e.preventDefault();
-              e.stopPropagation();
-              PdvModule.removerUltimoPagamento();
-              return;
-            }
-          }
           if (e.key === "e" || e.key === "E") {
-            const inputVal = document.getElementById("pag-valor-pago-input");
-            if (document.activeElement !== inputVal) {
-              e.preventDefault();
-              e.stopPropagation();
-              PdvModule.preencherValorExatoRestante();
-              return;
-            }
+            e.preventDefault();
+            e.stopPropagation();
+            PdvModule.preencherValorExatoRestante();
+            return;
           }
           if (/^F[1-9]|F1[0-2]$/.test(e.key)) {
             e.preventDefault();

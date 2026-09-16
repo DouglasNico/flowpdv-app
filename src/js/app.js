@@ -819,7 +819,7 @@ export const App = {
           return;
         }
 
-        // DEL: Remove o último pagamento lançado
+        // DEL: Remove o último pagamento lançado (Backspace só apaga o valor digitado)
         if (e.key === 'Delete' || e.key === 'Del') {
           e.preventDefault();
           e.stopPropagation();
@@ -827,26 +827,12 @@ export const App = {
           return;
         }
 
-        // BACKSPACE: Se o campo de valor estiver vazio, desfaz o último pagamento
-        if (e.key === 'Backspace') {
-          const inputVal = document.getElementById('pag-valor-pago-input');
-          if (document.activeElement === inputVal && (!inputVal.value || inputVal.value === '')) {
-            e.preventDefault();
-            e.stopPropagation();
-            PdvModule.removerUltimoPagamento();
-            return;
-          }
-        }
-
-        // Atalho 'E' para Valor Exato Restante
+        // Atalho 'E' = Valor Exato, mesmo com o campo de valor focado (evita gravar a letra no input)
         if (e.key === 'e' || e.key === 'E') {
-          const inputVal = document.getElementById('pag-valor-pago-input');
-          if (document.activeElement !== inputVal) {
-            e.preventDefault();
-            e.stopPropagation();
-            PdvModule.preencherValorExatoRestante();
-            return;
-          }
+          e.preventDefault();
+          e.stopPropagation();
+          PdvModule.preencherValorExatoRestante();
+          return;
         }
 
         // Bloqueia qualquer outra tecla de função F1..F12 de acionar atalhos de fundo
