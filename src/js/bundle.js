@@ -68056,19 +68056,19 @@ NSU: ${nsu}`,
       const qtdPessoas = Math.max(1, parseInt(c.numPessoas || this.numPessoasDivisao, 10) || 1);
       const valorPorPessoa = totalFinalGeral / qtdPessoas;
       container.innerHTML = `
-      <div style="display: flex; flex-direction: column; height: 100%; justify-content: space-between; overflow: hidden;">
+      <div class="comanda-detalhe-shell">
         
-        <!-- 1. CABE\xC7ALHO DO ATENDIMENTO (Visual Limpo e Elegante) -->
-        <div style="background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; flex-shrink: 0;">
-          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <span style="font-size: 22px;">${c.tipo === "mesa" ? "\u{1FA91}" : "\u{1F3F7}\uFE0F"}</span>
-              <div>
-                <h3 style="margin: 0; font-size: 16px; font-weight: 800; color: var(--text-main);">${c.nome}</h3>
-                <span style="font-size: 11px; color: var(--text-muted);">${c.tipo === "mesa" ? "Mesa de Atendimento" : "Comanda de Consumo"}</span>
+        <!-- 1. CABE\xC7ALHO DO ATENDIMENTO -->
+        <div style="background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 8px 12px; margin-bottom: 8px; flex-shrink: 0;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
+              <span style="font-size: 20px;">${c.tipo === "mesa" ? "\u{1FA91}" : "\u{1F3F7}\uFE0F"}</span>
+              <div style="min-width: 0;">
+                <h3 style="margin: 0; font-size: 15px; font-weight: 800; color: var(--text-main);">${c.nome}</h3>
+                <span style="font-size: 11px; color: var(--text-muted);">${c.abertaEm ? `Aberta \xE0s ${new Date(c.abertaEm).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}` : c.tipo === "mesa" ? "Mesa de Atendimento" : "Comanda de Consumo"}</span>
               </div>
             </div>
-            <div style="display: flex; align-items: center; gap: 6px;">
+            <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
               <span style="font-size: 10px; font-weight: 800; padding: 3px 8px; border-radius: 6px; background: ${isLivre ? "#dcfce7" : "#fee2e2"}; color: ${isLivre ? "#15803d" : "#b91c1c"}; border: 1px solid ${isLivre ? "#bbf7d0" : "#fecaca"}; text-transform: uppercase;">
                 ${isLivre ? "\u{1F7E2} LIVRE" : "\u{1F534} EM USO"}
               </span>
@@ -68079,21 +68079,10 @@ NSU: ${nsu}`,
               ` : ""}
             </div>
           </div>
-
-          <!-- Detalhes de Cliente e Tempo -->
-          <div style="display: grid; grid-template-columns: 1.3fr 1fr; gap: 8px; align-items: center; padding-top: 8px; border-top: 1px solid #e2e8f0;">
-            <input type="text" id="comanda-cliente-input" class="form-input-custom" value="${c.cliente || ""}" 
-                   placeholder="\u{1F464} Nome do Cliente / Identifica\xE7\xE3o..." 
-                   style="height: 32px; font-size: 11.5px; background: #ffffff;" 
-                   onchange="ComandasModule.atualizarClienteComanda('${c.id}', this.value)">
-            <span style="font-size: 11px; color: var(--text-dim); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-              ${c.abertaEm ? `\u23F1\uFE0F Aberta \xE0s ${new Date(c.abertaEm).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}` : "\u26AA Aguardando pedidos"}
-            </span>
-          </div>
         </div>
 
         <!-- 2. LAN\xC7ADOR INTELIGENTE DE PRODUTOS -->
-        <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px; margin-bottom: 10px; flex-shrink: 0;">
+        <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 8px 10px; margin-bottom: 8px; flex-shrink: 0;">
           <div style="font-size: 11px; font-weight: 800; color: var(--text-dim); text-transform: uppercase; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
             <span>Lan\xE7amento R\xE1pido de Produtos:</span>
             <span style="font-size: 10px; color: #0284c7; text-transform: none; font-weight: 700;">Tecle Enter ou passe o leitor</span>
@@ -68122,7 +68111,7 @@ NSU: ${nsu}`,
               <button type="button" style="border: none; background: transparent; width: 22px; height: 100%; font-weight: 900; font-size: 14px; cursor: pointer; color: var(--text-muted);" onclick="ComandasModule.ajustarQtdInput(1)">+</button>
             </div>
 
-            <!-- Bot\xE3o de Lan\xE7ar (Sem +, hover verde normal sem glow) -->
+            <!-- Bot\xE3o de Lan\xE7ar -->
             <button type="button" id="btn-comanda-lancar-item" 
                     style="height: 36px; font-size: 12.5px; font-weight: 800; background: #10b981; color: #ffffff; border: none; border-radius: 6px; padding: 0 14px; flex-shrink: 0; cursor: pointer; transition: background 0.15s ease;"
                     onmouseover="this.style.background='#059669'"
@@ -68134,10 +68123,10 @@ NSU: ${nsu}`,
         </div>
 
         <!-- 3. TABELA DE ITENS CONSUMIDOS -->
-        <div style="flex: 1; min-height: 120px; max-height: calc(100vh - 460px); overflow-y: auto; background: #ffffff; border: 1px solid var(--border-card); border-radius: 8px; margin-bottom: 10px;">
+        <div class="comanda-itens-scroll">
           ${!c.itens || c.itens.length === 0 ? `
-            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; min-height: 140px; color: var(--text-muted); text-align: center; padding: 20px;">
-              <span style="font-size: 28px; margin-bottom: 6px;">\u{1F4CB}</span>
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; min-height: 80px; color: var(--text-muted); text-align: center; padding: 16px;">
+              <span style="font-size: 24px; margin-bottom: 4px;">\u{1F4CB}</span>
               <strong style="font-size: 13px; color: var(--text-main);">Nenhum item lan\xE7ado ainda</strong>
               <span style="font-size: 11px; margin-top: 2px;">Utilize o buscador acima para lan\xE7ar pedidos nesta mesa.</span>
             </div>
@@ -68184,7 +68173,7 @@ NSU: ${nsu}`,
         </div>
 
         <!-- 4. RESUMO FINANCEIRO, DIVIS\xC3O DE CONTA & A\xC7\xD5ES -->
-        <div style="background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; flex-shrink: 0;">
+        <div class="comanda-detalhe-resumo">
           
           <!-- Subtotal e Taxa de Servi\xE7o -->
           <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11.5px; color: var(--text-muted); margin-bottom: 4px;">
@@ -68192,7 +68181,7 @@ NSU: ${nsu}`,
             <span style="font-family: 'JetBrains Mono'; font-weight: 700; color: var(--text-main);">R$ ${totalItensConsumo.toFixed(2).replace(".", ",")}</span>
           </div>
 
-          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11.5px; color: var(--text-muted); margin-bottom: 8px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11.5px; color: var(--text-muted); margin-bottom: 6px;">
             <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
               <input type="checkbox" style="width: 14px; height: 14px; cursor: pointer;" ${c.taxaServico ? "checked" : ""} onchange="ComandasModule.toggleTaxaServico('${c.id}', this.checked)">
               <span>Taxa de Atendimento / Servi\xE7o (10%)</span>
@@ -68200,9 +68189,9 @@ NSU: ${nsu}`,
             <span style="font-family: 'JetBrains Mono'; font-weight: 700; color: ${c.taxaServico ? "#0284c7" : "#94a3b8"};">+ R$ ${taxaServicoValor.toFixed(2).replace(".", ",")}</span>
           </div>
 
-          <!-- DIVISOR DE CONTA INTELIGENTE (1, 2, 3, 4, 5, 6 PESSOAS) -->
-          <div style="display: flex; justify-content: space-between; align-items: center; background: #ffffff; border: 1px solid #cbd5e1; padding: 7px 10px; border-radius: 8px; margin-bottom: 10px;">
-            <div style="display: flex; align-items: center; gap: 8px;">
+          <!-- DIVISOR DE CONTA -->
+          <div style="display: flex; justify-content: space-between; align-items: center; background: #ffffff; border: 1px solid #cbd5e1; padding: 6px 10px; border-radius: 8px; margin-bottom: 8px; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
               <span style="font-size: 12px; font-weight: 600; color: #334155;">\u{1F465} Dividir Conta:</span>
               <select style="height: 28px; font-size: 12px; font-weight: 600; border-radius: 6px; border: 1px solid #cbd5e1; background: #ffffff; color: #1e293b; cursor: pointer; padding: 0 8px; min-width: 140px;" onchange="ComandasModule.setDivisaoPessoas(this.value)">
                 <option value="1" ${qtdPessoas === 1 ? "selected" : ""}>1 pessoa (Total)</option>
@@ -68213,26 +68202,26 @@ NSU: ${nsu}`,
                 <option value="6" ${qtdPessoas === 6 ? "selected" : ""}>6 pessoas (1/6)</option>
               </select>
             </div>
-            <strong style="font-size: 13.5px; font-family: 'JetBrains Mono'; color: #0284c7; font-weight: 800;">
-              \u{1F449} R$ ${valorPorPessoa.toFixed(2).replace(".", ",")} <span style="font-size: 11px; font-weight: 500; color: #64748b;">/ pessoa</span>
+            <strong style="font-size: 13px; font-family: 'JetBrains Mono'; color: #0284c7; font-weight: 800; white-space: nowrap;">
+              R$ ${valorPorPessoa.toFixed(2).replace(".", ",")} <span style="font-size: 11px; font-weight: 500; color: #64748b;">/ pessoa</span>
             </strong>
           </div>
 
-          <!-- Total Geral em Verde Destacado -->
-          <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 6px; border-top: 1px solid #cbd5e1; margin-bottom: 10px;">
+          <!-- Total Geral -->
+          <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 6px; border-top: 1px solid #cbd5e1; margin-bottom: 8px;">
             <strong style="font-size: 13px; color: var(--text-main);">TOTAL CONSUMIDO:</strong>
-            <strong style="font-size: 20px; font-family: 'JetBrains Mono'; color: #059669; font-weight: 900;">R$ ${totalFinalGeral.toFixed(2).replace(".", ",")}</strong>
+            <strong style="font-size: 18px; font-family: 'JetBrains Mono'; color: #059669; font-weight: 900;">R$ ${totalFinalGeral.toFixed(2).replace(".", ",")}</strong>
           </div>
 
-          <!-- Bot\xF5es de A\xE7\xE3o (Sem hover glow) -->
+          <!-- Bot\xF5es de A\xE7\xE3o -->
           <div style="display: grid; grid-template-columns: 1fr 1fr 1.6fr; gap: 8px;">
-            <button type="button" class="btn-primary-action" style="justify-content: center; height: 38px; font-size: 12px; font-weight: 700; background: #0284c7; color: #ffffff; border: none; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.08);" onmouseover="this.style.background='#0369a1'; this.style.boxShadow='0 1px 3px rgba(0,0,0,0.08)';" onmouseout="this.style.background='#0284c7'; this.style.boxShadow='0 1px 3px rgba(0,0,0,0.08)';" onclick="ComandasModule.imprimirPreConta('${c.id}')" ${!c.itens || c.itens.length === 0 ? 'disabled style="opacity:0.5"' : ""}>
+            <button type="button" class="btn-primary-action" style="justify-content: center; height: 34px; font-size: 12px; font-weight: 700; background: #0284c7; color: #ffffff; border: none; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.08);" onmouseover="this.style.background='#0369a1'; this.style.boxShadow='0 1px 3px rgba(0,0,0,0.08)';" onmouseout="this.style.background='#0284c7'; this.style.boxShadow='0 1px 3px rgba(0,0,0,0.08)';" onclick="ComandasModule.imprimirPreConta('${c.id}')" ${!c.itens || c.itens.length === 0 ? 'disabled style="opacity:0.5"' : ""}>
               \u{1F5A8}\uFE0F Pr\xE9-Conta
             </button>
-            <button type="button" class="btn-primary-action" style="justify-content: center; height: 38px; font-size: 12px; font-weight: 700; background: #475569; color: #ffffff; border: none; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.08);" onmouseover="this.style.background='#334155'; this.style.boxShadow='0 1px 3px rgba(0,0,0,0.08)';" onmouseout="this.style.background='#475569'; this.style.boxShadow='0 1px 3px rgba(0,0,0,0.08)';" onclick="ComandasModule.abrirModalTransferir('${c.id}')" ${!c.itens || c.itens.length === 0 ? 'disabled style="opacity:0.5"' : ""}>
+            <button type="button" class="btn-primary-action" style="justify-content: center; height: 34px; font-size: 12px; font-weight: 700; background: #475569; color: #ffffff; border: none; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.08);" onmouseover="this.style.background='#334155'; this.style.boxShadow='0 1px 3px rgba(0,0,0,0.08)';" onmouseout="this.style.background='#475569'; this.style.boxShadow='0 1px 3px rgba(0,0,0,0.08)';" onclick="ComandasModule.abrirModalTransferir('${c.id}')" ${!c.itens || c.itens.length === 0 ? 'disabled style="opacity:0.5"' : ""}>
               \u{1F504} Transferir
             </button>
-            <button type="button" class="btn-primary-action" style="justify-content: center; height: 38px; font-size: 13px; font-weight: 800; background: #10b981; color: #ffffff; border: none; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.08);" onmouseover="this.style.background='#059669'; this.style.boxShadow='0 1px 3px rgba(0,0,0,0.08)';" onmouseout="this.style.background='#10b981'; this.style.boxShadow='0 1px 3px rgba(0,0,0,0.08)';" onclick="ComandasModule.transferirParaPdvCaixa('${c.id}')" ${!c.itens || c.itens.length === 0 ? 'disabled style="opacity:0.5"' : ""}>
+            <button type="button" class="btn-primary-action" style="justify-content: center; height: 34px; font-size: 13px; font-weight: 800; background: #10b981; color: #ffffff; border: none; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.08);" onmouseover="this.style.background='#059669'; this.style.boxShadow='0 1px 3px rgba(0,0,0,0.08)';" onmouseout="this.style.background='#10b981'; this.style.boxShadow='0 1px 3px rgba(0,0,0,0.08)';" onclick="ComandasModule.transferirParaPdvCaixa('${c.id}')" ${!c.itens || c.itens.length === 0 ? 'disabled style="opacity:0.5"' : ""}>
               \u{1F4B0} Caixa [F4]
             </button>
           </div>

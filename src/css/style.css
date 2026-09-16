@@ -4137,6 +4137,26 @@ body.pdv-atendimento-ativo {
   border: 1px solid var(--border-card);
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
   background: #ffffff;
+  max-height: calc(100vh - 16px);
+  display: flex;
+  flex-direction: column;
+}
+
+#modal-pagamento .modal-body-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+}
+
+.pag-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-shrink: 0;
+  border-top: 1px solid var(--border-subtle);
+  padding: 12px 24px 14px;
+  background: #ffffff;
 }
 
 .payment-modal-icon-badge {
@@ -6003,6 +6023,34 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   border-color: #0f172a;
 }
 
+#comanda-detalhes-painel {
+  min-height: 0;
+}
+.comanda-detalhe-shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+.comanda-itens-scroll {
+  flex: 1 1 auto;
+  min-height: 72px;
+  overflow-y: auto;
+  background: #ffffff;
+  border: 1px solid var(--border-card);
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+.comanda-detalhe-resumo {
+  background: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 10px 12px;
+  flex-shrink: 0;
+}
+
 .btn-comandas-cadastrar-action {
   height: 36px;
   font-size: 12px;
@@ -7304,6 +7352,7 @@ body.pdv-layout-classico .f2-btn-tag {
 body.pdv-layout-classico #modal-pagamento .modal-content-box {
   max-width: 860px !important;
   border-radius: 6px !important;
+  max-height: calc(100vh - 16px);
 }
 
 /* Topo Resumo: Total da Venda e Falta Pagar Lado a Lado */
@@ -7522,12 +7571,87 @@ body.pdv-layout-classico #btn-confirmar-pagamento-modal:hover {
   background: #15803d !important;
 }
 
+body.pdv-layout-classico #btn-voltar-pagamento-modal,
 body.pdv-layout-classico #modal-pagamento button[onclick*="fecharModalPagamento"] {
   background: #f1f5f9 !important;
   border: 2px solid #cbd5e1 !important;
   border-radius: 6px !important;
   color: #0f172a !important;
   font-weight: 800 !important;
+}
+
+@media (max-height: 820px) {
+  #modal-pagamento .modal-header-bar {
+    padding: 8px 16px;
+  }
+  #modal-pagamento .modal-header-bar h3 {
+    font-size: 15px !important;
+  }
+  #modal-pagamento .payment-modal-icon-badge {
+    width: 32px;
+    height: 32px;
+    font-size: 18px !important;
+  }
+  #modal-pagamento .modal-body-content {
+    padding: 10px 16px !important;
+  }
+  #modal-pagamento .payment-top-summary-grid {
+    gap: 8px !important;
+    margin-bottom: 8px !important;
+  }
+  body.pdv-layout-classico .payment-total-hero,
+  .payment-top-summary-grid #pag-status-banner-box > div {
+    padding: 8px 12px !important;
+  }
+  body.pdv-layout-classico .payment-total-hero-val {
+    font-size: 22px !important;
+  }
+  #modal-pagamento .pag-dividir-box {
+    margin-bottom: 8px;
+    padding: 6px 10px;
+    gap: 8px;
+  }
+  #modal-pagamento .pag-dividir-box input,
+  #modal-pagamento .pag-dividir-box .pag-dividir-step {
+    height: 30px;
+  }
+  #modal-pagamento .pag-dividir-box .pag-dividir-step {
+    width: 30px;
+    font-size: 16px;
+  }
+  #modal-pagamento .form-label-custom {
+    margin-bottom: 4px !important;
+  }
+  #modal-pagamento .modal-body-content > div:has(.payment-methods-grid) {
+    margin-bottom: 8px !important;
+  }
+  #modal-pagamento #pag-contexto-detalhe {
+    margin-top: 6px !important;
+  }
+  body.pdv-layout-classico .forma-pag-card,
+  #modal-pagamento .forma-pag-card {
+    padding: 7px 4px 6px !important;
+  }
+  #modal-pagamento .forma-pag-icon {
+    font-size: 18px;
+  }
+  #modal-pagamento #pag-box-entrada-valor {
+    padding: 8px 12px !important;
+    margin-bottom: 8px !important;
+  }
+  #modal-pagamento #pag-valor-pago-input,
+  #modal-pagamento #btn-lancar-valor-enter {
+    height: 40px !important;
+    font-size: 20px !important;
+  }
+  .pag-modal-footer {
+    padding: 8px 16px 10px;
+  }
+  #btn-voltar-pagamento-modal,
+  #btn-confirmar-pagamento-modal {
+    height: 38px !important;
+    font-size: 13px !important;
+  }
 }
 
 /* --------------------------------------------------------------------------

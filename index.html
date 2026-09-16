@@ -870,7 +870,7 @@
           </div>
 
           <!-- Coluna Direita: Painel de Atendimento e Consumo da Comanda Selecionada -->
-          <div class="data-table-card" id="comanda-detalhes-painel" style="padding: 14px; display: flex; flex-direction: column; border-radius: 10px; background: #ffffff; border: 1.5px solid var(--border-card); overflow: hidden;">
+          <div class="data-table-card" id="comanda-detalhes-painel" style="padding: 10px; display: flex; flex-direction: column; border-radius: 10px; background: #ffffff; border: 1.5px solid var(--border-card); overflow: hidden; min-height: 0;">
             <!-- Detalhes, Itens Lançados e Ações de Fechamento -->
           </div>
 
@@ -3050,20 +3050,19 @@
             </div>
           </div>
 
-          <!-- BOTÃO FINALIZAR / RODAPÉ DO MODAL -->
-          <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; border-top: 1px solid var(--border-subtle); padding-top: 14px;">
-            <div style="display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-muted); font-weight: 600;">
-              <span><kbd class="pag-badge-key">DEL</kbd> Desfazer Pagto</span>
-            </div>
+        </div>
 
-            <div style="display: flex; gap: 8px; align-items: center;">
-              <button type="button" class="btn-primary-action" style="background: #f1f5f9; color: var(--text-main); height: 44px; padding: 0 16px; font-size: 13px; font-weight: 700; border: 1px solid var(--border-card);" onclick="PdvModule.fecharModalPagamento()">
-                ↩️ Voltar [ESC]
-              </button>
-              <button type="button" class="btn-primary-action" id="btn-confirmar-pagamento-modal" style="height: 44px; padding: 0 20px; font-size: 14px; font-weight: 800; background: linear-gradient(135deg, var(--accent-green), #047857); box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);" onclick="PdvModule.lancarValorPagamento()">
-                ✅ Concluir Venda [ENTER]
-              </button>
-            </div>
+        <div class="pag-modal-footer">
+          <div style="display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-muted); font-weight: 600;">
+            <span><kbd class="pag-badge-key">DEL</kbd> Desfazer Pagto</span>
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <button type="button" class="btn-primary-action" id="btn-voltar-pagamento-modal" style="background: #f1f5f9; color: var(--text-main); height: 44px; padding: 0 16px; font-size: 13px; font-weight: 700; border: 1px solid var(--border-card);" onclick="PdvModule.fecharModalPagamento()">
+              ↩️ Voltar [ESC]
+            </button>
+            <button type="button" class="btn-primary-action" id="btn-confirmar-pagamento-modal" style="height: 44px; padding: 0 20px; font-size: 14px; font-weight: 800; background: linear-gradient(135deg, var(--accent-green), #047857); box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);" onclick="PdvModule.lancarValorPagamento()">
+              ✅ Concluir Venda [ENTER]
+            </button>
           </div>
         </div>
       </div>
