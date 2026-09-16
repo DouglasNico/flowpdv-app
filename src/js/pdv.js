@@ -14,6 +14,7 @@ export const PdvModule = {
   cpfSugeridoNota: '',
   desconto: 0,
   audioCtx: null,
+  pessoasDivisaoComanda: 1,
 
   init() {
     this.bindBarcodeListener();
@@ -38,6 +39,13 @@ export const PdvModule = {
     const produtos = StorageService.getProdutos() || [];
     const p = produtos.find(x => String(x.id) === String(item.id));
     return !!(p && (p.permiteFracionado === true || (p.unidade && String(p.unidade).toLowerCase() === 'kg')));
+  },
+
+  itemEhTaxaServico(item) {
+    if (!item) return false;
+    const id = String(item.id || '');
+    const codigo = String(item.codigo || item.codigoBarras || '').trim().toUpperCase();
+    return id === 'TAXA-SERVICO-10' || codigo === 'SERV10';
   },
 
   rotuloUnidade(item) {
@@ -1067,6 +1075,7 @@ export const PdvModule = {
     this.clubePerguntaExibida = false;
     this.clienteClubeAtivo = null;
     this.desconto = 0;
+    this.pessoasDivisaoComanda = 1;
     this.renderCarrinho();
     this.focarInputLeitor();
 
@@ -1101,6 +1110,7 @@ export const PdvModule = {
     });
 
     const totalItens = this.carrinho.reduce((acc, item) => {
+      if (this.itemEhTaxaServico(item)) return acc;
       if (this.itemEhPeso(item)) return acc + 1;
       return acc + (parseFloat(item.quantidade) || 0);
     }, 0);
@@ -1108,6 +1118,27 @@ export const PdvModule = {
     const total = Math.max(0, subtotal - totalDescontos);
 
     return { subtotal, totalItens, total, desconto: this.desconto, descontoClube };
+  },
+
+  pessoasDivisao() {
+    return Math.max(1, parseInt(this.pessoasDivisaoComanda, 10) || 1);
+  },
+
+  htmlLinhaDivisaoPessoas(modo) {
+    const n = this.pessoasDivisao();
+    if (n <= 1) return '';
+    const total = this.calcularTotais().total;
+    const valor = 'R$ ' + (total / n).toFixed(2).replace('.', ',') + ' / pessoa';
+    const label = 'Dividir conta · ' + n + ' pessoas';
+    if (modo === 'classic') {
+      return `<tr class="classic-tr-divisao">
+        <td class="classic-divisao-cell"><span>${label}</span><strong>${valor}</strong></td>
+      </tr>`;
+    }
+    return `<tr style="background:#eff6ff;">
+      <td colspan="3" style="text-align:right;font-weight:800;color:#1d4ed8;padding-right:16px;border-bottom:none;">${label}</td>
+      <td colspan="2" style="font-weight:800;color:#1d4ed8;font-family:'JetBrains Mono';border-bottom:none;">${valor}</td>
+    </tr>`;
   },
 
   renderCarrinho() {
@@ -1161,13 +1192,13 @@ export const PdvModule = {
       `;
     } else {
       let linhasHTML = this.carrinho.map((item, idx) => `
-        <tr>
+        <tr${this.itemEhTaxaServico(item) ? ' style="background:#ecfdf5;"' : ''}>
           <td>
             <div style="display: flex; align-items: center; gap: 8px;">
               <span style="background: #f1f5f9; border: 1px solid #cbd5e1; color: #475569; font-family: 'JetBrains Mono'; font-weight: 800; font-size: 11px; padding: 1px 6px; border-radius: 4px; flex-shrink: 0;">#${idx + 1}</span>
               <div>
                 <span class="item-code-tag">${item.codigoBarras || item.id}</span>
-                <span class="item-name-bold">${item.nome}</span>
+                <span class="item-name-bold"${this.itemEhTaxaServico(item) ? ' style="color:#047857;"' : ''}>${item.nome}</span>
               </div>
             </div>
           </td>
@@ -1179,7 +1210,7 @@ export const PdvModule = {
               <button type="button" class="btn-qty" onclick="PdvModule.alterarQuantidade(${idx}, 1)">+</button>
             </div>
           </td>
-          <td style="font-weight: 800; font-family: 'JetBrains Mono'; color: var(--accent-green);">
+          <td style="font-weight: 800; font-family: 'JetBrains Mono'; color: ${this.itemEhTaxaServico(item) ? '#047857' : 'var(--accent-green)'};">
             R$ ${(item.precoUnitario * item.quantidade).toFixed(2).replace('.', ',')}
           </td>
           <td style="text-align: right;">
@@ -1202,6 +1233,7 @@ export const PdvModule = {
           </tr>
         `;
       }
+      linhasHTML += this.htmlLinhaDivisaoPessoas('moderno');
       tbody.innerHTML = linhasHTML;
     }
 
@@ -1212,7 +1244,7 @@ export const PdvModule = {
         classicTbody.innerHTML = '';
       } else {
         let classicLinhasHTML = this.carrinho.map((item, idx) => `
-          <tr>
+          <tr${this.itemEhTaxaServico(item) ? ' class="classic-tr-taxa"' : ''}>
             <td style="font-weight: bold;">${String(idx + 1).padStart(3, '0')}</td>
             <td>${item.codigoBarras || item.id}</td>
             <td style="font-weight: bold;">${item.nome}</td>
@@ -1232,6 +1264,7 @@ export const PdvModule = {
              </tr>
            `;
         }
+        classicLinhasHTML += this.htmlLinhaDivisaoPessoas('classic');
         
         classicTbody.innerHTML = classicLinhasHTML;
         const classicTableContainer = classicTbody.closest('.classic-table-container');
@@ -1871,6 +1904,7 @@ export const PdvModule = {
       const qtdTotal = totais.totalItens;
       itemsBadge.textContent = `🛒 ${qtdTotal} ${qtdTotal === 1 ? 'item' : 'itens'}`;
     }
+    this.atualizarDivisaoPagamentoResumo();
 
     // Configurações Fiscais & CPF na Nota (Solicitado na finalização via TEF ou modal dedicado)
     const secFiscal = document.getElementById('pag-secao-fiscal-opcoes');
@@ -2295,7 +2329,9 @@ export const PdvModule = {
         const valAtual = parseFloat(String(inputVal.value || '').replace(',', '.')) || 0;
         // Se reset for solicitado ou se o campo estiver zerado ou com valor maior que o restante
         if (shouldResetInput || valAtual <= 0 || valAtual > faltaPagar) {
-          inputVal.value = faltaPagar.toFixed(2);
+          const n = this.pessoasDivisao();
+          const porPessoa = n > 1 ? parseFloat((totalVenda / n).toFixed(2)) : faltaPagar;
+          inputVal.value = Math.min(porPessoa, faltaPagar).toFixed(2);
         }
         setTimeout(() => {
           inputVal.focus();
@@ -2309,6 +2345,45 @@ export const PdvModule = {
 
   onInputValorPagamento() {
     // Permite digitação livre do operador
+  },
+
+  atualizarDivisaoPagamentoResumo() {
+    const n = this.pessoasDivisao();
+    const total = this.calcularTotais().total;
+    const input = document.getElementById('pag-pessoas-input');
+    const resumo = document.getElementById('pag-por-pessoa');
+    if (input && document.activeElement !== input) input.value = String(n);
+    if (resumo) resumo.textContent = 'R$ ' + (total / n).toFixed(2).replace('.', ',') + ' / pessoa';
+  },
+
+  focarDivisaoPagamento() {
+    const el = document.getElementById('pag-pessoas-input');
+    if (!el) return;
+    el.focus();
+    el.select();
+  },
+
+  ajustarDivisaoPagamento(delta) {
+    this.alterarDivisaoPagamento(this.pessoasDivisao() + (parseInt(delta, 10) || 0));
+    this.focarDivisaoPagamento();
+  },
+
+  alterarDivisaoPagamento(valor) {
+    const n = Math.max(1, parseInt(valor, 10) || 1);
+    this.pessoasDivisaoComanda = n;
+    const origem = this.origemComandaCarrinho();
+    if (origem && origem.id && window.ComandasModule) {
+      const comandas = window.ComandasModule.getComandas() || [];
+      const c = comandas.find((item) => item && item.id === origem.id);
+      if (c) {
+        c.numPessoas = n;
+        window.ComandasModule.numPessoasDivisao = n;
+        window.ComandasModule.salvarComandas(comandas);
+      }
+    }
+    this.renderCarrinho();
+    this.atualizarDivisaoPagamentoResumo();
+    this.atualizarInterfacePagamentoNovo(true);
   },
 
   preencherValorExatoRestante() {

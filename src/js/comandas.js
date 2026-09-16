@@ -415,6 +415,12 @@ export const ComandasModule = {
 
   setDivisaoPessoas(qtd) {
     this.numPessoasDivisao = Math.max(1, parseInt(qtd, 10) || 1);
+    const comandas = this.getComandas();
+    const c = comandas.find((item) => item && item.id === this.comandaAtivaId);
+    if (c) {
+      c.numPessoas = this.numPessoasDivisao;
+      this.salvarComandas(comandas);
+    }
     this.renderPainelDetalhes();
   },
 
@@ -464,7 +470,7 @@ export const ComandasModule = {
     const totalFinalGeral = totalItensConsumo + taxaServicoValor;
 
     // Divisão de conta
-    const qtdPessoas = this.numPessoasDivisao || 1;
+    const qtdPessoas = Math.max(1, parseInt(c.numPessoas || this.numPessoasDivisao, 10) || 1);
     const valorPorPessoa = totalFinalGeral / qtdPessoas;
 
     container.innerHTML = `
@@ -926,6 +932,7 @@ export const ComandasModule = {
       c.cliente = '';
       c.total = 0;
       c.taxaServico = false;
+      c.numPessoas = 1;
       AuditModule.registrarOuAtualizarLogMesa(c, 'liberacao');
     } else {
       c.total = c.itens.reduce((acc, i) => acc + (parseFloat(i.total) || 0), 0);
@@ -980,6 +987,7 @@ export const ComandasModule = {
         c.cliente = '';
         c.abertaEm = null;
         c.taxaServico = false;
+        c.numPessoas = 1;
         this.salvarComandas(comandas);
         this.renderGridComandas();
         this.renderPainelDetalhes();
@@ -1168,7 +1176,7 @@ export const ComandasModule = {
     const totalConsumo = parseFloat(c.total || 0);
     const taxaServicoOpcional = c.taxaServico ? (totalConsumo * 0.10) : 0;
     const totalComServico = totalConsumo + taxaServicoOpcional;
-    const qtdPessoas = this.numPessoasDivisao || 1;
+    const qtdPessoas = Math.max(1, parseInt(c.numPessoas || this.numPessoasDivisao, 10) || 1);
     const valorPorPessoa = totalComServico / qtdPessoas;
 
     const html = `
@@ -1368,6 +1376,9 @@ export const ComandasModule = {
       });
     }
 
+    const pessoas = Math.max(1, parseInt(c.numPessoas || this.numPessoasDivisao, 10) || 1);
+    window.PdvModule.pessoasDivisaoComanda = pessoas;
+
     window.PdvModule.desconto = 0;
     window.PdvModule.renderCarrinho();
     const codigoEl = document.getElementById('classic-codigo-barras');
@@ -1437,6 +1448,7 @@ export const ComandasModule = {
     c.cliente = '';
     c.abertaEm = null;
     c.taxaServico = false;
+    c.numPessoas = 1;
     this.salvarComandas(comandas);
     this.renderGridComandas();
   }

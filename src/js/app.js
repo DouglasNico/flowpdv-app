@@ -715,6 +715,50 @@ export const App = {
           classicBarcodeInput.blur();
         }
 
+        const pessoasInput = document.getElementById('pag-pessoas-input');
+        const focoPessoas = pessoasInput && document.activeElement === pessoasInput;
+        if (e.key === '*' || e.code === 'NumpadMultiply') {
+          e.preventDefault();
+          e.stopPropagation();
+          if (window.PdvModule) window.PdvModule.focarDivisaoPagamento();
+          return;
+        }
+        if (focoPessoas) {
+          if (e.key === 'ArrowUp' || e.key === '+' || e.key === 'Add') {
+            e.preventDefault();
+            e.stopPropagation();
+            PdvModule.ajustarDivisaoPagamento(1);
+            return;
+          }
+          if (e.key === 'ArrowDown' || e.key === '-' || e.key === 'Subtract') {
+            e.preventDefault();
+            e.stopPropagation();
+            PdvModule.ajustarDivisaoPagamento(-1);
+            return;
+          }
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            e.stopPropagation();
+            PdvModule.alterarDivisaoPagamento(pessoasInput.value);
+            const valorInput = document.getElementById('pag-valor-pago-input');
+            if (valorInput) {
+              valorInput.focus();
+              valorInput.select();
+            }
+            return;
+          }
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            e.stopPropagation();
+            const valorInput = document.getElementById('pag-valor-pago-input');
+            if (valorInput) {
+              valorInput.focus();
+              valorInput.select();
+            }
+            return;
+          }
+        }
+
         // ATALHOS DEDICADOS F1..F6 (Exclusivos desta tela de finalizar venda!)
         if (e.key === 'F1') {
           e.preventDefault();

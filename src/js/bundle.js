@@ -50784,6 +50784,7 @@ This typically indicates that your device does not have a healthy Internet conne
     cpfSugeridoNota: "",
     desconto: 0,
     audioCtx: null,
+    pessoasDivisaoComanda: 1,
     init() {
       this.bindBarcodeListener();
       this.renderCarrinho();
@@ -50803,6 +50804,12 @@ This typically indicates that your device does not have a healthy Internet conne
       const produtos = StorageService.getProdutos() || [];
       const p = produtos.find((x2) => String(x2.id) === String(item.id));
       return !!(p && (p.permiteFracionado === true || p.unidade && String(p.unidade).toLowerCase() === "kg"));
+    },
+    itemEhTaxaServico(item) {
+      if (!item) return false;
+      const id = String(item.id || "");
+      const codigo = String(item.codigo || item.codigoBarras || "").trim().toUpperCase();
+      return id === "TAXA-SERVICO-10" || codigo === "SERV10";
     },
     rotuloUnidade(item) {
       return this.itemEhPeso(item) ? "KG" : "UN";
@@ -51690,6 +51697,7 @@ Venda bloqueada no PDV!`);
       this.clubePerguntaExibida = false;
       this.clienteClubeAtivo = null;
       this.desconto = 0;
+      this.pessoasDivisaoComanda = 1;
       this.renderCarrinho();
       this.focarInputLeitor();
       const resetIds = [
@@ -51718,12 +51726,32 @@ Venda bloqueada no PDV!`);
         }
       });
       const totalItens = this.carrinho.reduce((acc, item) => {
+        if (this.itemEhTaxaServico(item)) return acc;
         if (this.itemEhPeso(item)) return acc + 1;
         return acc + (parseFloat(item.quantidade) || 0);
       }, 0);
       const totalDescontos = this.desconto + descontoClube;
       const total = Math.max(0, subtotal - totalDescontos);
       return { subtotal, totalItens, total, desconto: this.desconto, descontoClube };
+    },
+    pessoasDivisao() {
+      return Math.max(1, parseInt(this.pessoasDivisaoComanda, 10) || 1);
+    },
+    htmlLinhaDivisaoPessoas(modo) {
+      const n = this.pessoasDivisao();
+      if (n <= 1) return "";
+      const total = this.calcularTotais().total;
+      const valor = "R$ " + (total / n).toFixed(2).replace(".", ",") + " / pessoa";
+      const label = "Dividir conta \xB7 " + n + " pessoas";
+      if (modo === "classic") {
+        return `<tr class="classic-tr-divisao">
+        <td class="classic-divisao-cell"><span>${label}</span><strong>${valor}</strong></td>
+      </tr>`;
+      }
+      return `<tr style="background:#eff6ff;">
+      <td colspan="3" style="text-align:right;font-weight:800;color:#1d4ed8;padding-right:16px;border-bottom:none;">${label}</td>
+      <td colspan="2" style="font-weight:800;color:#1d4ed8;font-family:'JetBrains Mono';border-bottom:none;">${valor}</td>
+    </tr>`;
     },
     renderCarrinho() {
       const tbody = document.getElementById("pdv-itens-tbody");
@@ -51770,13 +51798,13 @@ Venda bloqueada no PDV!`);
       `;
       } else {
         let linhasHTML = this.carrinho.map((item, idx) => `
-        <tr>
+        <tr${this.itemEhTaxaServico(item) ? ' style="background:#ecfdf5;"' : ""}>
           <td>
             <div style="display: flex; align-items: center; gap: 8px;">
               <span style="background: #f1f5f9; border: 1px solid #cbd5e1; color: #475569; font-family: 'JetBrains Mono'; font-weight: 800; font-size: 11px; padding: 1px 6px; border-radius: 4px; flex-shrink: 0;">#${idx + 1}</span>
               <div>
                 <span class="item-code-tag">${item.codigoBarras || item.id}</span>
-                <span class="item-name-bold">${item.nome}</span>
+                <span class="item-name-bold"${this.itemEhTaxaServico(item) ? ' style="color:#047857;"' : ""}>${item.nome}</span>
               </div>
             </div>
           </td>
@@ -51788,7 +51816,7 @@ Venda bloqueada no PDV!`);
               <button type="button" class="btn-qty" onclick="PdvModule.alterarQuantidade(${idx}, 1)">+</button>
             </div>
           </td>
-          <td style="font-weight: 800; font-family: 'JetBrains Mono'; color: var(--accent-green);">
+          <td style="font-weight: 800; font-family: 'JetBrains Mono'; color: ${this.itemEhTaxaServico(item) ? "#047857" : "var(--accent-green)"};">
             R$ ${(item.precoUnitario * item.quantidade).toFixed(2).replace(".", ",")}
           </td>
           <td style="text-align: right;">
@@ -51810,6 +51838,7 @@ Venda bloqueada no PDV!`);
           </tr>
         `;
         }
+        linhasHTML += this.htmlLinhaDivisaoPessoas("moderno");
         tbody.innerHTML = linhasHTML;
       }
       const classicTbody = document.getElementById("classic-pdv-itens-tbody");
@@ -51818,7 +51847,7 @@ Venda bloqueada no PDV!`);
           classicTbody.innerHTML = "";
         } else {
           let classicLinhasHTML = this.carrinho.map((item, idx) => `
-          <tr>
+          <tr${this.itemEhTaxaServico(item) ? ' class="classic-tr-taxa"' : ""}>
             <td style="font-weight: bold;">${String(idx + 1).padStart(3, "0")}</td>
             <td>${item.codigoBarras || item.id}</td>
             <td style="font-weight: bold;">${item.nome}</td>
@@ -51837,6 +51866,7 @@ Venda bloqueada no PDV!`);
              </tr>
            `;
           }
+          classicLinhasHTML += this.htmlLinhaDivisaoPessoas("classic");
           classicTbody.innerHTML = classicLinhasHTML;
           const classicTableContainer = classicTbody.closest(".classic-table-container");
           if (classicTableContainer) classicTableContainer.scrollTop = classicTableContainer.scrollHeight;
@@ -52401,6 +52431,7 @@ Venda bloqueada no PDV!`);
         const qtdTotal = totais.totalItens;
         itemsBadge.textContent = `\u{1F6D2} ${qtdTotal} ${qtdTotal === 1 ? "item" : "itens"}`;
       }
+      this.atualizarDivisaoPagamentoResumo();
       const secFiscal = document.getElementById("pag-secao-fiscal-opcoes");
       if (secFiscal) {
         secFiscal.style.display = "none";
@@ -52774,7 +52805,9 @@ Venda bloqueada no PDV!`);
         if (faltaPagar > 5e-3) {
           const valAtual = parseFloat(String(inputVal.value || "").replace(",", ".")) || 0;
           if (shouldResetInput || valAtual <= 0 || valAtual > faltaPagar) {
-            inputVal.value = faltaPagar.toFixed(2);
+            const n = this.pessoasDivisao();
+            const porPessoa = n > 1 ? parseFloat((totalVenda / n).toFixed(2)) : faltaPagar;
+            inputVal.value = Math.min(porPessoa, faltaPagar).toFixed(2);
           }
           setTimeout(() => {
             inputVal.focus();
@@ -52786,6 +52819,41 @@ Venda bloqueada no PDV!`);
       }
     },
     onInputValorPagamento() {
+    },
+    atualizarDivisaoPagamentoResumo() {
+      const n = this.pessoasDivisao();
+      const total = this.calcularTotais().total;
+      const input = document.getElementById("pag-pessoas-input");
+      const resumo = document.getElementById("pag-por-pessoa");
+      if (input && document.activeElement !== input) input.value = String(n);
+      if (resumo) resumo.textContent = "R$ " + (total / n).toFixed(2).replace(".", ",") + " / pessoa";
+    },
+    focarDivisaoPagamento() {
+      const el = document.getElementById("pag-pessoas-input");
+      if (!el) return;
+      el.focus();
+      el.select();
+    },
+    ajustarDivisaoPagamento(delta) {
+      this.alterarDivisaoPagamento(this.pessoasDivisao() + (parseInt(delta, 10) || 0));
+      this.focarDivisaoPagamento();
+    },
+    alterarDivisaoPagamento(valor) {
+      const n = Math.max(1, parseInt(valor, 10) || 1);
+      this.pessoasDivisaoComanda = n;
+      const origem = this.origemComandaCarrinho();
+      if (origem && origem.id && window.ComandasModule) {
+        const comandas = window.ComandasModule.getComandas() || [];
+        const c = comandas.find((item) => item && item.id === origem.id);
+        if (c) {
+          c.numPessoas = n;
+          window.ComandasModule.numPessoasDivisao = n;
+          window.ComandasModule.salvarComandas(comandas);
+        }
+      }
+      this.renderCarrinho();
+      this.atualizarDivisaoPagamentoResumo();
+      this.atualizarInterfacePagamentoNovo(true);
     },
     preencherValorExatoRestante() {
       const totais = this.calcularTotais();
@@ -67928,6 +67996,12 @@ NSU: ${nsu}`,
     },
     setDivisaoPessoas(qtd) {
       this.numPessoasDivisao = Math.max(1, parseInt(qtd, 10) || 1);
+      const comandas = this.getComandas();
+      const c = comandas.find((item) => item && item.id === this.comandaAtivaId);
+      if (c) {
+        c.numPessoas = this.numPessoasDivisao;
+        this.salvarComandas(comandas);
+      }
       this.renderPainelDetalhes();
     },
     renderPainelDetalhes() {
@@ -67967,7 +68041,7 @@ NSU: ${nsu}`,
       const totalItensConsumo = parseFloat(c.total || 0);
       const taxaServicoValor = c.taxaServico ? totalItensConsumo * 0.1 : 0;
       const totalFinalGeral = totalItensConsumo + taxaServicoValor;
-      const qtdPessoas = this.numPessoasDivisao || 1;
+      const qtdPessoas = Math.max(1, parseInt(c.numPessoas || this.numPessoasDivisao, 10) || 1);
       const valorPorPessoa = totalFinalGeral / qtdPessoas;
       container.innerHTML = `
       <div style="display: flex; flex-direction: column; height: 100%; justify-content: space-between; overflow: hidden;">
@@ -68385,6 +68459,7 @@ NSU: ${nsu}`,
         c.cliente = "";
         c.total = 0;
         c.taxaServico = false;
+        c.numPessoas = 1;
         AuditModule.registrarOuAtualizarLogMesa(c, "liberacao");
       } else {
         c.total = c.itens.reduce((acc, i) => acc + (parseFloat(i.total) || 0), 0);
@@ -68433,6 +68508,7 @@ NSU: ${nsu}`,
           c.cliente = "";
           c.abertaEm = null;
           c.taxaServico = false;
+          c.numPessoas = 1;
           this.salvarComandas(comandas);
           this.renderGridComandas();
           this.renderPainelDetalhes();
@@ -68588,7 +68664,7 @@ NSU: ${nsu}`,
       const totalConsumo = parseFloat(c.total || 0);
       const taxaServicoOpcional = c.taxaServico ? totalConsumo * 0.1 : 0;
       const totalComServico = totalConsumo + taxaServicoOpcional;
-      const qtdPessoas = this.numPessoasDivisao || 1;
+      const qtdPessoas = Math.max(1, parseInt(c.numPessoas || this.numPessoasDivisao, 10) || 1);
       const valorPorPessoa = totalComServico / qtdPessoas;
       const html = `
       <!DOCTYPE html>
@@ -68769,6 +68845,8 @@ NSU: ${nsu}`,
           comandaOrigemId: c.id
         });
       }
+      const pessoas = Math.max(1, parseInt(c.numPessoas || this.numPessoasDivisao, 10) || 1);
+      window.PdvModule.pessoasDivisaoComanda = pessoas;
       window.PdvModule.desconto = 0;
       window.PdvModule.renderCarrinho();
       const codigoEl = document.getElementById("classic-codigo-barras");
@@ -68829,6 +68907,7 @@ NSU: ${nsu}`,
       c.cliente = "";
       c.abertaEm = null;
       c.taxaServico = false;
+      c.numPessoas = 1;
       this.salvarComandas(comandas);
       this.renderGridComandas();
     }
@@ -69590,8 +69669,8 @@ NSU: ${nsu}`,
         }
         return;
       }
-      if (ComandasModule.comandaAtivaId !== c.id) ComandasModule.numPessoasDivisao = 1;
       ComandasModule.comandaAtivaId = c.id;
+      ComandasModule.numPessoasDivisao = Math.max(1, parseInt(c.numPessoas, 10) || 1);
       if (!c.itens || c.itens.length === 0) ComandasModule.toggleTaxaServico(c.id, true);
       this.mostrarOperacao();
       this.focarInput();
@@ -69643,7 +69722,7 @@ NSU: ${nsu}`,
       setTxt("atend-qtd-itens", String(qtdItens));
       const taxa = c && c.taxaServico ? total * 0.1 : 0;
       const totalComServico = total + taxa;
-      const pessoas = ComandasModule.numPessoasDivisao || 1;
+      const pessoas = Math.max(1, parseInt(c && c.numPessoas || ComandasModule.numPessoasDivisao, 10) || 1);
       setTxt("atend-total", totalComServico.toFixed(2).replace(".", ","));
       setTxt("atend-taxa-valor", "R$ " + taxa.toFixed(2).replace(".", ","));
       setTxt("atend-por-pessoa", "R$ " + (totalComServico / pessoas).toFixed(2).replace(".", ",") + " / pessoa");
@@ -70573,6 +70652,49 @@ NSU: ${nsu}`,
           const classicBarcodeInput = document.getElementById("classic-pdv-barcode-input");
           if (classicBarcodeInput && document.activeElement === classicBarcodeInput) {
             classicBarcodeInput.blur();
+          }
+          const pessoasInput = document.getElementById("pag-pessoas-input");
+          const focoPessoas = pessoasInput && document.activeElement === pessoasInput;
+          if (e.key === "*" || e.code === "NumpadMultiply") {
+            e.preventDefault();
+            e.stopPropagation();
+            if (window.PdvModule) window.PdvModule.focarDivisaoPagamento();
+            return;
+          }
+          if (focoPessoas) {
+            if (e.key === "ArrowUp" || e.key === "+" || e.key === "Add") {
+              e.preventDefault();
+              e.stopPropagation();
+              PdvModule.ajustarDivisaoPagamento(1);
+              return;
+            }
+            if (e.key === "ArrowDown" || e.key === "-" || e.key === "Subtract") {
+              e.preventDefault();
+              e.stopPropagation();
+              PdvModule.ajustarDivisaoPagamento(-1);
+              return;
+            }
+            if (e.key === "Enter") {
+              e.preventDefault();
+              e.stopPropagation();
+              PdvModule.alterarDivisaoPagamento(pessoasInput.value);
+              const valorInput = document.getElementById("pag-valor-pago-input");
+              if (valorInput) {
+                valorInput.focus();
+                valorInput.select();
+              }
+              return;
+            }
+            if (e.key === "Escape") {
+              e.preventDefault();
+              e.stopPropagation();
+              const valorInput = document.getElementById("pag-valor-pago-input");
+              if (valorInput) {
+                valorInput.focus();
+                valorInput.select();
+              }
+              return;
+            }
           }
           if (e.key === "F1") {
             e.preventDefault();

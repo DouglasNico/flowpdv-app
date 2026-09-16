@@ -197,8 +197,8 @@ export const AtendimentoPdvModule = {
       }
       return;
     }
-    if (ComandasModule.comandaAtivaId !== c.id) ComandasModule.numPessoasDivisao = 1;
     ComandasModule.comandaAtivaId = c.id;
+    ComandasModule.numPessoasDivisao = Math.max(1, parseInt(c.numPessoas, 10) || 1);
     if (!c.itens || c.itens.length === 0) ComandasModule.toggleTaxaServico(c.id, true);
     this.mostrarOperacao();
     this.focarInput();
@@ -250,7 +250,7 @@ export const AtendimentoPdvModule = {
     setTxt('atend-qtd-itens', String(qtdItens));
     const taxa = c && c.taxaServico ? total * 0.10 : 0;
     const totalComServico = total + taxa;
-    const pessoas = ComandasModule.numPessoasDivisao || 1;
+    const pessoas = Math.max(1, parseInt((c && c.numPessoas) || ComandasModule.numPessoasDivisao, 10) || 1);
     setTxt('atend-total', totalComServico.toFixed(2).replace('.', ','));
     setTxt('atend-taxa-valor', 'R$ ' + taxa.toFixed(2).replace('.', ','));
     setTxt('atend-por-pessoa', 'R$ ' + (totalComServico / pessoas).toFixed(2).replace('.', ',') + ' / pessoa');

@@ -1051,6 +1051,7 @@ body.pdv-atendimento-ativo {
 .classic-pdv-table tbody {
   display: block;
   overflow-y: auto;
+  overflow-x: hidden;
   flex: 1;
   height: 100%;
   min-height: 0;
@@ -1098,6 +1099,38 @@ body.pdv-atendimento-ativo {
   text-align: right;
   font-weight: 800;
   color: #dc2626;
+  white-space: nowrap;
+}
+.classic-pdv-table tbody tr.classic-tr-taxa {
+  background: #ecfdf5;
+  border-bottom: 1.5px dashed #6ee7b7;
+}
+.classic-pdv-table tbody tr.classic-tr-taxa td {
+  color: #047857;
+  font-weight: 800;
+}
+.classic-pdv-table tbody tr.classic-tr-divisao {
+  grid-template-columns: minmax(0, 1fr);
+  background: #eff6ff;
+  border-bottom: none;
+}
+.classic-pdv-table tbody tr.classic-tr-divisao td.classic-divisao-cell {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  min-width: 0;
+  padding: 9px 12px;
+  font-weight: 800;
+  color: #1d4ed8;
+}
+.classic-pdv-table tbody tr.classic-tr-divisao td.classic-divisao-cell span {
+  min-width: 0;
+}
+.classic-pdv-table tbody tr.classic-tr-divisao td.classic-divisao-cell strong {
+  flex-shrink: 0;
+  font-family: 'JetBrains Mono', monospace;
   white-space: nowrap;
 }
 
@@ -4156,6 +4189,73 @@ body.pdv-atendimento-ativo {
   padding: 6px 14px;
   border-radius: 20px;
 }
+.pag-dividir-box {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e3a8a;
+}
+.pag-dividir-box .pag-dividir-kbd {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: auto;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #1d4ed8;
+}
+.pag-dividir-box kbd {
+  min-width: 22px;
+  padding: 2px 6px;
+  border: 1px solid #bfdbfe;
+  border-radius: 4px;
+  background: #fff;
+  color: #1d4ed8;
+  font: 800 11px 'Segoe UI', sans-serif;
+  text-align: center;
+}
+.pag-dividir-box input {
+  width: 64px;
+  height: 36px;
+  padding: 0 8px;
+  border: 1px solid #93c5fd;
+  border-radius: 8px;
+  background: #fff;
+  color: #0f172a;
+  font: 800 16px 'JetBrains Mono', monospace;
+  text-align: center;
+}
+.pag-dividir-box .pag-dividir-step {
+  width: 36px;
+  height: 36px;
+  border: 1px solid #93c5fd;
+  border-radius: 8px;
+  background: #fff;
+  color: #1d4ed8;
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+}
+.pag-dividir-box .pag-dividir-step:hover {
+  background: #dbeafe;
+}
+.pag-dividir-box strong {
+  margin-left: auto;
+  color: #1d4ed8;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 15px;
+}
 
 .payment-methods-grid {
   display: grid;
@@ -7202,7 +7302,7 @@ body.pdv-layout-classico .f2-btn-tag {
    2. MODAL F4: FINALIZAR VENDA / PAGAMENTO (#modal-pagamento)
    -------------------------------------------------------------------------- */
 body.pdv-layout-classico #modal-pagamento .modal-content-box {
-  max-width: 780px !important; /* Espaço amplo para cards lado a lado */
+  max-width: 860px !important;
   border-radius: 6px !important;
 }
 
@@ -7257,6 +7357,19 @@ body.pdv-layout-classico .payment-total-hero-badge {
 
 body.pdv-layout-classico #pag-total-lancado-mini {
   color: #64748b !important;
+}
+body.pdv-layout-classico .pag-dividir-box {
+  color: #1e3a8a;
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+body.pdv-layout-classico .pag-dividir-box input {
+  background: #fff;
+  border-color: #93c5fd;
+  color: #0f172a;
+}
+body.pdv-layout-classico .pag-dividir-box strong {
+  color: #1d4ed8;
 }
 
 body.pdv-layout-classico #pag-total-pago-display {

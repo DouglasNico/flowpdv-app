@@ -2898,7 +2898,7 @@
     <!-- MODAL: FINALIZAR VENDA / PAGAMENTO [F4]    -->
     <!-- ========================================== -->
     <div class="modal-overlay" id="modal-pagamento" style="z-index: 10400;">
-      <div class="modal-content-box" style="max-width: 680px;">
+      <div class="modal-content-box" style="max-width: 760px;">
         <div class="modal-header-bar">
           <div style="display: flex; align-items: center; gap: 10px;">
             <div class="payment-modal-icon-badge" style="font-size: 22px;">💳</div>
@@ -2931,6 +2931,15 @@
             <div id="pag-status-banner-box">
               <!-- Gerado dinamicamente: Vermelho se faltar, Verde se troco ou quitado -->
             </div>
+          </div>
+
+          <div class="pag-dividir-box" id="pag-dividir-box">
+            <span class="pag-dividir-kbd"><kbd>*</kbd> Dividir conta</span>
+            <button type="button" class="pag-dividir-step" onclick="PdvModule.ajustarDivisaoPagamento(-1)" tabindex="-1" aria-label="Menos pessoas">−</button>
+            <input id="pag-pessoas-input" type="number" min="1" step="1" value="1" inputmode="numeric" onchange="PdvModule.alterarDivisaoPagamento(this.value)" aria-label="Quantidade de pessoas">
+            <span>pessoas</span>
+            <button type="button" class="pag-dividir-step" onclick="PdvModule.ajustarDivisaoPagamento(1)" tabindex="-1" aria-label="Mais pessoas">+</button>
+            <strong id="pag-por-pessoa">R$ 0,00 / pessoa</strong>
           </div>
 
           <!-- LISTA DE PAGAMENTOS PARCIAIS LANÇADOS -->
