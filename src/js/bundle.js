@@ -69509,9 +69509,7 @@ NSU: ${nsu}`,
       const transferir = document.getElementById("atend-transferir-label");
       if (transferir && textos.transferir) transferir.textContent = textos.transferir;
       const preconta = document.getElementById("atend-preconta-sub");
-      if (preconta && textos.preconta) {
-        preconta.innerHTML = `${textos.preconta} <kbd>F4</kbd>`;
-      }
+      if (preconta && textos.preconta) preconta.textContent = textos.preconta;
       const atalhoF5 = document.getElementById("atend-atalho-f5");
       if (atalhoF5 && textos.atalhoF5) {
         atalhoF5.innerHTML = `<kbd>F5</kbd> ${textos.atalhoF5}`;
@@ -69612,7 +69610,7 @@ NSU: ${nsu}`,
       const c = this.comandaAtual();
       const status = document.getElementById("atend-status-text");
       if (status) {
-        status.textContent = c ? String(c.nome || "").toUpperCase() + (c.status === "fechando" ? " \xB7 EM CONFER\xCANCIA" : " ABERTA") : "DIGITE O N\xDAMERO";
+        status.textContent = c ? String(c.nome || "").toUpperCase() : "DIGITE O N\xDAMERO";
       }
       const tbody = document.getElementById("atend-itens-tbody");
       if (tbody) {
@@ -69656,6 +69654,19 @@ NSU: ${nsu}`,
       for (const id of ["atend-pre-conta", "atend-transferir"]) {
         const btn = document.getElementById(id);
         if (btn) btn.disabled = !c || !c.itens || c.itens.length === 0;
+      }
+      const itensPedido = c && Array.isArray(c.itens) ? c.itens : [];
+      const ultimo = [...itensPedido].reverse().find((it2) => it2 && it2.id !== "TAXA-SERVICO-10") || null;
+      if (ultimo) this.pintarItemAtual(ultimo, ultimo.quantidade);
+      else {
+        this.atualizarUltimoProduto(null);
+        const limpar = (id, v) => {
+          const el = document.getElementById(id);
+          if (el) el.textContent = v;
+        };
+        limpar("atend-codigo-barras", "");
+        limpar("atend-valor-unitario", "0,00");
+        limpar("atend-total-item", "0,00");
       }
     },
     dividirConta(valor) {
@@ -69748,6 +69759,19 @@ NSU: ${nsu}`,
       this.renderOperacao();
       this.focarInput();
     },
+    atualizarUltimoProduto(item) {
+      const box = document.getElementById("atend-ultimo-produto");
+      const nomeEl = document.getElementById("atend-ultimo-nome");
+      const qtdEl = document.getElementById("atend-ultimo-qtd");
+      const temItem = !!(item && item.nome);
+      if (nomeEl) nomeEl.textContent = temItem ? item.nome : "Aguardando leitura...";
+      let qtdTxt = "";
+      if (temItem) {
+        qtdTxt = window.PdvModule && typeof window.PdvModule.formatarQtdItem === "function" ? window.PdvModule.formatarQtdItem(item) : String(item.quantidade || "");
+      }
+      if (qtdEl) qtdEl.textContent = qtdTxt;
+      if (box) box.classList.toggle("is-empty", !temItem);
+    },
     adicionarProdutoPorId(id, isFardo) {
       const c = this.comandaAtual();
       if (!c) {
@@ -69768,10 +69792,13 @@ NSU: ${nsu}`,
         const el = document.getElementById(id);
         if (el) el.textContent = v;
       };
-      const preco = parseFloat(produto.precoVenda || produto.preco || 0);
-      set("atend-codigo-barras", produto.codigoBarras || produto.codigo || produto.id || "");
+      const preco = parseFloat(produto.precoVenda || produto.preco || produto.precoUnitario || 0);
+      const codigo = ComandasModule.codigoBarrasProduto && ComandasModule.codigoBarrasProduto(produto) || produto.codigoBarras || produto.codigo || produto.id || "";
+      const qtdNum = parseFloat(qtd != null ? qtd : produto.quantidade) || 1;
+      set("atend-codigo-barras", codigo);
       set("atend-valor-unitario", preco.toFixed(2).replace(".", ","));
-      set("atend-total-item", (preco * (parseFloat(qtd) || 1)).toFixed(2).replace(".", ","));
+      set("atend-total-item", (preco * qtdNum).toFixed(2).replace(".", ","));
+      this.atualizarUltimoProduto(Object.assign({}, produto, { quantidade: qtdNum }));
     },
     abrirModalExcluirItem() {
       const c = this.comandaAtual();

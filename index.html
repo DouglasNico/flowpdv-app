@@ -259,6 +259,7 @@
         <header class="classic-header">
             <div class="classic-logo-title">
               <img src="src/assets/logos/para-fundo-claro/FlowPDV-horizontal.png" alt="FlowPDV" class="classic-header-logo">
+              <span class="classic-brand-caption">Terminal de caixa</span>
             </div>
             <div class="classic-header-info">
               <span id="classic-clock">00:00:00</span>
@@ -268,6 +269,7 @@
               <button type="button" id="classic-btn-painel-gerente" class="classic-btn-admin" onclick="App.trocarAba('gerencia')" style="display: none;" title="Acessar Painel do Gerente / Administrador">
                 👔 Painel do Administrador
               </button>
+              <span class="classic-equip-tag">CAIXA</span>
             </div>
             <div class="classic-window-controls">
               <span onclick="App.solicitarFechamentoApp()" title="Fechar PDV [ESC/ALT+F4]">✕</span>
@@ -418,49 +420,56 @@
         </div>
 
         <div id="atend-operacao" class="atend-operacao" style="display: none;">
-          <div class="atend-account-actions" aria-label="Ações da conta">
-            <div class="atend-split-control">
-              <label for="atend-pessoas">Dividir conta <kbd>F3</kbd></label>
-              <div><input id="atend-pessoas" type="number" min="1" step="1" value="1" inputmode="numeric" onchange="AtendimentoPdvModule.dividirConta(this.value)" aria-label="Quantidade de pessoas"><span>pessoas</span><strong id="atend-por-pessoa">R$ 0,00 / pessoa</strong></div>
-            </div>
-            <button type="button" id="atend-pre-conta" onclick="AtendimentoPdvModule.imprimirPreConta()"><span>Imprimir pré-conta</span><small id="atend-preconta-sub">Total da mesa <kbd>F4</kbd></small></button>
-            <button type="button" id="atend-transferir" onclick="AtendimentoPdvModule.trocarMesa()"><span id="atend-transferir-label">Trocar mesa / comanda</span><small>Transferir os itens <kbd>F5</kbd></small></button>
-            <label class="atend-service-control"><span><input type="checkbox" id="atend-taxa-servico" onchange="AtendimentoPdvModule.alterarTaxa(this.checked)">Taxa de serviço · 10%</span><small><span id="atend-taxa-valor">R$ 0,00</span><kbd>F6</kbd></small></label>
-          </div>
           <div class="classic-main-content">
             <div class="classic-left-pane">
               <div class="classic-cart-img">
                 <img id="atend-client-logo" src="src/assets/logos/para-fundo-claro/FlowPDV-horizontal.png" alt="Logo Cliente" onerror="this.src='src/assets/logos/para-fundo-claro/FlowPDV-horizontal.png'">
               </div>
-              <div class="classic-input-group">
-                <label for="atend-barcode-input">CÓDIGO DE BARRAS</label>
-                <input type="text" id="atend-barcode-input" style="text-transform: uppercase;" autocomplete="off" placeholder="CÓDIGO DE BARRAS"><button type="button" class="atend-search-button" onclick="PdvModule.abrirBuscaProdutos()">Buscar · F2</button>
-              </div>
-              <div class="classic-field-box">
-                <label>VALOR UNITÁRIO</label>
-                <div class="classic-value">R$ <span id="atend-valor-unitario">0,00</span></div>
-              </div>
-              <div class="classic-field-box">
-                <label>TOTAL DO ITEM</label>
-                <div class="classic-value">R$ <span id="atend-total-item">0,00</span></div>
-              </div>
-              <div class="classic-field-box">
-                <label>CÓDIGO DO PRODUTO</label>
-                <div class="classic-value" id="atend-codigo-barras"></div>
-              </div>
-              <div class="classic-shortcuts">
-                <span><kbd>F2</kbd> Buscar produtos</span>
-                <span><kbd>F4</kbd> Imprimir pré-conta</span>
-                <span><kbd>F6</kbd> Taxa de serviço</span>
-                <span><kbd>ESC</kbd> Trocar atendimento</span>
-                <span><kbd>F3</kbd> Dividir conta</span>
-                <span id="atend-atalho-f5"><kbd>F5</kbd> Trocar mesa</span>
-                <span><kbd>DEL</kbd> Excluir item</span>
+              <div class="classic-ops-card">
+                <div class="classic-input-group">
+                  <label for="atend-barcode-input">CÓDIGO DE BARRAS</label>
+                  <div class="classic-barcode-row">
+                    <input type="text" id="atend-barcode-input" style="text-transform: uppercase;" autocomplete="off" placeholder="Bipar ou digitar código">
+                    <button type="button" class="atend-search-button" onclick="PdvModule.abrirBuscaProdutos()">Buscar · F2</button>
+                  </div>
+                </div>
+                <div class="classic-ops-info">
+                  <div class="classic-ops-block">
+                    <label>DESCRIÇÃO DO PRODUTO</label>
+                    <div class="classic-field-box classic-ultimo-produto is-empty" id="atend-ultimo-produto">
+                      <div class="classic-ultimo-nome" id="atend-ultimo-nome">Aguardando leitura...</div>
+                    </div>
+                  </div>
+                  <div class="classic-field-row classic-ops-meta">
+                    <div class="classic-ops-block">
+                      <label>QTD</label>
+                      <div class="classic-field-box">
+                        <div class="classic-value" id="atend-ultimo-qtd"></div>
+                      </div>
+                    </div>
+                    <div class="classic-ops-block">
+                      <label>CÓDIGO</label>
+                      <div class="classic-field-box classic-ops-codigo">
+                        <div class="classic-value" id="atend-codigo-barras"></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="classic-field-row">
+                    <div class="classic-field-box">
+                      <label>VALOR PRODUTO</label>
+                      <div class="classic-value">R$ <span id="atend-valor-unitario">0,00</span></div>
+                    </div>
+                    <div class="classic-field-box">
+                      <label>TOTAL DO ITEM</label>
+                      <div class="classic-value">R$ <span id="atend-total-item">0,00</span></div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
             <div class="classic-right-pane">
               <div class="classic-table-container">
-                <div class="classic-table-header"><span>Itens do pedido</span><button type="button" class="atend-switch" onclick="AtendimentoPdvModule.soltar()">Trocar atendimento <b>Esc</b></button></div>
+                <div class="classic-table-header">LISTA DE PRODUTOS</div>
                 <table class="classic-pdv-table">
                   <thead>
                     <tr>
@@ -474,27 +483,42 @@
                   </thead>
                   <tbody id="atend-itens-tbody"></tbody>
                 </table>
+                <div class="classic-totals-strip">
+                  <div class="classic-total-box subtotal">
+                    <label>SUBTOTAL</label>
+                    <div class="val" id="atend-subtotal">0,00</div>
+                  </div>
+                  <div class="classic-total-box sm">
+                    <label>QTD. ITENS</label>
+                    <div class="val"><span id="atend-qtd-itens">0</span></div>
+                  </div>
+                  <div class="classic-total-box sm total">
+                    <label>TOTAL</label>
+                    <div class="val">R$ <span id="atend-total">0,00</span></div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
+          <div class="atend-account-actions" aria-label="Ações da conta">
+            <div class="atend-split-control">
+              <kbd>F3</kbd>
+              <label for="atend-pessoas">Dividir conta</label>
+              <div><input id="atend-pessoas" type="number" min="1" step="1" value="1" inputmode="numeric" onchange="AtendimentoPdvModule.dividirConta(this.value)" aria-label="Quantidade de pessoas"><span>pessoas</span><strong id="atend-por-pessoa">R$ 0,00 / pessoa</strong></div>
+            </div>
+            <button type="button" id="atend-pre-conta" onclick="AtendimentoPdvModule.imprimirPreConta()"><kbd>F4</kbd><span>Imprimir pré-conta</span><small id="atend-preconta-sub">Total da mesa</small></button>
+            <button type="button" id="atend-transferir" onclick="AtendimentoPdvModule.trocarMesa()"><kbd>F5</kbd><span id="atend-transferir-label">Trocar mesa / comanda</span><small>Transferir os itens</small></button>
+            <label class="atend-service-control"><kbd>F6</kbd><span><input type="checkbox" id="atend-taxa-servico" onchange="AtendimentoPdvModule.alterarTaxa(this.checked)">Taxa de serviço · 10%</span><small><span id="atend-taxa-valor">R$ 0,00</span></small></label>
+          </div>
           <div class="classic-bottom-panel">
-            <div class="classic-bottom-right">
-              <div class="classic-totals-row">
-                <div class="classic-total-box subtotal">
-                  <label>SUBTOTAL</label>
-                  <div class="val" id="atend-subtotal">0,00</div>
-                </div>
-              </div>
-              <div class="classic-totals-row split">
-                <div class="classic-total-box sm">
-                  <label>QTD. ITENS</label>
-                  <div class="val"><span id="atend-qtd-itens">0</span></div>
-                </div>
-                <div class="classic-total-box sm">
-                  <label>TOTAL</label>
-                  <div class="val">R$ <span id="atend-total">0,00</span></div>
-                </div>
-              </div>
+            <div class="classic-shortcuts-bar" aria-label="Atalhos">
+              <span><kbd>F2</kbd> Buscar produtos</span>
+              <span><kbd>F3</kbd> Dividir conta</span>
+              <span><kbd>F4</kbd> Imprimir pré-conta</span>
+              <span id="atend-atalho-f5"><kbd>F5</kbd> Trocar mesa</span>
+              <span><kbd>F6</kbd> Taxa de serviço</span>
+              <span><kbd>DEL</kbd> Excluir item</span>
+              <span><kbd>ESC</kbd> Trocar atendimento</span>
             </div>
           </div>
         </div>

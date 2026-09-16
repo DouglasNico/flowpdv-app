@@ -385,6 +385,9 @@ body {
   inset: 0;
   width: auto;
   height: auto;
+  min-width: 1100px;
+  min-height: 720px;
+  overflow: auto;
   z-index: 51;
   background: #e2e8f0;
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -637,6 +640,83 @@ body.pdv-atendimento-ativo {
   width: auto;
   object-fit: contain;
   display: block;
+}
+#classic-pdv-shell .classic-header {
+  min-height: 76px;
+  padding: 14px 30px;
+  gap: 20px;
+  border-bottom: 1px solid #dfe7ee;
+  box-shadow: none;
+  flex-shrink: 0;
+}
+#classic-pdv-shell .classic-header-logo {
+  width: 142px;
+  height: 38px;
+  max-height: 38px;
+}
+#classic-pdv-shell .classic-logo-title {
+  gap: 22px;
+}
+#classic-pdv-shell .classic-brand-caption {
+  border-left: 1px solid #dfe7ee;
+  padding-left: 22px;
+  color: #65758a;
+  font-size: 13px;
+  font-weight: 600;
+}
+#classic-pdv-shell .classic-header-info {
+  margin-left: auto;
+  gap: 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #65758a;
+}
+#classic-pdv-shell #classic-clock {
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+  font-size: 15px;
+  font-weight: 600;
+  color: #172b45;
+  background: none;
+  border: 0;
+  padding: 0;
+  border-radius: 0;
+}
+#classic-pdv-shell #classic-btn-trocar-operador {
+  background: #fff;
+  border: 1px solid #dfe7ee;
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: #172b45;
+  font-size: 12px;
+  font-weight: 600;
+}
+#classic-pdv-shell #classic-btn-trocar-operador:hover {
+  background: #f8fafc;
+  border-color: #cad8df;
+}
+#classic-pdv-shell .classic-equip-tag {
+  color: #08735e;
+  background: #e8f5ef;
+  border: 0;
+  border-radius: 20px;
+  padding: 7px 11px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+#classic-pdv-shell .classic-window-controls span {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  font-size: 18px;
+}
+@media (max-width: 1100px) {
+  #classic-pdv-shell .classic-brand-caption,
+  #classic-pdv-shell .classic-equip-tag {
+    display: none;
+  }
 }
 .classic-window-controls {
   display: flex;
