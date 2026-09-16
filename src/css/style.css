@@ -367,6 +367,9 @@ body {
   inset: 0;
   width: auto;
   height: auto;
+  min-width: 1100px;
+  min-height: 720px;
+  overflow: auto;
   z-index: 50;
   background: #e2e8f0;
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -706,6 +709,12 @@ body.pdv-atendimento-ativo {
   min-height: 0;
   overflow: hidden;
 }
+#classic-pdv-shell .classic-left-pane {
+  width: 580px;
+  min-width: 480px;
+  max-width: 580px;
+  flex: 0 1 580px;
+}
 .classic-cart-img {
   background: #ffffff;
   border: 1.5px solid #cbd5e1;
@@ -742,7 +751,7 @@ body.pdv-atendimento-ativo {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: space-evenly;
   gap: 0;
   padding: 16px;
   background: #ffffff;
@@ -750,13 +759,8 @@ body.pdv-atendimento-ativo {
   border-radius: 10px;
   box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
 }
-#classic-pdv-shell .classic-ops-card > * {
-  padding: 0;
-}
-#classic-pdv-shell .classic-ops-card > * + * {
-  border-top: 1px dashed #cbd5e1;
-  margin-top: 16px;
-  padding-top: 16px;
+#classic-pdv-shell .classic-ops-info {
+  display: contents;
 }
 #classic-pdv-shell .classic-ops-card .classic-field-row {
   flex: none;
@@ -799,25 +803,31 @@ body.pdv-atendimento-ativo {
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
-#classic-pdv-shell .classic-ops-card .classic-ops-codigo {
-  flex: none;
-  flex-direction: row;
+#classic-pdv-shell .classic-ops-card .classic-ops-meta {
+  min-height: 0;
+  grid-template-columns: 0.7fr 1.3fr;
+  display: grid;
+  gap: 14px;
+}
+#classic-pdv-shell .classic-ops-card .classic-ops-meta .classic-ops-block {
+  min-width: 0;
+}
+#classic-pdv-shell .classic-ops-card .classic-ops-meta .classic-field-box {
+  display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0;
   min-height: 64px;
-  max-height: none;
-  padding: 14px 16px;
+  padding: 12px 14px;
 }
-#classic-pdv-shell .classic-ops-card .classic-ops-codigo .classic-value {
-  flex: 1;
-  font-size: 22px;
+#classic-pdv-shell .classic-ops-card .classic-ops-meta .classic-value {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
   min-height: 0;
-  margin-top: 0;
   text-align: center;
-  font-weight: 800;
-  line-height: 1.2;
-  overflow-wrap: anywhere;
+  font-size: 20px;
 }
 #classic-pdv-shell .classic-ops-card .classic-ultimo-produto {
   flex: none;
@@ -1067,13 +1077,15 @@ body.pdv-atendimento-ativo {
   box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.2);
 }
 #classic-pdv-shell .classic-ops-card .classic-input-group {
+  flex: 0 0 auto;
   flex-direction: column;
   align-items: stretch;
   align-content: stretch;
+  justify-content: flex-start;
   flex-wrap: nowrap;
   gap: 6px;
   padding: 0;
-  flex-shrink: 0;
+  min-height: 0;
   background: transparent;
   border: 0;
   box-shadow: none;
@@ -1090,14 +1102,16 @@ body.pdv-atendimento-ativo {
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
   min-width: 0;
 }
 #classic-pdv-shell .classic-ops-card .classic-input-group input {
-  flex: 1;
+  flex: 1 1 auto;
   width: auto;
-  height: 52px;
+  min-width: 0;
+  height: 64px;
   font-family: inherit;
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 500;
   border: 1px solid #cad8df;
   background: #ffffff;
@@ -1113,7 +1127,7 @@ body.pdv-atendimento-ativo {
   color: #94a3b8;
 }
 #classic-pdv-shell .classic-search-button {
-  height: 52px;
+  height: 64px;
   padding: 0 15px;
   border: 0;
   border-radius: 8px;
@@ -1151,17 +1165,18 @@ body.pdv-atendimento-ativo {
   border-radius: 0;
   box-shadow: none;
   padding: 14px 22px 16px;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 4px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 #classic-pdv-shell .classic-totals-strip .classic-total-box + .classic-total-box {
   border-left: 1px solid #e2e8f0;
 }
 #classic-pdv-shell .classic-totals-strip .classic-total-box label {
-  align-self: flex-start;
+  align-self: auto;
   margin: 0;
+  flex: 0 1 auto;
   font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.06em;
@@ -1172,21 +1187,24 @@ body.pdv-atendimento-ativo {
   font-weight: 800;
   line-height: 1.1;
   color: #0f172a;
+  text-align: right;
+  white-space: nowrap;
+  margin-left: auto;
 }
 #classic-pdv-shell .classic-totals-strip .classic-total-box.subtotal {
   width: auto;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
 }
 #classic-pdv-shell .classic-totals-strip .classic-total-box.subtotal .val {
   font-size: 26px;
 }
 #classic-pdv-shell .classic-totals-strip .classic-total-box.sm {
   flex: none;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
 }
 #classic-pdv-shell .classic-totals-strip .classic-total-box.total {
   border-left: 3px solid #087f68;
@@ -1259,6 +1277,98 @@ body.pdv-atendimento-ativo {
   }
   #classic-pdv-shell .classic-shortcuts-bar span {
     flex: 0 1 auto;
+  }
+  #classic-pdv-shell .classic-left-pane {
+    width: 500px;
+    flex-basis: 500px;
+  }
+}
+@media (max-width: 1280px) {
+  #classic-pdv-shell .classic-left-pane {
+    width: 480px;
+    flex-basis: 480px;
+  }
+}
+@media (max-height: 900px) {
+  #classic-pdv-shell .classic-status-bar {
+    padding: 12px 0;
+  }
+  #classic-pdv-shell .classic-status-bar h2 {
+    font-size: 28px;
+  }
+  #classic-pdv-shell .classic-main-content {
+    padding: 10px 14px;
+    gap: 12px;
+  }
+  #classic-pdv-shell .classic-cart-img {
+    max-height: 180px;
+    min-height: 96px;
+  }
+  #classic-pdv-shell .classic-ops-card {
+    padding: 12px;
+  }
+  #classic-pdv-shell .classic-ops-card .classic-field-row {
+    min-height: 72px;
+  }
+  #classic-pdv-shell .classic-ops-card .classic-field-row .classic-field-box {
+    min-height: 72px;
+    padding: 10px 12px;
+  }
+  #classic-pdv-shell .classic-ops-card .classic-input-group input,
+  #classic-pdv-shell .classic-search-button {
+    height: 52px;
+  }
+  #classic-pdv-shell .classic-ops-card .classic-ultimo-produto {
+    min-height: 56px;
+    padding: 10px 14px;
+  }
+  #classic-pdv-shell .classic-ops-card .classic-ops-meta .classic-field-box {
+    min-height: 52px;
+  }
+  #classic-pdv-shell .classic-totals-strip {
+    min-height: 72px;
+  }
+  #classic-pdv-shell .classic-totals-strip .classic-total-box {
+    padding: 10px 16px 12px;
+  }
+  #classic-pdv-shell .classic-totals-strip .classic-total-box .val,
+  #classic-pdv-shell .classic-totals-strip .classic-total-box.subtotal .val {
+    font-size: 22px;
+  }
+  #classic-pdv-shell .classic-totals-strip .classic-total-box.total .val,
+  #classic-pdv-shell .classic-totals-strip .classic-total-box.sm:last-child .val {
+    font-size: 26px !important;
+  }
+}
+@media (max-height: 760px) {
+  #classic-pdv-shell .classic-status-bar {
+    padding: 8px 0;
+  }
+  #classic-pdv-shell .classic-status-bar h2 {
+    font-size: 22px;
+    letter-spacing: 2px;
+  }
+  #classic-pdv-shell .classic-cart-img {
+    max-height: 120px;
+    min-height: 72px;
+  }
+  #classic-pdv-shell .classic-ops-card .classic-field-row {
+    min-height: 64px;
+  }
+  #classic-pdv-shell .classic-ops-card .classic-field-row .classic-field-box {
+    min-height: 64px;
+    padding: 8px 10px;
+  }
+  #classic-pdv-shell .classic-ops-card .classic-field-row .classic-value {
+    font-size: 24px;
+  }
+  #classic-pdv-shell .classic-bottom-panel {
+    padding: 0 14px 12px 14px;
+  }
+  #classic-pdv-shell .classic-shortcuts-bar {
+    min-height: 40px;
+    padding: 6px 10px;
+    font-size: 12px;
   }
 }
 .classic-shortcuts {

@@ -95,8 +95,8 @@ if (!gotTheLock) {
     const windowConfig = {
       width: 1440,
       height: 900,
-      minWidth: 1024,
-      minHeight: 700,
+      minWidth: 1100,
+      minHeight: 720,
       title: 'FlowPDV — Sistema de Frente de Caixa e Gestão Comercial',
       webPreferences: {
         preload: path.join(__dirname, 'preload.js'),

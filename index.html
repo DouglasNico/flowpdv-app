@@ -291,9 +291,30 @@
                   <button type="button" class="classic-search-button" onclick="PdvModule.abrirBuscaProdutos()">Buscar · F2</button>
                 </div>
               </div>
+              <div class="classic-ops-info">
+              <div class="classic-ops-block">
+                <label>DESCRIÇÃO DO PRODUTO</label>
+                <div class="classic-field-box classic-ultimo-produto is-empty" id="classic-ultimo-produto">
+                  <div class="classic-ultimo-nome" id="classic-ultimo-nome">Aguardando leitura...</div>
+                </div>
+              </div>
+              <div class="classic-field-row classic-ops-meta">
+                <div class="classic-ops-block">
+                  <label>QTD</label>
+                  <div class="classic-field-box">
+                    <div class="classic-value" id="classic-ultimo-qtd"></div>
+                  </div>
+                </div>
+                <div class="classic-ops-block">
+                  <label>CÓDIGO</label>
+                  <div class="classic-field-box classic-ops-codigo">
+                    <div class="classic-value" id="classic-codigo-barras"></div>
+                  </div>
+                </div>
+              </div>
               <div class="classic-field-row">
                 <div class="classic-field-box">
-                  <label>VALOR UNITÁRIO</label>
+                  <label>VALOR PRODUTO</label>
                   <div class="classic-value">R$ <span id="classic-valor-unitario">0,00</span></div>
                 </div>
                 <div class="classic-field-box">
@@ -301,18 +322,6 @@
                   <div class="classic-value">R$ <span id="classic-total-item">0,00</span></div>
                 </div>
               </div>
-              <div class="classic-ops-block">
-                <label>CÓDIGO DO PRODUTO</label>
-                <div class="classic-field-box classic-ops-codigo">
-                  <div class="classic-value" id="classic-codigo-barras"></div>
-                </div>
-              </div>
-              <div class="classic-ops-block">
-                <label>ÚLTIMO PRODUTO</label>
-                <div class="classic-field-box classic-ultimo-produto is-empty" id="classic-ultimo-produto">
-                  <div class="classic-ultimo-nome" id="classic-ultimo-nome">Aguardando leitura...</div>
-                  <div class="classic-ultimo-qtd" id="classic-ultimo-qtd"></div>
-                </div>
               </div>
             </div>
           </div>
