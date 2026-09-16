@@ -4132,12 +4132,18 @@ body.pdv-atendimento-ativo {
 /* ==========================================================================
    MODAL DE PAGAMENTO & FINALIZAR VENDA [F4]
    ========================================================================== */
+#modal-pagamento.modal-overlay {
+  padding: 2.5vh 16px;
+}
+
 #modal-pagamento .modal-content-box {
   border-radius: var(--radius-xl);
   border: 1px solid var(--border-card);
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
   background: #ffffff;
-  max-height: calc(100vh - 16px);
+  width: 860px;
+  max-width: calc(100vw - 32px);
+  max-height: 95vh;
   display: flex;
   flex-direction: column;
 }
@@ -7350,9 +7356,10 @@ body.pdv-layout-classico .f2-btn-tag {
    2. MODAL F4: FINALIZAR VENDA / PAGAMENTO (#modal-pagamento)
    -------------------------------------------------------------------------- */
 body.pdv-layout-classico #modal-pagamento .modal-content-box {
-  max-width: 860px !important;
+  width: 860px !important;
+  max-width: calc(100vw - 32px) !important;
   border-radius: 6px !important;
-  max-height: calc(100vh - 16px);
+  max-height: 95vh !important;
 }
 
 /* Topo Resumo: Total da Venda e Falta Pagar Lado a Lado */
@@ -7580,77 +7587,12 @@ body.pdv-layout-classico #modal-pagamento button[onclick*="fecharModalPagamento"
   font-weight: 800 !important;
 }
 
-@media (max-height: 820px) {
-  #modal-pagamento .modal-header-bar {
-    padding: 8px 16px;
-  }
-  #modal-pagamento .modal-header-bar h3 {
-    font-size: 15px !important;
-  }
-  #modal-pagamento .payment-modal-icon-badge {
-    width: 32px;
-    height: 32px;
-    font-size: 18px !important;
-  }
-  #modal-pagamento .modal-body-content {
-    padding: 10px 16px !important;
-  }
-  #modal-pagamento .payment-top-summary-grid {
-    gap: 8px !important;
-    margin-bottom: 8px !important;
-  }
-  body.pdv-layout-classico .payment-total-hero,
-  .payment-top-summary-grid #pag-status-banner-box > div {
-    padding: 8px 12px !important;
-  }
-  body.pdv-layout-classico .payment-total-hero-val {
-    font-size: 22px !important;
-  }
-  #modal-pagamento .pag-dividir-box {
-    margin-bottom: 8px;
-    padding: 6px 10px;
-    gap: 8px;
-  }
-  #modal-pagamento .pag-dividir-box input,
-  #modal-pagamento .pag-dividir-box .pag-dividir-step {
-    height: 30px;
-  }
-  #modal-pagamento .pag-dividir-box .pag-dividir-step {
-    width: 30px;
-    font-size: 16px;
-  }
-  #modal-pagamento .form-label-custom {
-    margin-bottom: 4px !important;
-  }
-  #modal-pagamento .modal-body-content > div:has(.payment-methods-grid) {
-    margin-bottom: 8px !important;
-  }
-  #modal-pagamento #pag-contexto-detalhe {
-    margin-top: 6px !important;
-  }
-  body.pdv-layout-classico .forma-pag-card,
-  #modal-pagamento .forma-pag-card {
-    padding: 7px 4px 6px !important;
-  }
-  #modal-pagamento .forma-pag-icon {
-    font-size: 18px;
-  }
-  #modal-pagamento #pag-box-entrada-valor {
-    padding: 8px 12px !important;
-    margin-bottom: 8px !important;
-  }
-  #modal-pagamento #pag-valor-pago-input,
-  #modal-pagamento #btn-lancar-valor-enter {
-    height: 40px !important;
-    font-size: 20px !important;
-  }
-  .pag-modal-footer {
-    padding: 8px 16px 10px;
-  }
-  #btn-voltar-pagamento-modal,
-  #btn-confirmar-pagamento-modal {
-    height: 38px !important;
-    font-size: 13px !important;
+@media (max-width: 1400px), (max-height: 900px) {
+  #modal-pagamento .modal-content-box,
+  body.pdv-layout-classico #modal-pagamento .modal-content-box {
+    width: 860px !important;
+    max-width: calc(100vw - 32px) !important;
+    max-height: 95vh !important;
   }
 }
 

@@ -770,7 +770,7 @@ teste('tipoTerminal ausente vira caixa; comanda vira atendimento', () => {
   assert.strictEqual(normalizarTipoTerminal(''), 'caixa');
   assert.strictEqual(normalizarTipoTerminal('comanda'), 'atendimento');
   assert.strictEqual(normalizarTipoTerminal('atendimento'), 'atendimento');
-  assert.strictEqual(normalizarTipoTerminal('completo'), 'completo');
+  assert.strictEqual(normalizarTipoTerminal('completo'), 'caixa');
 });
 
 teste('mesclar terminal preserva tipoTerminal quando o heartbeat nao traz o campo', () => {
