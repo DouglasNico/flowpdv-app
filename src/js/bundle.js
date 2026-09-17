@@ -26098,9 +26098,14 @@
       if (c.includes("gelo")) return "\u{1F9CA}";
       if (c.includes("carv")) return "\u{1F525}";
       if (c.includes("tabac") || c.includes("cigar") || c.includes("ess\xEAnc") || c.includes("essenc") || c.includes("seda") || c.includes("pod") || c.includes("vape") || c.includes("narguil")) return "\u{1F6AC}";
-      if (c.includes("petisc") || c.includes("snack") || c.includes("salgad") || c.includes("amendo") || c.includes("batata") || c.includes("pringle") || c.includes("dorito") || c.includes("ruffle")) return "\u{1F95C}";
+      if (c.includes("lanche") || c.includes("sandu") || c.includes("burger") || c.includes("hambur")) return "\u{1F354}";
+      if (c.includes("pizza")) return "\u{1F355}";
+      if (c.includes("por\xE7") || c.includes("porc") || c.includes("petisc")) return "\u{1F35F}";
+      if (c.includes("sobremes") || c.includes("sorvete") || c.includes("a\xE7a\xED") || c.includes("acai")) return "\u{1F370}";
+      if (c.includes("adicion") || c.includes("extra") || c.includes("complem")) return "\u{1F953}";
+      if (c.includes("snack") || c.includes("salgad") || c.includes("amendo") || c.includes("batata") || c.includes("pringle") || c.includes("dorito") || c.includes("ruffle")) return "\u{1F95C}";
       if (c.includes("bomboniere") || c.includes("chocolat") || c.includes("doce") || c.includes("bala") || c.includes("chicle")) return "\u{1F36C}";
-      if (c.includes("combo") || c.includes("kit") || c.includes("promo")) return "\u26A1";
+      if (c.includes("combo") || c.includes("kit") || c.includes("promo")) return "\u{1F371}";
       if (c.includes("aliment") || c.includes("arroz") || c.includes("feij\xE3o") || c.includes("massa") || c.includes("mercear")) return "\u{1F33E}";
       if (c.includes("carn") || c.includes("a\xE7ougu") || c.includes("acougu") || c.includes("frango") || c.includes("peix") || c.includes("churr")) return "\u{1F969}";
       if (c.includes("latic") || c.includes("queij") || c.includes("leite") || c.includes("frio") || c.includes("presunt")) return "\u{1F9C0}";
@@ -50894,6 +50899,7 @@ This typically indicates that your device does not have a healthy Internet conne
         input.addEventListener("keydown", (e) => {
           if (e.key === "Enter") {
             e.preventDefault();
+            e.stopPropagation();
             const valor = input.value.trim();
             if (!valor) return;
             this.ignorarProximoEnterGlobal = true;
@@ -51286,6 +51292,9 @@ This typically indicates that your device does not have a healthy Internet conne
           this.tocarSomBeep(false);
           const dataFormatada = dataVal.toLocaleDateString("pt-BR");
           const diasVencido = Math.abs(diffDias);
+          if (window.App && typeof window.App.showToast === "function") {
+            window.App.showToast(`\u{1F6A8} "${produto.nome}" est\xE1 vencido desde ${dataFormatada}. Venda bloqueada.`, "error");
+          }
           if (window.App && typeof window.App.confirmarAcao === "function") {
             window.App.confirmarAcao({
               titulo: "\u{1F6A8} PRODUTO COM VALIDADE VENCIDA!",
@@ -51307,7 +51316,7 @@ This typically indicates that your device does not have a healthy Internet conne
 Venda bloqueada no PDV!`);
             this.focarInputLeitor();
           }
-          return;
+          return false;
         }
       }
       const itemExistente = this.carrinho.find((i) => i.id === produto.id && i.isFardo === isFardo);
@@ -52397,8 +52406,8 @@ Venda bloqueada no PDV!`);
           window.BalancaModule.abrirLeituraBalanca(p);
           return;
         }
-        this.adicionarAoCarrinho(p, 1, isFardo, "busca");
-        this.tocarSomBeep(true);
+        const ok = this.adicionarAoCarrinho(p, 1, isFardo, "busca");
+        if (ok !== false) this.tocarSomBeep(true);
       }
     },
     formaPagamentoSelecionada: "Dinheiro",
@@ -55986,10 +55995,12 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
           codBarras = (codBarras || "").trim().toUpperCase();
           const custoNum = this.parseValorMonetario(precoCusto);
           const vendaNum = this.parseValorMonetario(precoVenda);
-          const estNum = parseFloat(String(estoque || "").replace(",", "."));
-          const estValido = isNaN(estNum) ? 0 : Math.round(estNum * 1e3) / 1e3;
+          const estoqueBruto = String(estoque ?? "").trim();
+          const semControleEstoque = estoqueBruto === "";
+          const estNum = parseFloat(estoqueBruto.replace(",", "."));
+          const estValido = semControleEstoque || isNaN(estNum) ? 0 : Math.round(estNum * 1e3) / 1e3;
           const minNum = parseFloat(String(estoqueMinimo || "").replace(",", "."));
-          const minValido = isNaN(minNum) ? 5 : Math.round(minNum * 1e3) / 1e3;
+          const minValido = semControleEstoque ? 0 : isNaN(minNum) ? 5 : Math.round(minNum * 1e3) / 1e3;
           const nomeFardo = (unidadeFracionada || "").trim();
           const fatorNum = parseInt(fatorConversao, 10);
           const fatorValido = !isNaN(fatorNum) && fatorNum >= 2 ? fatorNum : null;
@@ -56012,7 +56023,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
             precoVenda: vendaNum,
             estoque: estValido,
             estoqueMinimo: minValido,
-            controlarEstoque: true,
+            controlarEstoque: !semControleEstoque,
             unidadeMedida: "UN",
             tipoProduto: "unidade",
             unidadeFracionada: temGrade ? nomeFardo || (fatorValido ? `Fardo c/ ${fatorValido}` : "Fardo") : existente?.unidadeFracionada || null,
@@ -56112,11 +56123,12 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
             novasCategoriasSet.add(p.categoria);
           }
           const { isNovo, originalId, ...dadosProduto } = p;
-          const estoqueNovo = parseFloat(dadosProduto.estoque) || 0;
+          const controlaEstoque = p.controlarEstoque !== false;
+          const estoqueNovo = controlaEstoque ? parseFloat(dadosProduto.estoque) || 0 : 0;
           if (mapaProdutos.has(p.id)) {
             const anterior = mapaProdutos.get(p.id);
             const estoqueAntes = parseFloat(anterior.estoque) || 0;
-            if (estoqueNovo !== estoqueAntes) {
+            if (controlaEstoque && estoqueNovo !== estoqueAntes) {
               StorageService.registrarMovimentoEstoque({
                 produtoId: p.id,
                 delta: estoqueNovo - estoqueAntes,
@@ -56128,6 +56140,7 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
             mapaProdutos.set(p.id, {
               ...anterior,
               ...dadosProduto,
+              controlarEstoque: controlaEstoque,
               estoque: estoqueNovo,
               precoCusto: p.precoCusto,
               precoVenda: p.precoVenda,
@@ -56140,8 +56153,8 @@ Deseja editar este produto e ativar o controle de estoque?`)) {
             });
             atualizadosQtd++;
           } else {
-            mapaProdutos.set(p.id, { ...dadosProduto, estoque: estoqueNovo });
-            if (estoqueNovo > 0) {
+            mapaProdutos.set(p.id, { ...dadosProduto, controlarEstoque: controlaEstoque, estoque: estoqueNovo });
+            if (controlaEstoque && estoqueNovo > 0) {
               StorageService.registrarMovimentoEstoque({
                 produtoId: p.id,
                 delta: estoqueNovo,
@@ -59427,7 +59440,9 @@ ${base}`;
           if (localLic.logoUrl) config.logoUrl = localLic.logoUrl;
           StorageService.saveConfig(config);
           if (window.App && typeof window.App.carregarConfiguracoes === "function") {
-            window.App.carregarConfiguracoes();
+            const modalLoja = document.getElementById("modal-editar-config-loja");
+            const editandoLoja = modalLoja && modalLoja.style.display === "flex";
+            if (!editandoLoja) window.App.carregarConfiguracoes();
           }
           const isAuth = this.validarTerminalDispositivo(cloudData, docIdFound);
           this.verificarStatusLicenca();
@@ -69544,6 +69559,7 @@ NSU: ${nsu}`,
         codInput.addEventListener("keydown", (e) => {
           if (e.key === "Enter") {
             e.preventDefault();
+            e.stopPropagation();
             const valor = String(codInput.value || "").trim();
             codInput.value = "";
             this.lancarCodigo(valor);
@@ -70440,6 +70456,11 @@ NSU: ${nsu}`,
         }
         const modalConfirmacaoCustom = document.getElementById("modal-confirmacao-custom");
         if (modalConfirmacaoCustom && modalConfirmacaoCustom.style.display === "flex") {
+          if (Date.now() - (this._confirmacaoAbertaEm || 0) < 400) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
           if (e.key === "Enter") {
             e.preventDefault();
             const btnAcao = document.getElementById("modal-confirm-btn-acao");
@@ -71070,18 +71091,23 @@ NSU: ${nsu}`,
           span.textContent = "\u{1F465} Clientes";
         }
       }
-      const modalNome = document.getElementById("cfg-modal-nome-empresa");
-      const modalCnpj = document.getElementById("cfg-modal-cnpj");
-      const modalTel = document.getElementById("cfg-modal-telefone");
-      const modalPix = document.getElementById("cfg-modal-chave-pix");
-      const modalCidade = document.getElementById("cfg-modal-cidade");
-      const modalImp = document.getElementById("cfg-modal-impressora");
-      if (modalNome) modalNome.value = nomeEmpresa;
-      if (modalCnpj) modalCnpj.value = cnpjEmpresa;
-      if (modalTel) modalTel.value = cfg.telefone || "";
-      if (modalPix) modalPix.value = cfg.chavePix || "";
-      if (modalCidade) modalCidade.value = cfg.cidade || "";
-      if (modalImp) modalImp.value = cfg.impressora || "Nenhuma";
+      const modalLoja = document.getElementById("modal-editar-config-loja");
+      const editandoLoja = modalLoja && modalLoja.style.display === "flex";
+      const focoNoModalLoja = document.activeElement && String(document.activeElement.id || "").startsWith("cfg-modal-");
+      if (!editandoLoja && !focoNoModalLoja) {
+        const modalNome = document.getElementById("cfg-modal-nome-empresa");
+        const modalCnpj = document.getElementById("cfg-modal-cnpj");
+        const modalTel = document.getElementById("cfg-modal-telefone");
+        const modalPix = document.getElementById("cfg-modal-chave-pix");
+        const modalCidade = document.getElementById("cfg-modal-cidade");
+        const modalImp = document.getElementById("cfg-modal-impressora");
+        if (modalNome) modalNome.value = nomeEmpresa;
+        if (modalCnpj) modalCnpj.value = cnpjEmpresa;
+        if (modalTel) modalTel.value = cfg.telefone || "";
+        if (modalPix) modalPix.value = cfg.chavePix || "";
+        if (modalCidade) modalCidade.value = cfg.cidade || "";
+        if (modalImp) modalImp.value = cfg.impressora || "Nenhuma";
+      }
       const licBadgeEl = document.getElementById("cfg-license-key-badge");
       const licStatusEl = document.getElementById("cfg-license-status-text");
       const badgeEl = document.getElementById("cfg-current-version-badge");
@@ -71366,7 +71392,7 @@ NSU: ${nsu}`,
       const msgFinal = mensagem || message || "";
       const iconeFinal = icon || icone;
       const txtConfirmarFinal = textoConfirmar || confirmText || (perigo ? "\u{1F5D1}\uFE0F Sim, Excluir [ENTER]" : "\u2705 Confirmar [ENTER]");
-      const txtCancelarFinal = textoCancelar || cancelText || "Cancelar [ESC]";
+      const txtCancelarFinal = textoCancelar !== void 0 && textoCancelar !== null ? cancelText || textoCancelar : cancelText || "Cancelar [ESC]";
       const corBtn = corConfirmar || confirmColor;
       const modal = document.getElementById("modal-confirmacao-custom");
       const iconeEl = document.getElementById("modal-confirm-icone");
@@ -71396,7 +71422,10 @@ NSU: ${nsu}`,
       }
       if (tituloEl) tituloEl.textContent = titFinal;
       if (msgEl) msgEl.innerHTML = msgFinal;
-      if (btnCancelar) btnCancelar.textContent = txtCancelarFinal;
+      if (btnCancelar) {
+        btnCancelar.textContent = txtCancelarFinal || "Cancelar [ESC]";
+        btnCancelar.style.display = txtCancelarFinal ? "" : "none";
+      }
       if (btnAcao) {
         btnAcao.textContent = txtConfirmarFinal;
         if (corBtn) {
@@ -71412,31 +71441,48 @@ NSU: ${nsu}`,
         };
       }
       modal.style.display = "flex";
+      this._confirmacaoAbertaEm = Date.now();
+      if (this._handleKeyConfirm) {
+        window.removeEventListener("keydown", this._handleKeyConfirm);
+        this._handleKeyConfirm = null;
+      }
       const handleKeyConfirm = (e) => {
         if (modal.style.display !== "flex") {
           window.removeEventListener("keydown", handleKeyConfirm);
+          if (this._handleKeyConfirm === handleKeyConfirm) this._handleKeyConfirm = null;
           return;
         }
         if (e.key === "Enter") {
           e.preventDefault();
           e.stopPropagation();
           window.removeEventListener("keydown", handleKeyConfirm);
+          if (this._handleKeyConfirm === handleKeyConfirm) this._handleKeyConfirm = null;
           this.fecharModalConfirmacao();
           if (typeof onConfirm === "function") onConfirm();
         } else if (e.key === "Escape") {
           e.preventDefault();
           e.stopPropagation();
           window.removeEventListener("keydown", handleKeyConfirm);
+          if (this._handleKeyConfirm === handleKeyConfirm) this._handleKeyConfirm = null;
           this.fecharModalConfirmacao();
         }
       };
-      window.addEventListener("keydown", handleKeyConfirm);
+      this._handleKeyConfirm = handleKeyConfirm;
+      window.setTimeout(() => {
+        if (modal.style.display === "flex" && this._handleKeyConfirm === handleKeyConfirm) {
+          window.addEventListener("keydown", handleKeyConfirm);
+        }
+      }, 350);
     },
     confirmModal(opts) {
       return this.confirmarAcao(opts);
     },
     fecharModalConfirmacao() {
       const modal = document.getElementById("modal-confirmacao-custom");
+      if (this._handleKeyConfirm) {
+        window.removeEventListener("keydown", this._handleKeyConfirm);
+        this._handleKeyConfirm = null;
+      }
       if (modal) modal.style.display = "none";
     },
     solicitarFechamentoApp() {
