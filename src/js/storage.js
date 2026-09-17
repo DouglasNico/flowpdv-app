@@ -245,9 +245,14 @@ export const StorageService = {
     if (c.includes('gelo')) return '🧊';
     if (c.includes('carv')) return '🔥';
     if (c.includes('tabac') || c.includes('cigar') || c.includes('essênc') || c.includes('essenc') || c.includes('seda') || c.includes('pod') || c.includes('vape') || c.includes('narguil')) return '🚬';
-    if (c.includes('petisc') || c.includes('snack') || c.includes('salgad') || c.includes('amendo') || c.includes('batata') || c.includes('pringle') || c.includes('dorito') || c.includes('ruffle')) return '🥜';
+    if (c.includes('lanche') || c.includes('sandu') || c.includes('burger') || c.includes('hambur')) return '🍔';
+    if (c.includes('pizza')) return '🍕';
+    if (c.includes('porç') || c.includes('porc') || c.includes('petisc')) return '🍟';
+    if (c.includes('sobremes') || c.includes('sorvete') || c.includes('açaí') || c.includes('acai')) return '🍰';
+    if (c.includes('adicion') || c.includes('extra') || c.includes('complem')) return '🥓';
+    if (c.includes('snack') || c.includes('salgad') || c.includes('amendo') || c.includes('batata') || c.includes('pringle') || c.includes('dorito') || c.includes('ruffle')) return '🥜';
     if (c.includes('bomboniere') || c.includes('chocolat') || c.includes('doce') || c.includes('bala') || c.includes('chicle')) return '🍬';
-    if (c.includes('combo') || c.includes('kit') || c.includes('promo')) return '⚡';
+    if (c.includes('combo') || c.includes('kit') || c.includes('promo')) return '🍱';
     if (c.includes('aliment') || c.includes('arroz') || c.includes('feijão') || c.includes('massa') || c.includes('mercear')) return '🌾';
     if (c.includes('carn') || c.includes('açougu') || c.includes('acougu') || c.includes('frango') || c.includes('peix') || c.includes('churr')) return '🥩';
     if (c.includes('latic') || c.includes('queij') || c.includes('leite') || c.includes('frio') || c.includes('presunt')) return '🧀';

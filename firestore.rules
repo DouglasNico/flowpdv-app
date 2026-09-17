@@ -78,6 +78,41 @@ service cloud.firestore {
       match /auditoria/{logId} {
         allow read, create, update, delete: if isAdmin() || isLoja(chave);
       }
+
+      // Pedidos do cardápio online (o PDV Windows ainda não lê esta subcoleção).
+      match /pedidos/{pedidoId} {
+        allow read, update: if isAdmin() || isLoja(chave);
+        allow create, delete: if isAdmin() || isLoja(chave);
+      }
+    }
+
+    // Overlay do cardápio: foto/visível/descrição fora do backup do PDV.
+    match /cardapio_config/{chave} {
+      allow get, write: if isAdmin() || isLoja(chave);
+      allow list: if false;
+      match /produtos/{produtoId} {
+        allow read, write: if isAdmin() || isLoja(chave);
+      }
+    }
+
+    // Cópia sanitizada para o cliente no celular. Anônimo só lê o doc da chave.
+    match /cardapio_publico/{chave} {
+      allow get: if true;
+      allow list: if false;
+      allow write: if isAdmin() || isLoja(chave);
+    }
+
+    // Acompanhamento do pedido pelo link (id difícil de adivinhar). Sem listar todos.
+    match /cardapio_pedidos/{id} {
+      allow get: if true;
+      allow list: if false;
+      allow delete: if false;
+      allow create: if isAdmin() || isLoja(request.resource.data.chaveLicenca);
+      allow update: if request.auth != null
+        && isLoja(resource.data.chaveLicenca)
+        && request.resource.data.chaveLicenca == resource.data.chaveLicenca
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'atualizadoEm']);
     }
 
     match /backups_adegas/{chave} {

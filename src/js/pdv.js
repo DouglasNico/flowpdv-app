@@ -150,6 +150,7 @@ export const PdvModule = {
       input.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
           e.preventDefault();
+          e.stopPropagation();
           const valor = input.value.trim();
           if (!valor) return;
 
@@ -613,6 +614,10 @@ export const PdvModule = {
         const dataFormatada = dataVal.toLocaleDateString('pt-BR');
         const diasVencido = Math.abs(diffDias);
 
+        if (window.App && typeof window.App.showToast === 'function') {
+          window.App.showToast(`🚨 "${produto.nome}" está vencido desde ${dataFormatada}. Venda bloqueada.`, 'error');
+        }
+
         if (window.App && typeof window.App.confirmarAcao === 'function') {
           window.App.confirmarAcao({
             titulo: '🚨 PRODUTO COM VALIDADE VENCIDA!',
@@ -631,7 +636,7 @@ export const PdvModule = {
           alert(`🚨 PRODUTO COM VALIDADE VENCIDA!\n\n"${produto.nome}" venceu em ${dataFormatada} (há ${diasVencido} dias).\nVenda bloqueada no PDV!`);
           this.focarInputLeitor();
         }
-        return;
+        return false;
       }
     }
 
@@ -1866,8 +1871,8 @@ export const PdvModule = {
         window.BalancaModule.abrirLeituraBalanca(p);
         return;
       }
-      this.adicionarAoCarrinho(p, 1, isFardo, 'busca');
-      this.tocarSomBeep(true);
+      const ok = this.adicionarAoCarrinho(p, 1, isFardo, 'busca');
+      if (ok !== false) this.tocarSomBeep(true);
     }
   },
 

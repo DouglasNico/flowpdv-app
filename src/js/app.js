@@ -422,6 +422,11 @@ export const App = {
       // 2. Se o modal de confirmação custom estiver ativo
       const modalConfirmacaoCustom = document.getElementById('modal-confirmacao-custom');
       if (modalConfirmacaoCustom && modalConfirmacaoCustom.style.display === 'flex') {
+        if (Date.now() - (this._confirmacaoAbertaEm || 0) < 400) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
         if (e.key === 'Enter') {
           e.preventDefault();
           const btnAcao = document.getElementById('modal-confirm-btn-acao');
@@ -1138,20 +1143,26 @@ export const App = {
       }
     }
 
-    // 3. Atualizar inputs do modal (se existirem)
-    const modalNome = document.getElementById('cfg-modal-nome-empresa');
-    const modalCnpj = document.getElementById('cfg-modal-cnpj');
-    const modalTel = document.getElementById('cfg-modal-telefone');
-    const modalPix = document.getElementById('cfg-modal-chave-pix');
-    const modalCidade = document.getElementById('cfg-modal-cidade');
-    const modalImp = document.getElementById('cfg-modal-impressora');
+    // 3. Atualizar inputs do modal só se ele NÃO estiver aberto
+    // (sync/heartbeat apagava o que o gerente estava digitando)
+    const modalLoja = document.getElementById('modal-editar-config-loja');
+    const editandoLoja = modalLoja && modalLoja.style.display === 'flex';
+    const focoNoModalLoja = document.activeElement && String(document.activeElement.id || '').startsWith('cfg-modal-');
+    if (!editandoLoja && !focoNoModalLoja) {
+      const modalNome = document.getElementById('cfg-modal-nome-empresa');
+      const modalCnpj = document.getElementById('cfg-modal-cnpj');
+      const modalTel = document.getElementById('cfg-modal-telefone');
+      const modalPix = document.getElementById('cfg-modal-chave-pix');
+      const modalCidade = document.getElementById('cfg-modal-cidade');
+      const modalImp = document.getElementById('cfg-modal-impressora');
 
-    if (modalNome) modalNome.value = nomeEmpresa;
-    if (modalCnpj) modalCnpj.value = cnpjEmpresa;
-    if (modalTel) modalTel.value = cfg.telefone || '';
-    if (modalPix) modalPix.value = cfg.chavePix || '';
-    if (modalCidade) modalCidade.value = cfg.cidade || '';
-    if (modalImp) modalImp.value = cfg.impressora || 'Nenhuma';
+      if (modalNome) modalNome.value = nomeEmpresa;
+      if (modalCnpj) modalCnpj.value = cnpjEmpresa;
+      if (modalTel) modalTel.value = cfg.telefone || '';
+      if (modalPix) modalPix.value = cfg.chavePix || '';
+      if (modalCidade) modalCidade.value = cfg.cidade || '';
+      if (modalImp) modalImp.value = cfg.impressora || 'Nenhuma';
+    }
 
     const licBadgeEl = document.getElementById('cfg-license-key-badge');
     const licStatusEl = document.getElementById('cfg-license-status-text');
@@ -1484,7 +1495,9 @@ export const App = {
     const msgFinal = mensagem || message || '';
     const iconeFinal = icon || icone;
     const txtConfirmarFinal = textoConfirmar || confirmText || (perigo ? '🗑️ Sim, Excluir [ENTER]' : '✅ Confirmar [ENTER]');
-    const txtCancelarFinal = textoCancelar || cancelText || 'Cancelar [ESC]';
+    const txtCancelarFinal = (textoCancelar !== undefined && textoCancelar !== null)
+      ? (cancelText || textoCancelar)
+      : (cancelText || 'Cancelar [ESC]');
     const corBtn = corConfirmar || confirmColor;
 
     const modal = document.getElementById('modal-confirmacao-custom');
@@ -1517,7 +1530,10 @@ export const App = {
     }
     if (tituloEl) tituloEl.textContent = titFinal;
     if (msgEl) msgEl.innerHTML = msgFinal;
-    if (btnCancelar) btnCancelar.textContent = txtCancelarFinal;
+    if (btnCancelar) {
+      btnCancelar.textContent = txtCancelarFinal || 'Cancelar [ESC]';
+      btnCancelar.style.display = txtCancelarFinal ? '' : 'none';
+    }
 
     if (btnAcao) {
       btnAcao.textContent = txtConfirmarFinal;
@@ -1536,28 +1552,43 @@ export const App = {
     }
 
     modal.style.display = 'flex';
+    this._confirmacaoAbertaEm = Date.now();
+    if (this._handleKeyConfirm) {
+      window.removeEventListener('keydown', this._handleKeyConfirm);
+      this._handleKeyConfirm = null;
+    }
 
-    // Handler de teclado Enter e Esc para extrema agilidade
+    // Handler de teclado Enter e Esc para extrema agilidade.
+    // Atrasa o bind: o Enter do bip/leitor ainda está no mesmo evento e
+    // fecharia o aviso na hora (produto vencido sumia sem mensagem).
     const handleKeyConfirm = (e) => {
       if (modal.style.display !== 'flex') {
         window.removeEventListener('keydown', handleKeyConfirm);
+        if (this._handleKeyConfirm === handleKeyConfirm) this._handleKeyConfirm = null;
         return;
       }
       if (e.key === 'Enter') {
         e.preventDefault();
         e.stopPropagation();
         window.removeEventListener('keydown', handleKeyConfirm);
+        if (this._handleKeyConfirm === handleKeyConfirm) this._handleKeyConfirm = null;
         this.fecharModalConfirmacao();
         if (typeof onConfirm === 'function') onConfirm();
       } else if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
         window.removeEventListener('keydown', handleKeyConfirm);
+        if (this._handleKeyConfirm === handleKeyConfirm) this._handleKeyConfirm = null;
         this.fecharModalConfirmacao();
       }
     };
 
-    window.addEventListener('keydown', handleKeyConfirm);
+    this._handleKeyConfirm = handleKeyConfirm;
+    window.setTimeout(() => {
+      if (modal.style.display === 'flex' && this._handleKeyConfirm === handleKeyConfirm) {
+        window.addEventListener('keydown', handleKeyConfirm);
+      }
+    }, 350);
   },
 
   confirmModal(opts) {
@@ -1566,6 +1597,10 @@ export const App = {
 
   fecharModalConfirmacao() {
     const modal = document.getElementById('modal-confirmacao-custom');
+    if (this._handleKeyConfirm) {
+      window.removeEventListener('keydown', this._handleKeyConfirm);
+      this._handleKeyConfirm = null;
+    }
     if (modal) modal.style.display = 'none';
   },
 

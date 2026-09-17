@@ -2463,10 +2463,12 @@ export const EstoqueModule = {
 
         const custoNum = this.parseValorMonetario(precoCusto);
         const vendaNum = this.parseValorMonetario(precoVenda);
-        const estNum = parseFloat(String(estoque || '').replace(',', '.'));
-        const estValido = isNaN(estNum) ? 0 : Math.round(estNum * 1000) / 1000;
+        const estoqueBruto = String(estoque ?? '').trim();
+        const semControleEstoque = estoqueBruto === '';
+        const estNum = parseFloat(estoqueBruto.replace(',', '.'));
+        const estValido = semControleEstoque || isNaN(estNum) ? 0 : Math.round(estNum * 1000) / 1000;
         const minNum = parseFloat(String(estoqueMinimo || '').replace(',', '.'));
-        const minValido = isNaN(minNum) ? 5 : Math.round(minNum * 1000) / 1000;
+        const minValido = semControleEstoque ? 0 : (isNaN(minNum) ? 5 : Math.round(minNum * 1000) / 1000);
 
         // Tratar Grade / Fardo Opcional (Colunas 8 a 11)
         const nomeFardo = (unidadeFracionada || '').trim();
@@ -2495,7 +2497,7 @@ export const EstoqueModule = {
           precoVenda: vendaNum,
           estoque: estValido,
           estoqueMinimo: minValido,
-          controlarEstoque: true,
+          controlarEstoque: !semControleEstoque,
           unidadeMedida: 'UN',
           tipoProduto: 'unidade',
           unidadeFracionada: temGrade ? (nomeFardo || (fatorValido ? `Fardo c/ ${fatorValido}` : 'Fardo')) : (existente?.unidadeFracionada || null),
@@ -2613,12 +2615,13 @@ export const EstoqueModule = {
         }
 
         const { isNovo, originalId, ...dadosProduto } = p;
-        const estoqueNovo = parseFloat(dadosProduto.estoque) || 0;
+        const controlaEstoque = p.controlarEstoque !== false;
+        const estoqueNovo = controlaEstoque ? (parseFloat(dadosProduto.estoque) || 0) : 0;
 
         if (mapaProdutos.has(p.id)) {
           const anterior = mapaProdutos.get(p.id);
           const estoqueAntes = parseFloat(anterior.estoque) || 0;
-          if (estoqueNovo !== estoqueAntes) {
+          if (controlaEstoque && estoqueNovo !== estoqueAntes) {
             StorageService.registrarMovimentoEstoque({
               produtoId: p.id,
               delta: estoqueNovo - estoqueAntes,
@@ -2630,6 +2633,7 @@ export const EstoqueModule = {
           mapaProdutos.set(p.id, {
             ...anterior,
             ...dadosProduto,
+            controlarEstoque: controlaEstoque,
             estoque: estoqueNovo,
             precoCusto: p.precoCusto,
             precoVenda: p.precoVenda,
@@ -2642,8 +2646,8 @@ export const EstoqueModule = {
           });
           atualizadosQtd++;
         } else {
-          mapaProdutos.set(p.id, { ...dadosProduto, estoque: estoqueNovo });
-          if (estoqueNovo > 0) {
+          mapaProdutos.set(p.id, { ...dadosProduto, controlarEstoque: controlaEstoque, estoque: estoqueNovo });
+          if (controlaEstoque && estoqueNovo > 0) {
             StorageService.registrarMovimentoEstoque({
               produtoId: p.id,
               delta: estoqueNovo,

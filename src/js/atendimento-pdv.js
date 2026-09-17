@@ -40,6 +40,7 @@ export const AtendimentoPdvModule = {
       codInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
           e.preventDefault();
+          e.stopPropagation();
           const valor = String(codInput.value || '').trim();
           codInput.value = '';
           this.lancarCodigo(valor);

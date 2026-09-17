@@ -196,7 +196,9 @@ export const LicencaModule = {
         StorageService.saveConfig(config);
 
         if (window.App && typeof window.App.carregarConfiguracoes === 'function') {
-          window.App.carregarConfiguracoes();
+          const modalLoja = document.getElementById('modal-editar-config-loja');
+          const editandoLoja = modalLoja && modalLoja.style.display === 'flex';
+          if (!editandoLoja) window.App.carregarConfiguracoes();
         }
 
         const isAuth = this.validarTerminalDispositivo(cloudData, docIdFound);
