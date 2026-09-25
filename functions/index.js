@@ -6,6 +6,23 @@ admin.initializeApp();
 setGlobalOptions({ region: "us-central1", maxInstances: 10 });
 
 const db = admin.firestore();
+Object.assign(exports, require('./acesso-v2')(admin));
+Object.assign(exports, require('./vinculo-licenca-v2')(admin));
+Object.assign(exports, require('./recuperacao-terminal-v2')(admin));
+Object.assign(exports, require('./liberacao-perfil-v2')(admin));
+Object.assign(exports, require('./fechamento-recuperado-v2')(admin));
+Object.assign(exports, require('./pedidos-publicos-v2')(admin));
+Object.assign(exports, require('./recebimento-v2')(admin));
+Object.assign(exports, require('./cozinha-v2')(admin));
+Object.assign(exports, require('./delivery-operacao-v2')(admin));
+Object.assign(exports, require('./consulta-entregas-v2')(admin));
+Object.assign(exports, require('./convites-garcom-v2')(admin));
+Object.assign(exports, require('./garcom-v2')(admin));
+Object.assign(exports, require('./fechamento-v2')(admin));
+Object.assign(exports, require('./configuracao-v2')(admin));
+Object.assign(exports, require('./ativacao-operacional-v2')(admin));
+Object.assign(exports, require('./preparacao-pdv-v2')(admin));
+Object.assign(exports, require('./sincronizar-combos-licenca-v2')(admin));
 const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "dougnvds26@gmail.com,admin@flowpdv.com.br,contato@flowpdv.com.br")
   .split(",")
   .map((e) => e.trim().toLowerCase())
