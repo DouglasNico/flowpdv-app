@@ -125,7 +125,26 @@ module.exports = function acessoV2(admin) {
   const listarMinhasLojasV2 = callable(async request => {
     const actor = await identity(request);
     const snap = await db.collection(`usuarios_v2/${actor.uid}/lojas`).get();
-    return { lojas: snap.docs.map(d => d.data()) };
+    let lojas = snap.docs.map(d => d.data());
+    if (lojas.length === 0) {
+      try {
+        const userRec = await admin.auth().getUser(actor.uid);
+        const email = String(userRec.email || '').toLowerCase().trim();
+        if (email) {
+          const porEmail = await db.collection('lojas_v2').where('emailAcesso', '==', email).limit(10).get();
+          for (const doc of porEmail.docs) {
+            const d = doc.data();
+            lojas.push({
+              lojaId: doc.id,
+              slug: d.slug || doc.id.replace(/^legado-/, ''),
+              nome: d.nome || 'Minha Loja',
+              papel: 'gerente'
+            });
+          }
+        }
+      } catch (_) {}
+    }
+    return { lojas };
   });
 
   const adminCadastrarMembroV2 = callable(async request => {

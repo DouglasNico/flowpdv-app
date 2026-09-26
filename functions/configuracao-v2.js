@@ -43,7 +43,12 @@ module.exports = admin => {
       }
       const shop = shopSnap.data();
       const member = (await tx.get(db.doc(`${base}/membros/${actor.uid}`))).data();
-      if (!isAdmin && (!member?.ativo || member.papel !== 'gerente' || member.tipo !== 'usuario')) fail('permission-denied', 'Você não administra esta loja.');
+      const isLojistaEmail = Boolean(shop?.emailAcesso && actor.email && String(shop.emailAcesso).trim().toLowerCase() === String(actor.email).trim().toLowerCase());
+      if (!isAdmin && !isLojistaEmail && (!member?.ativo || member.papel !== 'gerente' || member.tipo !== 'usuario')) fail('permission-denied', 'Você não administra esta loja.');
+      if (isLojistaEmail && (!member || !member.ativo)) {
+        tx.set(db.doc(`${base}/membros/${actor.uid}`), { papel: 'gerente', tipo: 'usuario', ativo: true, email: actor.email, criadoEm: stamp() }, { merge: true });
+        tx.set(db.doc(`usuarios_v2/${actor.uid}/lojas/${lojaId}`), { lojaId, slug: shop.slug || lojaId.replace(/^legado-/, ''), nome: shop.nome || 'Minha Loja', papel: 'gerente', atualizadoEm: stamp() }, { merge: true });
+      }
       if (!shop?.ativo) fail('failed-precondition', 'Loja indisponível.');
       const slug = id(data.slug || shop.slug);
       if ((await tx.get(db.doc(`rotas_publicas_v2/${slug}`))).data()?.lojaId !== lojaId) fail('permission-denied', 'Endereço público não pertence à loja.');

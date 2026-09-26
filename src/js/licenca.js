@@ -92,12 +92,19 @@ export const LicencaModule = {
         localLic.chaveLicenca = chave || cloudData.chaveLicenca;
         localLic.docIdNuvem = docIdFound || chave;
         const cloudStatus = cloudData.status;
-        if (cloudStatus === 'bloqueada') {
+        const isApenasWeb = cloudData.tipoContratacao === 'apenas_web' || cloudData.tipoLicenca === 'web';
+        if (isApenasWeb) {
           localLic.status = 'bloqueada';
+          localLic.motivoBloqueio = 'plano_incompativel';
+        } else if (cloudStatus === 'bloqueada') {
+          localLic.status = 'bloqueada';
+          localLic.motivoBloqueio = 'bloqueada';
         } else if (cloudStatus && cloudStatus !== 'pendente_ativacao') {
           localLic.status = cloudStatus;
+          localLic.motivoBloqueio = null;
         } else {
           localLic.status = 'ativa';
+          localLic.motivoBloqueio = null;
         }
 
         if (cloudData.vencimento || cloudData.dataExpiracao) {
@@ -586,7 +593,13 @@ export const LicencaModule = {
           let lic = { ...licAgora };
           lic.clienteId = cloudData.id || cloudData.clienteId || snap.id;
           lic.chaveLicenca = chaveAgora || chaveRecebida;
-          lic.status = cloudData.status || lic.status || "ativa";
+          if (cloudData.tipoContratacao === 'apenas_web' || cloudData.tipoLicenca === 'web') {
+            lic.status = 'bloqueada';
+            lic.motivoBloqueio = 'plano_incompativel';
+          } else {
+            lic.status = cloudData.status || lic.status || "ativa";
+            if (lic.motivoBloqueio === 'plano_incompativel') lic.motivoBloqueio = null;
+          }
           lic.razaoSocial = cloudData.nome || cloudData.razaoSocial || lic.razaoSocial;
           lic.cnpj = cloudData.documento || cloudData.cnpj || lic.cnpj;
           lic.icone = cloudData.icone || lic.icone || "🍷";
@@ -784,7 +797,10 @@ export const LicencaModule = {
     const alertBanner = document.getElementById('license-warning-banner');
 
     if (badgeEl) {
-      if (lic.status === 'bloqueada') {
+      if (lic.motivoBloqueio === 'plano_incompativel') {
+        badgeEl.className = 'license-badge warning';
+        badgeEl.innerHTML = `🌐 Plano Apenas Web`;
+      } else if (lic.status === 'bloqueada') {
         badgeEl.className = 'license-badge danger';
         badgeEl.innerHTML = `🛑 Licença Bloqueada`;
       } else if (isHoje) {
@@ -845,7 +861,12 @@ export const LicencaModule = {
     const descEl = document.querySelector('#lock-screen-overlay .lock-desc');
     const tituloEl = document.querySelector('#lock-screen-overlay .lock-title');
 
-    if (lic && lic.motivoBloqueio === 'excluida') {
+    if (lic && lic.motivoBloqueio === 'plano_incompativel') {
+      if (tituloEl) tituloEl.textContent = 'Plano Exclusivo para Cardápio Web';
+      if (descEl) {
+        descEl.innerHTML = `A licença <strong style="color: #0284c7; font-family: 'JetBrains Mono';">${lic.chaveLicenca || ''}</strong> foi contratada exclusivamente para o plano <strong>Apenas Cardápio Online (Web)</strong> e não inclui o uso do terminal de PDV Desktop neste computador.<br><br>Para desbloquear a frente de caixa e estoque nesta máquina, solicite o upgrade para o plano <strong>Completo (PDV + Web)</strong> com nosso suporte:`;
+      }
+    } else if (lic && lic.motivoBloqueio === 'excluida') {
       if (tituloEl) tituloEl.textContent = 'Licença Cancelada ou Inexistente';
       if (descEl) {
         descEl.innerHTML = `A chave de licença <strong style="color: #0284c7; font-family: 'JetBrains Mono';">${lic.chaveLicenca || ''}</strong> foi <strong style="color: #ef4444;">cancelada ou excluída</strong> no servidor. Para continuar utilizando o sistema FlowPDV, ative este terminal com uma nova Chave de Licença válida ou entre em contato com o suporte:`;
