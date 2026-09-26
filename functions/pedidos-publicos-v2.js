@@ -37,13 +37,17 @@ function normalize(data) {
     return { produtoId: identifier(item.produtoId, 'produto'), quantidade: integer(item.quantidade, 1, 99, 'quantidade'), observacao: (item.observacao || '').trim(), opcoes, ...oferta };
   });
   const entrega = data.tipo === 'delivery' ? require('./delivery-core.cjs').normalizarEntrega(data.entrega) : null;
+  const contato = data.tipo === 'retirada' && data.contato ? {
+    nome: (typeof data.contato.nome === 'string' ? data.contato.nome.trim() : '').slice(0, 80),
+    telefone: (typeof data.contato.telefone === 'string' ? data.contato.telefone.replace(/\D/g, '') : '').slice(0, 11)
+  } : (entrega ? { nome: entrega.nome, telefone: entrega.telefone } : null);
   const cotacao = entrega ? {
     configuracaoVersao: integer(data.cotacao?.configuracaoVersao, 0, 1000000000, 'versão da entrega'),
     taxaEntregaCentavos: integer(data.cotacao?.taxaEntregaCentavos, 0, 100000, 'taxa conferida'),
     totalCentavos: integer(data.cotacao?.totalCentavos, 0, 1000000, 'total conferido')
   } : null;
   return { requestId, slug: identifier(data.slug, 'loja'), tipo: data.tipo, mesaId: data.tipo === 'mesa' ? identifier(data.mesaId, 'mesa') : null, catalogoVersao: integer(data.catalogoVersao, 1, 1000000000, 'versão do catálogo'), itens,
-    ...(entrega ? { entrega, cotacao } : {}) };
+    ...(entrega ? { entrega, cotacao } : {}), ...(contato ? { contato } : {}) };
 }
 async function pricedLines(catalog, lines, modulos = {}) {
   const { precoOferta, comporCombo, centavos } = await import('./ofertas-core.mjs');
@@ -183,7 +187,7 @@ module.exports = function pedidosPublicosV2(admin) {
         const snap = await tx.get(limit.ref); limit.count = snap.exists ? snap.data().contagem : 0;
         if (limit.count >= limit.max) fail('resource-exhausted', 'Muitos pedidos neste momento. Aguarde e tente novamente.');
       }
-      const order = { status: 'novo', recebidoPdv: false, tipo: input.tipo, mesaId: input.mesaId, mesaNome, itens, totalCentavos, catalogoVersao: catalog.versao, pagamento: 'pendente', origem: 'cardapio_v2', criadoEm: FieldValue.serverTimestamp(), atualizadoEm: FieldValue.serverTimestamp() };
+      const order = { status: 'novo', recebidoPdv: false, tipo: input.tipo, mesaId: input.mesaId, mesaNome, itens, totalCentavos, catalogoVersao: catalog.versao, pagamento: 'pendente', origem: 'cardapio_v2', criadoEm: FieldValue.serverTimestamp(), atualizadoEm: FieldValue.serverTimestamp(), contato: input.contato || null, entrega: input.entrega || null };
       if (garcom) Object.assign(order, { origem: 'garcom_v2', garcomUid: request.auth.uid });
       if (cotacao) Object.assign(order, { subtotalCentavos, taxaEntregaCentavos: cotacao.taxaEntregaCentavos, prazoMinutos: cotacao.prazoMinutos, configuracaoVersao: input.cotacao.configuracaoVersao });
       const expires = Timestamp.fromMillis(Date.now() + 7 * 86400000);

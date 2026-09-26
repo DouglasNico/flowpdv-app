@@ -120,7 +120,9 @@ module.exports = admin => {
           totalCentavos: p.totalCentavos,
           subtotalCentavos: p.subtotalCentavos || p.totalCentavos,
           taxaEntregaCentavos: p.taxaEntregaCentavos || 0,
-          contato: p.contato || null,
+          contato: p.contato || (p.entrega ? { nome: p.entrega.nome, telefone: p.entrega.telefone } : null),
+          entrega: p.entrega || null,
+          prazoMinutos: p.prazoMinutos || null,
           criadoEm: p.criadoEm?.toDate?.().toISOString() || null,
           itens: (Array.isArray(p.itens) ? p.itens : []).map(item => ({
             nome: item.nome || '',
