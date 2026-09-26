@@ -5,6 +5,11 @@
 const { app, BrowserWindow, ipcMain, dialog, Menu, MenuItem, powerSaveBlocker } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { runtimeProfile, protectTestSession } = require('./runtime-profile.cjs');
+const profile = runtimeProfile({ isPackaged: app.isPackaged, argv: process.argv, appData: app.getPath('appData') });
+// Falha ao separar o perfil impede a abertura; não há fallback para dados reais.
+fs.mkdirSync(profile.userData, { recursive: true });
+app.setPath('userData', profile.userData);
 
 // Prevenir popups de exceções não capturadas no processo principal
 process.on('uncaughtException', (err) => {
@@ -30,7 +35,7 @@ function enviarParaJanela(canal, dados) {
 
 let autoUpdater = null;
 try {
-  autoUpdater = require('electron-updater').autoUpdater;
+  if (!profile.test) autoUpdater = require('electron-updater').autoUpdater;
 } catch (e) {
   console.log('electron-updater não disponível no momento');
 }
@@ -70,10 +75,6 @@ if (process.platform === 'win32') {
   // em com.flowpdv.app. Em teste, ID próprio para não herdar o atalho instalado.
   app.setAppUserModelId(app.isPackaged ? 'com.flowpdv.app.v2' : 'com.flowpdv.app.dev');
 }
-try {
-  const userDataPath = path.join(app.getPath('appData'), 'flowpdv');
-  app.setPath('userData', userDataPath);
-} catch(e) {}
 
 // Evitar instâncias duplicadas disputando o cache do Windows
 const gotTheLock = app.requestSingleInstanceLock();
@@ -99,6 +100,7 @@ if (!gotTheLock) {
       minHeight: 720,
       title: 'FlowPDV — Sistema de Frente de Caixa e Gestão Comercial',
       webPreferences: {
+        additionalArguments: profile.test ? ['--flowpdv-test-renderer', ...(profile.hosted ? ['--flowpdv-piloto-v2-renderer'] : []), ...(profile.operational ? ['--flowpdv-homologacao-renderer'] : []), ...(profile.fullApp ? ['--flowpdv-app-completo-renderer'] : []), ...(profile.testName ? ['--flowpdv-recovery-profile-renderer'] : [])] : [],
         preload: path.join(__dirname, 'preload.js'),
         nodeIntegration: false,
         contextIsolation: true,
@@ -338,6 +340,7 @@ if (!gotTheLock) {
   }
 
   function repararAtalhosWindows() {
+    if (profile.test) return;
     if (process.platform !== 'win32') return;
     try {
       const currentExe = process.execPath;
@@ -354,6 +357,17 @@ if (!gotTheLock) {
   }
 
   app.whenReady().then(() => {
+    if (profile.test) {
+      protectTestSession(require('electron').session.defaultSession, { hosted: profile.hosted });
+      app.on('web-contents-created', (_event, contents) => {
+        contents.setWindowOpenHandler(() => ({ action: 'deny' }));
+        contents.on('will-navigate', (event, url) => {
+          // A recuperação precisa recarregar a própria tela; qualquer outro
+          // destino continua proibido no perfil de teste.
+          if (url !== contents.getURL()) event.preventDefault();
+        });
+      });
+    }
     repararAtalhosWindows();
     createWindow();
 
@@ -372,7 +386,12 @@ if (!gotTheLock) {
 
   // TEF SiTef: laço interativo da CliSiTef roda aqui no main (DLL nativa).
   try {
-    require('./sitef-bridge.js').registrar(ipcMain, () => mainWindow);
+    if (!profile.test) require('./sitef-bridge.js').registrar(ipcMain, () => mainWindow);
+    else {
+      for (const channel of ['sitef-configurar', 'sitef-executar', 'sitef-responder', 'sitef-cancelar', 'sitef-finalizar', 'sitef-pinpad-presente']) {
+        ipcMain.handle(channel, () => { throw new Error('SiTef desativado no ambiente de teste.'); });
+      }
+    }
   } catch (err) {
     console.warn('[SiTef] Ponte não carregada:', err.message);
   }
@@ -517,6 +536,7 @@ if (!gotTheLock) {
 
   // IPC Handler: Impressão Térmica Direta (Silenciosa ou com diálogo)
   ipcMain.handle('print-thermal-receipt', async (event, htmlContent, silent = false, opts = {}) => {
+    if (profile.test) return { success: false, error: 'Impressão física desativada no ambiente de teste.' };
     let printWindow = null;
     try {
       printWindow = new BrowserWindow({
@@ -550,6 +570,7 @@ if (!gotTheLock) {
         printWindow.webContents.print(
           {
             silent: silent,
+            ...(typeof opts.deviceName === 'string' && opts.deviceName.trim() ? { deviceName: opts.deviceName.trim() } : {}),
             printBackground: true,
             margins: { marginType: 'none' },
             pageSize: {
@@ -574,6 +595,7 @@ if (!gotTheLock) {
   // IPC Handler: HTTP JSON para as APIs fiscais/TEF (Focus NFe, Stone).
   // Só aceita hosts conhecidos; o token vira Basic Auth (usuário=token, senha vazia).
   ipcMain.handle('http-json', (_event, req) => {
+    if (profile.test) return { status: 0, body: { codigo: 'ambiente_teste', mensagem: 'Integrações externas desativadas no ambiente de teste.' } };
     return new Promise((resolve) => {
       try {
         const https = require('https');

@@ -203,7 +203,7 @@ export const AtendimentoPdvModule = {
     const c = ComandasModule.buscarPorNumero(tipo, numero);
     if (!c) {
       const rotulo = tipo === 'mesa' ? 'Mesa' : 'Comanda';
-      if (window.App) window.App.showToast(`${rotulo} ${numero} não existe. Confira o número ou peça ao gestor para cadastrar.`, 'error');
+      if (window.App) window.App.showToast(`${rotulo} ${numero} não existe. Confira o número ou peça ao gestor para cadastrar.`, 'warning', { titulo: 'Confira a mesa ou comanda', chave: 'atendimento-conta-invalida' });
       if (window.PdvModule && typeof window.PdvModule.tocarSomBeep === 'function') window.PdvModule.tocarSomBeep(false);
       if (input) {
         input.focus();
@@ -386,7 +386,7 @@ export const AtendimentoPdvModule = {
     }
     const achou = this.encontrarProduto(entrada);
     if (!achou) {
-      if (window.App) window.App.showToast('Produto não encontrado: ' + entrada, 'error');
+      if (window.App) window.App.showToast(`Nenhum produto corresponde a "${entrada}". Confira o código ou use Buscar · F2.`, 'warning', { titulo: 'Produto não encontrado', chave: 'atendimento-produto-invalido' });
       return;
     }
     this.pintarItemAtual(achou.produto, achou.quantidade);

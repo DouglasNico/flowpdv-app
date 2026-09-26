@@ -1,0 +1,184 @@
+/* Modais operacionais: tamanho por tarefa, independente do layout do caixa.
+   Não altera exibição/active, z-index, atalhos ou eventos. Autenticação inicial,
+   ativação e atualização mantêm seus layouts próprios. */
+body .modal-overlay.flow-dialog { --dialog-width: 640px; padding: 24px !important; }
+body .flow-dialog[data-dialog-size="compact"] { --dialog-width: 480px; }
+body .flow-dialog[data-dialog-size="wide"] { --dialog-width: 960px; }
+body .flow-dialog[data-dialog-size="expanded"] { --dialog-width: 1120px; }
+body #modal-trocar-usuario.flow-dialog > .modal-content-box,
+body #modal-confirmar-sair.flow-dialog > .modal-content-box,
+body #modal-receber-fiado.flow-dialog > .modal-content-box,
+body #modal-ajuste-estoque.flow-dialog > .modal-content-box,
+body #modal-auth-gerente.flow-dialog > .modal-content-box,
+body #modal-abrir-caixa.flow-dialog > .modal-content-box,
+body #modal-sangria-caixa.flow-dialog > .modal-content-box,
+body #modal-fechar-caixa.flow-dialog > .modal-content-box,
+body #modal-detalhes-turno.flow-dialog > .modal-content-box,
+body #modal-confirmar-cancelar-carrinho.flow-dialog > .modal-content-box,
+body #modal-cancelar-item-carrinho.flow-dialog > .modal-content-box,
+body #modal-importar-produtos.flow-dialog > .modal-content-box,
+body #modal-novo-produto.flow-dialog > .modal-content-box,
+body #modal-importar-xml-nfe.flow-dialog > .modal-content-box,
+body #modal-bipagem-validade.flow-dialog > .modal-content-box,
+body #modal-inventario-sessao.flow-dialog > .modal-content-box,
+body #modal-inventario-historico.flow-dialog > .modal-content-box,
+body #modal-queima-estoque.flow-dialog > .modal-content-box,
+body #modal-precos-clube.flow-dialog > .modal-content-box,
+body #modal-busca-produtos.flow-dialog > .modal-content-box,
+body #modal-pagamento.flow-dialog > .modal-content-box,
+body #modal-pergunta-cpf-nota.flow-dialog > .modal-content-box,
+body #modal-selecionar-cliente-fiado.flow-dialog > .modal-content-box,
+body #modal-cortesia.flow-dialog > .modal-content-box,
+body #modal-novo-cliente.flow-dialog > .modal-content-box,
+body #modal-detalhes-cliente.flow-dialog > .modal-content-box,
+body #modal-detalhes-venda.flow-dialog > .modal-content-box,
+body #modal-novo-operador.flow-dialog > .modal-content-box,
+body #modal-gerencia-conta.flow-dialog > .modal-content-box,
+body #modal-baixa-conta.flow-dialog > .modal-content-box,
+body #modal-gerenciar-categoria.flow-dialog > .modal-content-box,
+body #modal-confirmar-exclusao-categoria.flow-dialog > .modal-content-box,
+body #modal-detalhes-auditoria.flow-dialog > .modal-content-box,
+body #modal-config-fiscal.flow-dialog > .modal-content-box,
+body #modal-config-balanca.flow-dialog > .modal-content-box,
+body #modal-config-tef.flow-dialog > .modal-content-box,
+body #modal-leitura-balanca.flow-dialog > .modal-content-box,
+body #modal-tef-processamento.flow-dialog > .modal-content-box,
+body #modal-tef-coleta-cpf.flow-dialog > .modal-content-box,
+body #modal-gerador-etiquetas.flow-dialog > .modal-content-box,
+body #modal-transferir-comanda.flow-dialog > .modal-content-box,
+body #modal-nova-comanda-personalizada.flow-dialog > .modal-content-box,
+body #modal-desconto-pdv.flow-dialog > .modal-content-box,
+body #modal-reimpressao-cupom-pdv.flow-dialog > .modal-content-box,
+body #modal-clube-fidelidade.flow-dialog > .modal-content-box,
+body #modal-pergunta-clube.flow-dialog > .modal-content-box,
+body #modal-selecao-voucher.flow-dialog > .modal-content-box,
+body #modal-tipo-voucher.flow-dialog > .modal-content-box,
+body #modal-criar-categoria-rapida-xml.flow-dialog > .modal-content-box,
+body #modal-pendencias-tef.flow-dialog > .modal-content-box {
+  width: min(var(--dialog-width), calc(100vw - 48px)) !important;
+  max-width: calc(100vw - 48px) !important; min-width: 0 !important;
+  height: auto !important; max-height: calc(100dvh - 48px) !important;
+  border: 1px solid #d8dfe7 !important; border-radius: 12px !important;
+  background: #fff !important; color: #192a40;
+  box-shadow: 0 18px 48px #192a4033 !important;
+  display: flex; flex-direction: column; overflow: auto !important;
+}
+body .modal-overlay.flow-dialog .modal-header-bar {
+  padding: 18px 24px !important; gap: 16px; flex-shrink: 0;
+  background: #192a40 !important; color: #fff !important;
+  border-bottom: 1px solid #30475e !important; border-radius: 0 !important;
+}
+body .modal-overlay.flow-dialog .modal-header-bar :is(h2,h3) {
+  color: #fff !important; font-size: 18px !important; font-weight: 700 !important;
+  line-height: 1.4; letter-spacing: -.015em !important; margin: 0;
+}
+body .modal-overlay.flow-dialog .modal-header-bar :is(span,p) { color: #dce5ef !important; }
+body .modal-overlay.flow-dialog .btn-close-modal {
+  min-width: 40px; width: 40px !important; height: 40px !important; flex-shrink: 0;
+  background: #30475e !important; color: #fff !important;
+  border: 1px solid #62758a !important; border-radius: 7px !important; transform: none !important;
+}
+body .modal-overlay.flow-dialog .modal-body-content {
+  padding: 24px !important; min-height: 0; flex: 1 1 auto;
+  max-height: none !important; overflow: auto !important;
+  scrollbar-color: #96a3b1 #edf0f4; scrollbar-width: thin;
+}
+body .modal-overlay.flow-dialog :is(.modal-footer-bar,.pag-modal-footer,.modal-detalhes-turno-footer) {
+  padding: 16px 24px !important; flex-shrink: 0; gap: 12px; flex-wrap: wrap;
+  background: #f8fafc !important; border-top: 1px solid #d8dfe7 !important;
+}
+body .modal-overlay.flow-dialog :is(.btn-primary-action,.btn-secondary-action) {
+  min-height: 44px; border-radius: 7px !important; font-size: 14px;
+  line-height: 1.4; white-space: normal; box-shadow: none !important; transform: none !important;
+}
+body .modal-overlay.flow-dialog :is(.form-input-custom,.form-select-custom) {
+  min-height: 44px; border-radius: 7px !important; box-shadow: none;
+}
+body .modal-overlay.flow-dialog :is(button,input,select,textarea,[tabindex]):focus-visible { outline: 3px solid #2466bd !important; outline-offset: 3px; }
+body .modal-overlay.flow-dialog .modal-header-bar button:focus-visible { outline-color: #ffb57f !important; }
+body #modal-estorno-venda.flow-dialog .estorno-lista,
+body #modal-estorno-venda.flow-dialog .estorno-lista:focus,
+body #modal-estorno-venda.flow-dialog .estorno-lista:focus-visible,
+body #modal-estorno-venda.flow-dialog .estorno-lista button:focus,
+body #modal-estorno-venda.flow-dialog .estorno-lista button:focus-visible {
+  outline: none !important;
+  outline-offset: 0 !important;
+}
+body #modal-estorno-venda.flow-dialog #btn-registrar-estorno,
+body #modal-estorno-venda.flow-dialog .estorno-acoes .btn-primary-action {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  gap: 0 !important;
+}
+@media(max-width:600px), (max-height:600px) {
+  body .modal-overlay.flow-dialog { padding: 12px !important; }
+  body #modal-trocar-usuario.flow-dialog > .modal-content-box,
+body #modal-confirmar-sair.flow-dialog > .modal-content-box,
+body #modal-receber-fiado.flow-dialog > .modal-content-box,
+body #modal-ajuste-estoque.flow-dialog > .modal-content-box,
+body #modal-auth-gerente.flow-dialog > .modal-content-box,
+body #modal-abrir-caixa.flow-dialog > .modal-content-box,
+body #modal-sangria-caixa.flow-dialog > .modal-content-box,
+body #modal-fechar-caixa.flow-dialog > .modal-content-box,
+body #modal-detalhes-turno.flow-dialog > .modal-content-box,
+body #modal-confirmar-cancelar-carrinho.flow-dialog > .modal-content-box,
+body #modal-cancelar-item-carrinho.flow-dialog > .modal-content-box,
+body #modal-importar-produtos.flow-dialog > .modal-content-box,
+body #modal-novo-produto.flow-dialog > .modal-content-box,
+body #modal-importar-xml-nfe.flow-dialog > .modal-content-box,
+body #modal-bipagem-validade.flow-dialog > .modal-content-box,
+body #modal-inventario-sessao.flow-dialog > .modal-content-box,
+body #modal-inventario-historico.flow-dialog > .modal-content-box,
+body #modal-queima-estoque.flow-dialog > .modal-content-box,
+body #modal-precos-clube.flow-dialog > .modal-content-box,
+body #modal-busca-produtos.flow-dialog > .modal-content-box,
+body #modal-pagamento.flow-dialog > .modal-content-box,
+body #modal-pergunta-cpf-nota.flow-dialog > .modal-content-box,
+body #modal-selecionar-cliente-fiado.flow-dialog > .modal-content-box,
+body #modal-cortesia.flow-dialog > .modal-content-box,
+body #modal-novo-cliente.flow-dialog > .modal-content-box,
+body #modal-detalhes-cliente.flow-dialog > .modal-content-box,
+body #modal-detalhes-venda.flow-dialog > .modal-content-box,
+body #modal-novo-operador.flow-dialog > .modal-content-box,
+body #modal-gerencia-conta.flow-dialog > .modal-content-box,
+body #modal-baixa-conta.flow-dialog > .modal-content-box,
+body #modal-gerenciar-categoria.flow-dialog > .modal-content-box,
+body #modal-confirmar-exclusao-categoria.flow-dialog > .modal-content-box,
+body #modal-detalhes-auditoria.flow-dialog > .modal-content-box,
+body #modal-config-fiscal.flow-dialog > .modal-content-box,
+body #modal-config-balanca.flow-dialog > .modal-content-box,
+body #modal-config-tef.flow-dialog > .modal-content-box,
+body #modal-leitura-balanca.flow-dialog > .modal-content-box,
+body #modal-tef-processamento.flow-dialog > .modal-content-box,
+body #modal-tef-coleta-cpf.flow-dialog > .modal-content-box,
+body #modal-gerador-etiquetas.flow-dialog > .modal-content-box,
+body #modal-transferir-comanda.flow-dialog > .modal-content-box,
+body #modal-nova-comanda-personalizada.flow-dialog > .modal-content-box,
+body #modal-desconto-pdv.flow-dialog > .modal-content-box,
+body #modal-reimpressao-cupom-pdv.flow-dialog > .modal-content-box,
+body #modal-clube-fidelidade.flow-dialog > .modal-content-box,
+body #modal-pergunta-clube.flow-dialog > .modal-content-box,
+body #modal-selecao-voucher.flow-dialog > .modal-content-box,
+body #modal-tipo-voucher.flow-dialog > .modal-content-box,
+body #modal-criar-categoria-rapida-xml.flow-dialog > .modal-content-box,
+body #modal-pendencias-tef.flow-dialog > .modal-content-box {
+    width: min(var(--dialog-width), calc(100vw - 24px)) !important;
+    max-width: calc(100vw - 24px) !important; max-height: calc(100dvh - 24px) !important;
+  }
+  body .modal-overlay.flow-dialog .modal-header-bar { padding: 14px 16px !important; gap: 10px; }
+  body .modal-overlay.flow-dialog .modal-body-content { padding: 16px !important; }
+  body .modal-overlay.flow-dialog :is(.modal-footer-bar,.pag-modal-footer,.modal-detalhes-turno-footer) { padding: 12px 16px !important; }
+}
+/* O terminal de CPF mantém a superfície escura para seus textos de estado. */
+body #modal-tef-coleta-cpf.flow-dialog > .modal-content-box { background: #192a40 !important; color: #fff; }
+@media(max-width:600px) {
+  body #modal-pagamento.flow-dialog .payment-top-summary-grid { grid-template-columns: minmax(0, 1fr) !important; }
+  body #modal-pagamento.flow-dialog .payment-methods-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  body #modal-pagamento.flow-dialog .payment-total-hero { flex-wrap: wrap; gap: 12px; padding: 16px !important; }
+  body #modal-pagamento.flow-dialog .payment-total-hero-val { font-size: 30px !important; white-space: nowrap; }
+  body #modal-pagamento.flow-dialog #pag-box-entrada-valor > div { flex-wrap: wrap; }
+  body #modal-pagamento.flow-dialog #pag-box-entrada-valor > div > div { flex-basis: 100% !important; min-width: 0; }
+  body #modal-pagamento.flow-dialog #btn-lancar-valor-enter { width: 100%; }
+}

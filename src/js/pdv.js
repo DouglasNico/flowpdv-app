@@ -6,6 +6,8 @@ import { StorageService } from './storage.js';
 import { AuthModule } from './auth.js';
 import { ThermalPrintModule } from './thermal-print.js';
 import { AuditModule } from './audit.js';
+import { usarVendaAplicativoCompleto, registrarVendaAplicativo, retomarVendaAplicativo } from './venda-aplicativo-completo.js';
+import { mostrarCarregando, fecharCarregando } from './notificacoes.js';
 import { encontrarClientePorDocumento, vendaPertenceAoTurno, dinheiroLiquidoVenda } from './merge-core.js';
 
 export const PdvModule = {
@@ -21,6 +23,8 @@ export const PdvModule = {
     this.renderCarrinho();
     this.renderMiniDashboardTurno();
     this.focarInputLeitor();
+    if (typeof StorageService.espelharEstoqueVitrineServidor === 'function') StorageService.espelharEstoqueVitrineServidor();
+    this.continuarRegistroOculto();
   },
 
   // Bip artificial desativado (o leitor físico já emite o som nativo)
@@ -103,6 +107,19 @@ export const PdvModule = {
     return classicInput || modernInput;
   },
 
+  // Inclui overlays que usam style.display (sucesso da venda, confirmação) — sem isso o leitor rouba Enter/F/ESC.
+  temOverlayTecladoAberto() {
+    if (document.querySelector('.modal-overlay.active, .lock-screen-overlay.active')) return true;
+    for (const id of ['modal-sucesso-venda-impressao', 'modal-confirmacao-custom', 'modal-tef-coleta-cpf']) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      if (el.classList.contains('active')) return true;
+      const display = el.style.display || '';
+      if (display === 'flex' || display === 'block') return true;
+    }
+    return false;
+  },
+
   focarInputLeitor() {
     if (window.App && typeof window.App.operadorEmAtendimento === 'function' && window.App.operadorEmAtendimento()) {
       if (window.AtendimentoPdvModule) window.AtendimentoPdvModule.focarInput();
@@ -119,8 +136,7 @@ export const PdvModule = {
     }
 
     // 2. Se qualquer outro modal ou tela de bloqueio estiver ativa, não roubar o foco
-    const modalAtivo = document.querySelector('.modal-overlay.active, .lock-screen-overlay.active');
-    if (modalAtivo) {
+    if (this.temOverlayTecladoAberto()) {
       return;
     }
 
@@ -149,6 +165,8 @@ export const PdvModule = {
       if (!input) return;
       input.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
+          // Modal de impressão/confirmação aberto: não engole Enter — deixa o atalho global agir.
+          if (this.temOverlayTecladoAberto()) return;
           e.preventDefault();
           e.stopPropagation();
           const valor = input.value.trim();
@@ -166,10 +184,9 @@ export const PdvModule = {
       input.addEventListener('blur', () => {
         setTimeout(() => {
           const activeTab = document.querySelector('.tab-panel.active');
-          const algumModalAberto = document.querySelector('.modal-overlay.active, .lock-screen-overlay.active');
-          if (activeTab && activeTab.id === 'tab-pdv' && !algumModalAberto) {
+          if (activeTab && activeTab.id === 'tab-pdv' && !this.temOverlayTecladoAberto()) {
             const currentTag = document.activeElement ? document.activeElement.tagName : '';
-            if (currentTag !== 'INPUT' && currentTag !== 'TEXTAREA' && currentTag !== 'SELECT') {
+            if (currentTag !== 'INPUT' && currentTag !== 'TEXTAREA' && currentTag !== 'SELECT' && currentTag !== 'BUTTON') {
               this.focarInputLeitor();
             }
           }
@@ -180,8 +197,7 @@ export const PdvModule = {
     // 1. Manter o foco no leitor ao clicar fora (somente se nenhum modal estiver ativo)
     document.addEventListener('click', (e) => {
       const activeTab = document.querySelector('.tab-panel.active');
-      const algumModalAberto = document.querySelector('.modal-overlay.active, .lock-screen-overlay.active');
-      if (activeTab && activeTab.id === 'tab-pdv' && !algumModalAberto && !e.target.closest('.modal-content-box') && !e.target.closest('input') && !e.target.closest('select') && !e.target.closest('textarea')) {
+      if (activeTab && activeTab.id === 'tab-pdv' && !this.temOverlayTecladoAberto() && !e.target.closest('.modal-content-box') && !e.target.closest('#modal-sucesso-venda-impressao') && !e.target.closest('#modal-confirmacao-custom') && !e.target.closest('input') && !e.target.closest('select') && !e.target.closest('textarea') && !e.target.closest('button')) {
         this.focarInputLeitor();
       }
     });
@@ -191,8 +207,7 @@ export const PdvModule = {
       const activeTab = document.querySelector('.tab-panel.active');
       if (!activeTab || activeTab.id !== 'tab-pdv') return;
 
-      const algumModalAberto = document.querySelector('.modal-overlay.active, .lock-screen-overlay.active');
-      if (algumModalAberto) return;
+      if (this.temOverlayTecladoAberto()) return;
 
       const tag = document.activeElement ? document.activeElement.tagName : '';
       const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
@@ -218,8 +233,7 @@ export const PdvModule = {
     // 3. Ao restaurar foco na janela do sistema (Alt+Tab ou clique no aplicativo)
     window.addEventListener('focus', () => {
       const activeTab = document.querySelector('.tab-panel.active');
-      const algumModalAberto = document.querySelector('.modal-overlay.active, .lock-screen-overlay.active');
-      if (activeTab && activeTab.id === 'tab-pdv' && !algumModalAberto) {
+      if (activeTab && activeTab.id === 'tab-pdv' && !this.temOverlayTecladoAberto()) {
         this.focarInputLeitor();
       }
     });
@@ -490,7 +504,7 @@ export const PdvModule = {
         };
         this.adicionarAoCarrinho(itemAvulso, qtd, false, 'scanner');
         this.tocarSomBeep(true);
-        window.App.showToast(`⚡ Item Avulso (${qtd}x R$ ${valor.toFixed(2).replace('.', ',')}) adicionado ao carrinho!`, 'success');
+        window.App.showToast(`Item avulso: ${qtd}× R$ ${valor.toFixed(2).replace('.', ',')}.`, 'success', { chave: 'item-carrinho', titulo: 'Item adicionado' });
         return;
       }
     }
@@ -564,7 +578,7 @@ export const PdvModule = {
         const res = this.adicionarAoCarrinho(produtoBalanca, qtdCalculada, false, 'scanner');
         if (res !== false) {
           this.tocarSomBeep(true);
-          window.App.showToast(`⚖️ Balança: "${produtoBalanca.nome}" (${qtdCalculada} un) adicionado!`, 'success');
+          window.App.showToast(`${produtoBalanca.nome}: ${qtdCalculada} un.`, 'success', { chave: 'item-carrinho', titulo: 'Item adicionado' });
         }
         return;
       }
@@ -1062,11 +1076,9 @@ export const PdvModule = {
     }
     if (window.ThermalPrintModule && typeof window.ThermalPrintModule.imprimirCupomVenda === 'function') {
       window.ThermalPrintModule.imprimirCupomVenda(v);
-      window.App.showToast(`🖨️ Imprimindo 2ª via da venda #${StorageService.formatarNumeroVenda(v)}...`, 'success');
       this.fecharModalReimpressaoCupom();
     } else {
-      window.App.showToast(`🖨️ Comprovante da venda #${StorageService.formatarNumeroVenda(v)} impresso com sucesso!`, 'info');
-      this.fecharModalReimpressaoCupom();
+      window.App.showToast('O serviço de impressão não está disponível. Reabra o aplicativo e tente novamente.', 'warning', { titulo: 'Impressão indisponível' });
     }
   },
 
@@ -2072,8 +2084,11 @@ export const PdvModule = {
     this.fecharModalTipoVoucher();
     this.pagamentosLancados.push({
       id: 'PAG-' + Date.now(),
-      forma: `${marca} - ${tipo}`,
-      valor
+      forma: 'Voucher',
+      valor,
+      voucherMarca: marca,
+      voucherTipo: tipo,
+      rotulo: `${marca} - ${tipo}`
     });
     const totais = this.calcularTotais();
     const novoLancado = this.pagamentosLancados.reduce((acc, p) => acc + (parseFloat(p.valor) || 0), 0);
@@ -2273,9 +2288,10 @@ export const PdvModule = {
         chipsContainer.style.display = 'flex';
         chipsContainer.innerHTML = this.pagamentosLancados.map((p, idx) => {
           const icon = p.forma === 'Dinheiro' ? '💵' : p.forma === 'PIX' ? '📱' : p.forma === 'Fiado' ? '📋' : p.forma === 'Voucher' ? '🎫' : '💳';
+          const rotulo = p.rotulo || p.forma;
           return `
             <span class="pag-parcela-chip">
-              ${icon} ${p.forma}: <strong>R$ ${p.valor.toFixed(2).replace('.', ',')}</strong>
+              ${icon} ${rotulo}: <strong>R$ ${p.valor.toFixed(2).replace('.', ',')}</strong>
               <button type="button" class="pag-parcela-chip-del" onclick="PdvModule.removerPagamentoLancado(${idx})" title="Remover este pagamento">✕</button>
             </span>
           `;
@@ -2313,6 +2329,8 @@ export const PdvModule = {
             </div>
           </div>
         `;
+      } else if (this._finalizandoVenda) {
+        this.mostrarRegistroDaVenda();
       } else {
         bannerBox.innerHTML = `
           <div class="pag-status-banner-success">
@@ -2335,9 +2353,15 @@ export const PdvModule = {
 
     const btnConcluirModal = document.getElementById('btn-confirmar-pagamento-modal');
     if (btnConcluirModal) {
-      if (faltaPagar > 0.005) {
+      if (this._finalizandoVenda) {
+        btnConcluirModal.disabled = true;
+        btnConcluirModal.textContent = 'Registrando a venda…';
+      } else if (faltaPagar > 0.005) {
         btnConcluirModal.style.display = 'none';
       } else {
+        btnConcluirModal.disabled = false;
+        btnConcluirModal.style.opacity = '';
+        btnConcluirModal.style.cursor = '';
         btnConcluirModal.style.display = '';
         btnConcluirModal.innerHTML = '✅ Concluir Venda [ENTER]';
         btnConcluirModal.style.background = 'linear-gradient(135deg, var(--accent-green), #047857)';
@@ -2601,7 +2625,7 @@ export const PdvModule = {
             this.solicitarFinalizacaoVenda();
           }
         }).catch(err => {
-          window.App.showToast(err.message || 'Resultado TEF incerto. Abra Pendências TEF antes de cobrar novamente.', 'warning');
+          window.App.showToast(err.message || 'Resultado TEF incerto. Abra Pendências TEF antes de cobrar novamente.', 'warning', { titulo: 'Confira o pagamento', duracao: 0 });
           if (window.TefModule.temPendencias()) window.TefModule.abrirPendencias();
         });
         return;
@@ -2812,8 +2836,163 @@ export const PdvModule = {
     return v;
   },
 
+  mostrarRegistroDaVenda() {
+    const banner = document.getElementById('pag-status-banner-box');
+    if (banner) {
+      banner.innerHTML = `
+        <div class="pag-status-banner-success">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 22px;">✅</span>
+            <div>
+              <span style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.85;">Aguarde</span>
+              <div style="font-size: 22px; font-weight: 900; font-family: 'JetBrains Mono'; line-height: 1.1;">REGISTRANDO A VENDA…</div>
+            </div>
+          </div>
+        </div>`;
+    }
+    const botao = document.getElementById('btn-confirmar-pagamento-modal');
+    if (botao) {
+      botao.disabled = true;
+      botao.style.opacity = '0.7';
+      botao.style.cursor = 'wait';
+      botao.textContent = 'Registrando a venda…';
+    }
+    mostrarCarregando('Registrando a venda…');
+  },
+
+  copiarPedidoAplicativo(carrinho, totais, pagamentos) {
+    return {
+      carrinho: carrinho.map(item => ({ ...item })),
+      totais: { ...totais },
+      pagamentos: pagamentos.map(item => ({ ...item }))
+    };
+  },
+
+  guardarProximaVenda(pedido) {
+    this._proximaVenda = pedido;
+    try { sessionStorage.setItem('flowpdv_proxima_venda_caixa', JSON.stringify(pedido)); } catch (error) { /* a fila em memória segue valendo nesta sessão */ }
+  },
+
+  consumirProximaVenda() {
+    const pedido = this._proximaVenda;
+    this._proximaVenda = null;
+    try { sessionStorage.removeItem('flowpdv_proxima_venda_caixa'); } catch (error) { /* sessão sem storage */ }
+    return pedido;
+  },
+
+  liberarCaixaDoRegistro() {
+    fecharCarregando();
+    this.fecharModalPagamento();
+    this.limparCarrinho();
+    this._finalizandoVenda = false;
+    this._donoFinalizacao = null;
+    window.App.showToast('Pode atender o próximo cliente. Esta venda continua sendo registrada.', 'info', { titulo: 'Registrando em segundo plano', chave: 'registro-venda', duracao: 0 });
+  },
+
+  entregarResultadoRegistro(venda, oculto) {
+    fecharCarregando();
+    if (!oculto) {
+      this.concluirVendaAplicativo(venda);
+      return;
+    }
+    const numero = StorageService.formatarNumeroVenda(venda);
+    this.renderMiniDashboardTurno();
+    this.tocarSomBeep(true);
+    this.cpfNotaFinalizacao = '';
+    window.dispatchEvent(new CustomEvent('flowpdv-terminal-v2', { detail: { revalidar: true } }));
+    window.App.showToast(`Venda #${numero} registrada. O caixa não foi interrompido.`, 'success', { titulo: 'Venda registrada', chave: 'registro-venda', duracao: 4000 });
+  },
+
+  async executarRegistroComPrazo(pedido, silencioso) {
+    let oculto = silencioso === true;
+    if (!oculto) {
+      this.mostrarRegistroDaVenda();
+      await new Promise(resolve => requestAnimationFrame(resolve));
+    }
+    const timer = setTimeout(() => {
+      if (oculto) return;
+      oculto = true;
+      this.liberarCaixaDoRegistro();
+    }, 30000);
+    try {
+      const venda = await registrarVendaAplicativo({ servico: StorageService, auth: AuthModule, ...pedido });
+      clearTimeout(timer);
+      this.entregarResultadoRegistro(venda, oculto);
+      return venda;
+    } catch (error) {
+      clearTimeout(timer);
+      fecharCarregando();
+      if (!oculto) this.liberarCaixaDoRegistro();
+      window.App.showToast('Não foi possível registrar a venda. ' + (error.message || '') + '. Não cobre novamente.', 'error', { titulo: 'Registro pendente', chave: 'registro-venda', duracao: 0 });
+      throw error;
+    }
+  },
+
+  async acompanharRegistroDaVenda(pedido) {
+    if (this._registroEmAndamento) {
+      if (this._proximaVenda) {
+        window.App.showToast('Ainda há um pagamento guardado. Espere o aviso para concluir este.', 'warning');
+        return;
+      }
+      this.guardarProximaVenda(pedido);
+      this.fecharModalPagamento();
+      this.limparCarrinho();
+      window.App.showToast('Pagamento guardado. Pode lançar o próximo pedido.', 'info', { titulo: 'Caixa livre', chave: 'registro-venda', duracao: 4000 });
+      return;
+    }
+    this._registroEmAndamento = true;
+    try {
+      let atual = pedido;
+      let silencioso = false;
+      while (atual) {
+        try {
+          await this.executarRegistroComPrazo(atual, silencioso);
+        } catch (error) {
+          if (this._proximaVenda && !localStorage.getItem('flowpdv_venda_servidor_pendente')) {
+            atual = this.consumirProximaVenda();
+            silencioso = true;
+            continue;
+          }
+          if (this._proximaVenda) {
+            window.App.showToast('O próximo pagamento está guardado. A venda anterior precisa ser conferida antes.', 'warning', { chave: 'registro-venda', duracao: 8000 });
+          }
+          break;
+        }
+        atual = this.consumirProximaVenda();
+        silencioso = true;
+      }
+    } finally {
+      this._registroEmAndamento = false;
+    }
+  },
+
+  async continuarRegistroOculto() {
+    if (!usarVendaAplicativoCompleto() || this._registroEmAndamento) return;
+    let proxima = null;
+    try { proxima = JSON.parse(sessionStorage.getItem('flowpdv_proxima_venda_caixa') || 'null'); } catch (error) { proxima = null; }
+    const pendente = localStorage.getItem('flowpdv_venda_servidor_pendente');
+    if (!pendente && !proxima) return;
+    this._registroEmAndamento = true;
+    try {
+      if (pendente) {
+        const venda = await retomarVendaAplicativo({ servico: StorageService, auth: AuthModule });
+        if (venda) this.entregarResultadoRegistro(venda, true);
+      }
+      if (proxima && !localStorage.getItem('flowpdv_venda_servidor_pendente')) {
+        this._proximaVenda = proxima;
+        await this.executarRegistroComPrazo(this.consumirProximaVenda(), true);
+      }
+    } catch (error) {
+      window.App.showToast('Não foi possível concluir o registro em segundo plano. ' + (error.message || '') + '. Não cobre novamente.', 'error', { titulo: 'Registro pendente', chave: 'registro-venda', duracao: 0 });
+    } finally {
+      this._registroEmAndamento = false;
+    }
+  },
+
   async executarFinalizacaoVendaCompleta(opts = {}) {
-    if (this._finalizandoVenda && !opts.jaTravado) return;
+    if (this._finalizandoVenda && !this._registroEmAndamento && !opts.jaTravado) return;
+    const dono = {};
+    this._donoFinalizacao = dono;
     this._finalizandoVenda = true;
 
     try {
@@ -2839,6 +3018,10 @@ export const PdvModule = {
         return;
       }
       const isMultiplo = pagamentos.length > 1;
+      if (usarVendaAplicativoCompleto()) {
+        await this.acompanharRegistroDaVenda(this.copiarPedidoAplicativo(this.carrinho, totais, pagamentos));
+        return;
+      }
       const formasDescricao = pagamentos.map(p => `${p.forma}: R$ ${p.valor.toFixed(2).replace('.', ',')}`).join(' + ');
 
       this.tefVendaId ||= 'VND-' + crypto.randomUUID();
@@ -2922,15 +3105,18 @@ export const PdvModule = {
       window.App.showToast(`Venda finalizada com sucesso (${isMultiplo ? formasDescricao : venda.formaPagamento})!`, 'success');
       this.abrirModalSucessoImpressao(venda);
       if (erroTef) {
-        window.App.showToast('Venda gravada; confirmação TEF pendente. Não cobre novamente. ' + erroTef.message, 'warning');
+        window.App.showToast('Venda gravada; confirmação TEF pendente. Não cobre novamente. ' + erroTef.message, 'warning', { titulo: 'Pagamento pendente de conferência', duracao: 0 });
         window.TefModule.abrirPendencias();
       }
     } catch (err) {
       console.error('[PDV] Falha ao finalizar venda:', err);
+      if (usarVendaAplicativoCompleto()) window.dispatchEvent(new CustomEvent('flowpdv-terminal-v2', { detail: { revalidar: true } }));
       const gravada = !StorageService.temVendaPendente() && StorageService.getVendas().some(v => v.id === this.tefVendaId);
       window.App.showToast((gravada ? 'Venda já gravada. ' : 'Falha na finalização. ') + err.message + '. Não cobre novamente.', 'error');
-    } finally {
       this._finalizandoVenda = false;
+      this.atualizarInterfacePagamentoNovo(false);
+    } finally {
+      if (this._donoFinalizacao === dono) this._finalizandoVenda = false;
     }
   },
 
@@ -2947,7 +3133,7 @@ export const PdvModule = {
         const msg = res.estado === 'rejeitada'
           ? 'NFC-e rejeitada: ' + res.mensagem
           : 'Venda gravada. NFC-e pendente: ' + res.mensagem;
-        window.App.showToast(msg, 'warning');
+        window.App.showToast(msg, 'warning', { titulo: 'Confira a emissão fiscal', duracao: 0 });
       }
     }).catch(err => {
       venda.statusFiscal = 'pendente';
@@ -2993,6 +3179,7 @@ export const PdvModule = {
   
   calcularSaldoEmGaveta(turno) {
     if (!turno) return 0;
+    if (usarVendaAplicativoCompleto()) return window.CaixaModule.calcularDinheiroGaveta(turno);
     const trocoInicial = parseFloat(turno.trocoInicial || turno.valorAbertura || 0);
     const sangrias = (turno.sangrias || []).reduce((acc, s) => acc + (parseFloat(s.valor) || 0), 0);
     const suprimentos = (turno.suprimentos || []).reduce((acc, s) => acc + (parseFloat(s.valor) || 0), 0);
@@ -3046,9 +3233,11 @@ export const PdvModule = {
     this.executarGravacaoVenda(formaPagamento, dadosTef, valorPago, troco);
   },
 
-  executarGravacaoVenda(formaPagamento, dadosTef, valorPago, troco) {
+  async executarGravacaoVenda(formaPagamento, dadosTef, valorPago, troco) {
     if (dadosTef || this.checkoutTefBloqueado()) return;
-    if (this._finalizandoVenda) return;
+    if (this._finalizandoVenda && !this._registroEmAndamento) return;
+    const donoGravacao = {};
+    this._donoFinalizacao = donoGravacao;
     this._finalizandoVenda = true;
     try {
       const totais = this.calcularTotais();
@@ -3058,6 +3247,11 @@ export const PdvModule = {
         return;
       }
 
+      if (usarVendaAplicativoCompleto()) {
+        const pagamentos = [{ forma: formaPagamento, valor: totais.total, ...(formaPagamento === 'Dinheiro' ? { valorEntregue: valorPago } : {}) }];
+        await this.acompanharRegistroDaVenda(this.copiarPedidoAplicativo(this.carrinho, totais, pagamentos));
+        return;
+      }
       const proximoNumero = StorageService.getProximoNumeroVenda();
 
       const venda = {
@@ -3111,10 +3305,31 @@ export const PdvModule = {
       this.abrirModalSucessoImpressao(venda);
     } catch (err) {
       console.error('[PDV] Falha ao gravar venda:', err);
-      window.App.showToast('Não foi possível gravar a venda. Tente novamente.', 'error');
+      if (usarVendaAplicativoCompleto()) window.dispatchEvent(new CustomEvent('flowpdv-terminal-v2', { detail: { revalidar: true } }));
+      window.App.showToast('Não foi possível concluir a venda. ' + err.message + '. Não cobre novamente; confira as pendências do caixa.', 'error');
     } finally {
-      this._finalizandoVenda = false;
+      if (this._donoFinalizacao === donoGravacao) this._finalizandoVenda = false;
     }
+  },
+
+  concluirVendaAplicativo(venda) {
+    this.fecharModalPagamento();
+    this.limparCarrinho();
+    this.renderMiniDashboardTurno();
+    this.tocarSomBeep(true);
+    this.cpfNotaFinalizacao = '';
+    window.App.showToast('Venda confirmada no servidor e no caixa local.', 'success');
+    this.abrirModalSucessoImpressao(venda);
+    window.dispatchEvent(new CustomEvent('flowpdv-terminal-v2', { detail: { revalidar: true } }));
+  },
+
+  atualizarVendaAplicativoRecuperada(venda) {
+    const resumir = itens => JSON.stringify(itens.map(i => [String(i.id), Number(i.quantidade), i.precoUnitario]));
+    if (resumir(this.carrinho) === resumir(venda.itens)) {
+      this.fecharModalPagamento();
+      this.limparCarrinho();
+    }
+    this.renderMiniDashboardTurno();
   },
 
   abrirModalSucessoImpressao(venda) {
@@ -3150,11 +3365,17 @@ export const PdvModule = {
 
     if (fiscalBadge) this.atualizarBadgeFiscalSucesso(venda);
 
+    this.ignorarProximoEnterGlobal = false;
     modal.style.display = 'flex';
-    const btnImprimir = document.getElementById('btn-confirmar-imprimir-venda');
-    if (btnImprimir) {
-      setTimeout(() => btnImprimir.focus(), 80);
-    }
+    const focarTermica = () => {
+      const btnImprimir = document.getElementById('btn-confirmar-imprimir-venda');
+      if (btnImprimir && modal.style.display === 'flex') {
+        try { btnImprimir.focus({ preventScroll: true }); } catch (_) { btnImprimir.focus(); }
+      }
+    };
+    focarTermica();
+    setTimeout(focarTermica, 50);
+    setTimeout(focarTermica, 160);
   },
 
   fecharModalSucessoImpressao() {
@@ -3167,9 +3388,9 @@ export const PdvModule = {
   confirmarImpressaoVendaFinalizada() {
     if (this.ultimaVendaFinalizada && window.ThermalPrintModule && typeof window.ThermalPrintModule.imprimirCupomVenda === 'function') {
       window.ThermalPrintModule.imprimirCupomVenda(this.ultimaVendaFinalizada);
-      if (window.App && typeof window.App.showToast === 'function') {
-        window.App.showToast('🖨️ Cupom térmico enviado para impressão!', 'info');
-      }
+    } else {
+      window.App?.showToast('Não foi possível preparar o cupom. Consulte a venda em Reimprimir e tente novamente.', 'warning', { titulo: 'Impressão indisponível' });
+      return;
     }
     this.fecharModalSucessoImpressao();
   },
@@ -3177,9 +3398,9 @@ export const PdvModule = {
   confirmarImpressaoA4VendaFinalizada() {
     if (this.ultimaVendaFinalizada && window.ThermalPrintModule && typeof window.ThermalPrintModule.imprimirA4Venda === 'function') {
       window.ThermalPrintModule.imprimirA4Venda(this.ultimaVendaFinalizada);
-      if (window.App && typeof window.App.showToast === 'function') {
-        window.App.showToast('📄 Documento A4 gerado para impressão/PDF!', 'info');
-      }
+    } else {
+      window.App?.showToast('Não foi possível preparar o documento. Consulte a venda em Reimprimir e tente novamente.', 'warning', { titulo: 'Impressão indisponível' });
+      return;
     }
     this.fecharModalSucessoImpressao();
   },
@@ -3335,7 +3556,7 @@ export const PdvModule = {
   // Cortesia / Bonificação [F7] (Exige Senha/PIN do Gerente)
   abrirModalCortesia() {
     if (this.carrinho.length === 0) {
-      window.App.showToast('Adicione os itens da cortesia no carrinho!', 'warning');
+      window.App.showToast('Adicione pelo menos um produto ao carrinho para registrar uma cortesia.', 'warning', { titulo: 'Carrinho vazio' });
       return;
     }
 

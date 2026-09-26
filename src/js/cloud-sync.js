@@ -83,7 +83,7 @@ export const CloudSyncModule = {
       console.log('[CloudSync] Conexão com a internet restabelecida!');
       this.atualizarStatusConexaoUI('sincronizando');
       if (window.App && typeof window.App.showToast === 'function') {
-        window.App.showToast('🌐 Conexão restabelecida! Sincronizando dados com a nuvem...', 'info');
+        window.App.showToast('A rede voltou. Tentando retomar a sincronização com a nuvem.', 'info', { titulo: 'Conexão restabelecida', chave: 'conexao-online' });
       }
       setTimeout(async () => {
         try {
@@ -104,7 +104,7 @@ export const CloudSyncModule = {
       console.warn('[CloudSync] Terminal desconectado da internet. Operando em modo offline.');
       this.atualizarStatusConexaoUI(false);
       if (window.App && typeof window.App.showToast === 'function') {
-        window.App.showToast('⚠️ Modo Offline: Sem conexão com a internet. Suas operações serão salvas e sincronizadas automaticamente ao voltar a rede.', 'warning', 8000);
+        window.App.showToast('Sem conexão. Recursos que dependem da nuvem podem ficar indisponíveis. Confira a sincronização quando a rede voltar.', 'warning', { titulo: 'Sem conexão', chave: 'conexao-offline', duracao: 8000 });
       }
     });
   },
@@ -150,6 +150,7 @@ export const CloudSyncModule = {
   },
 
   mesclarProdutosComEstoque(nuvem = [], local = [], movimentosNuvem = []) {
+    StorageService.exigirBaseLegadaPermitida();
     const movimentosLocais = StorageService.getMovimentosEstoque ? StorageService.getMovimentosEstoque() : [];
     const checkpoint = StorageService.getCheckpointEstoque ? StorageService.getCheckpointEstoque() : null;
     const { produtos, novosMovimentos } = consolidarProdutosComMovimentos({
@@ -266,7 +267,20 @@ export const CloudSyncModule = {
     return lotes.length;
   },
 
-  async lerParte(chave, nome, total) {
+  leiturasPartesPendentes: new Map(),
+
+  async lerParte(chave, nome, total, revisao = null) {
+    // Compartilha apenas requisicoes simultaneas do MESMO resumo; nunca cacheia dados.
+    if (revisao === null) return this.lerParteSemCompartilhar(chave, nome, total);
+    const key = JSON.stringify([chave, nome, total, revisao]);
+    if (this.leiturasPartesPendentes.has(key)) return this.leiturasPartesPendentes.get(key);
+    const pending = this.lerParteSemCompartilhar(chave, nome, total);
+    this.leiturasPartesPendentes.set(key, pending);
+    try { return await pending; }
+    finally { this.leiturasPartesPendentes.delete(key); }
+  },
+
+  async lerParteSemCompartilhar(chave, nome, total) {
     const qtd = parseInt(total, 10) || 0;
     if (qtd <= 0) return [];
 
@@ -285,6 +299,7 @@ export const CloudSyncModule = {
   },
 
   async gravarPacote(chave, pacote, movimentosEstoque) {
+    StorageService.exigirBaseLegadaPermitida(pacote);
     await this.garantirSessao(chave);
 
     const envio = { ...pacote };
@@ -359,6 +374,7 @@ export const CloudSyncModule = {
 
   /** Atualiza só o slot deste terminal em turnosAtivos (não apaga os outros). */
   async atualizarTurnoAtivoDoTerminal(chave, deviceId, turno) {
+    StorageService.exigirBaseLegadaPermitida({ turnoAtual: turno });
     const chaveNorm = String(chave || '').trim().toUpperCase();
     const id = String(deviceId || '').trim();
     if (!chaveNorm || !id) return;
@@ -388,7 +404,8 @@ export const CloudSyncModule = {
     this.salvarManifesto(chave, manifesto);
 
     const nomes = Object.keys(PARTES).filter(nome => manifesto[nome] !== undefined);
-    const listas = await Promise.all(nomes.map(nome => this.lerParte(chave, nome, manifesto[nome])));
+    const revisao = JSON.stringify(dados);
+    const listas = await Promise.all(nomes.map(nome => this.lerParte(chave, nome, manifesto[nome], revisao)));
 
     const completo = { ...dados };
     nomes.forEach((nome, i) => { completo[nome] = listas[i]; });
@@ -604,10 +621,12 @@ export const CloudSyncModule = {
   async sincronizacaoInicialAuto() {
     if (StorageService.temVendaPendente()) return;
     try {
+      StorageService.exigirBaseLegadaPermitida();
       const chave = this.getChaveLicenca();
       if (!chave) return;
 
       const cloudData = await this.lerPacote(chave);
+      StorageService.exigirBaseLegadaPermitida(cloudData);
       const produtosLocais = StorageService.getProdutos() || [];
       const contasLocais = StorageService.getContasPagar() || [];
       const clientesLocais = StorageService.getClientes() || [];
@@ -722,6 +741,8 @@ export const CloudSyncModule = {
         if (!snap || !snap.exists()) return;
         const resumo = snap.data();
         if (!resumo) return;
+        try { StorageService.exigirBaseLegadaPermitida(resumo); }
+        catch (e) { console.warn('[CloudSync]', e.message); return; }
 
         if (!this.pacotePertenceALicenca(resumo)) {
           console.warn('[CloudSync] Pacote ignorado: licença incompatível.');
@@ -739,6 +760,7 @@ export const CloudSyncModule = {
         let cloudData = resumo;
         try {
           cloudData = await this.completarPacote(chave, resumo);
+          StorageService.exigirBaseLegadaPermitida(cloudData);
           cloudData.movimentosEstoque = await this.baixarMovimentosNovos(chave, resumo.movimentosEstoque, {
             esperarNovos: true,
             movimentosAte: resumo.movimentosAte || ''
@@ -746,13 +768,18 @@ export const CloudSyncModule = {
           cloudData.inventarios = await this.baixarInventariosNuvem(chave);
           if (!cloudData.checkpointEstoque) {
             cloudData.checkpointEstoque = await this.baixarCheckpointEstoque(chave);
+            StorageService.exigirBaseLegadaPermitida(cloudData);
             if (cloudData.checkpointEstoque && StorageService.saveCheckpointEstoque && !StorageService.getCheckpointEstoque()) {
               StorageService.saveCheckpointEstoque(cloudData.checkpointEstoque);
             }
           }
         } catch (e) {
           console.warn('[CloudSync] Falha ao carregar as partes do pacote recebido:', e);
+          return;
         }
+
+        try { StorageService.exigirBaseLegadaPermitida(cloudData); }
+        catch (e) { console.warn('[CloudSync]', e.message); return; }
 
         if (Array.isArray(cloudData.produtosExcluidos)) {
           const excluidos = new Set(StorageService.getProdutosExcluidosIds());
@@ -786,6 +813,7 @@ export const CloudSyncModule = {
 
   async trocarEmpresaSincronizacao(novaChave) {
     try {
+      StorageService.exigirBaseLegadaPermitida();
       // 1. Cancelar o listener em tempo real da empresa anterior
       if (this.unsubOuvinte && typeof this.unsubOuvinte === 'function') {
         this.unsubOuvinte();
@@ -814,6 +842,7 @@ export const CloudSyncModule = {
 
       // 3. Buscar o backup da nova empresa na nuvem
       const cloudData = await this.lerPacote(novaChave);
+      StorageService.exigirBaseLegadaPermitida(cloudData);
       if (cloudData) {
         if (cloudData.chaveLicenca && String(cloudData.chaveLicenca).trim().toUpperCase() !== String(novaChave).trim().toUpperCase()) {
           console.warn('[CloudSync] Base de empresa rejeitada: licença incompatível.');
@@ -884,6 +913,7 @@ export const CloudSyncModule = {
    */
   aplicarTombstonesRecebidos(cloudData) {
     if (!cloudData) return;
+    StorageService.exigirBaseLegadaPermitida(cloudData);
     if (Array.isArray(cloudData.contasExcluidas) && cloudData.contasExcluidas.length && StorageService.adicionarContasExcluidasIds) {
       StorageService.adicionarContasExcluidasIds(cloudData.contasExcluidas);
       StorageService.saveContasPagar(StorageService.getContasPagar());
@@ -902,6 +932,7 @@ export const CloudSyncModule = {
 
   carregarBaseCompletaNovaEmpresa(cloudData) {
     if (!cloudData) return;
+    StorageService.exigirBaseLegadaPermitida(cloudData);
 
     // Produtos & Estoque
     if (Array.isArray(cloudData.produtos)) {
@@ -1005,6 +1036,7 @@ export const CloudSyncModule = {
     let precisaReenviarBaseConsolidada = false;
 
     try {
+      StorageService.exigirBaseLegadaPermitida(cloudData);
       let houveAlteracao = false;
 
       // 1. Sincronizar Operadores
@@ -1134,6 +1166,7 @@ export const CloudSyncModule = {
       }
     } catch (e) {
       console.error('[CloudSync] Erro ao aplicar dados recebidos:', e);
+      if (opts.manual) window.App?.showToast('A sincronização não foi concluída. Confira as pendências de recuperação antes de tentar novamente.', 'warning', { titulo: 'Sincronização pendente', duracao: 0 });
     } finally {
       this.isProcessandoRecebimento = false;
       if (precisaReenviarBaseConsolidada) {
@@ -1293,7 +1326,11 @@ export const CloudSyncModule = {
       }
       return;
     }
-    await this.salvarBackupGarantidoImediato(chave);
+    const salvo = await this.salvarBackupGarantidoImediato(chave);
+    if (salvo !== true) {
+      window.App?.showToast('Não foi possível enviar a base. Confira a conexão e as pendências de recuperação.', 'warning');
+      return;
+    }
     const prods = (StorageService.getProdutos() || []).length;
     if (window.App && typeof window.App.showToast === 'function') {
       window.App.showToast(`☁️ Base com ${prods} produto(s) enviada para a nuvem!`, 'success');
@@ -1302,18 +1339,28 @@ export const CloudSyncModule = {
 
   async forcarBaixarBaseNuvem() {
     const chave = this.getChaveLicenca();
-    if (!chave) return;
+    if (!chave) {
+      window.App?.showToast('Identifique a licença da loja antes de buscar os dados.', 'warning', { titulo: 'Loja não identificada' });
+      return;
+    }
     try {
       const cloudData = await this.lerPacote(chave);
       if (cloudData) {
+        if (this.getChaveLicenca() !== chave || !this.pacotePertenceALicenca(cloudData)) {
+          window.App?.showToast('Os dados recebidos não correspondem à loja ativa. Confira a licença e tente novamente.', 'warning', { titulo: 'Dados não aplicados', duracao: 0 });
+          return;
+        }
         this.carregarBaseCompletaNovaEmpresa(cloudData);
         const prods = (cloudData.produtos || []).length;
         if (window.App && typeof window.App.showToast === 'function') {
           window.App.showToast(`⬇️ ${prods} produto(s) sincronizados da nuvem!`, 'success');
         }
+      } else {
+        window.App?.showToast('Nenhuma base foi encontrada na nuvem para esta loja.', 'info', { titulo: 'Nenhum dado disponível' });
       }
     } catch (e) {
       console.warn('[CloudSync] Erro ao baixar da nuvem:', e);
+      window.App?.showToast('Não foi possível concluir o recebimento dos dados. Confira a conexão e as pendências de recuperação antes de tentar novamente.', 'warning', { titulo: 'Sincronização não concluída', duracao: 0 });
     }
   }
 };

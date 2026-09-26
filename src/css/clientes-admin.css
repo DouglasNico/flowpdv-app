@@ -1,0 +1,64 @@
+/* Continuação do piloto administrativo. Escopo exclusivo de Clientes;
+   os modais seguem dialogs.css e os dois caixas não herdam estes tokens. */
+#tab-clientes {
+  --text-main: #192a40;
+  --text-muted: #526174;
+  --text-dim: #526174;
+  --accent-green: #226447;
+  --accent-red: #a52b32;
+  --border-card: #d8dfe7;
+  --bg-surface-1: #fff;
+  background: #f5f6f8;
+  color: var(--text-main);
+}
+#tab-clientes .view-container { padding: 24px 28px; gap: 20px; }
+#tab-clientes .view-header { align-items: flex-start; gap: 20px; flex-wrap: wrap; margin-bottom: 0 !important; }
+#tab-clientes .view-title-group { flex: 1 1 360px; min-width: 0; }
+#tab-clientes .view-title-group h2 { font-size: 28px; font-weight: 700; line-height: 1.2; letter-spacing: -.025em; }
+#tab-clientes .view-title-group p { font-size: 14px; line-height: 1.5; margin-top: 8px; max-width: 65ch; }
+#tab-clientes .clientes-header-actions { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; flex: 1 1 420px; }
+#tab-clientes .clientes-search-field { flex: 1 1 250px; min-width: 0; }
+#tab-clientes .clientes-search-field label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+#tab-clientes #clientes-search-input { width: 100%; min-height: 44px; padding: 11px 14px; font-size: 14px; border: 1px solid #aebbc9; border-radius: 7px; background: #fff; color: var(--text-main); box-shadow: none; caret-color: #a4460d; }
+#tab-clientes #clientes-search-input::placeholder { color: #657184; opacity: 1; }
+#tab-clientes .clientes-header-actions .btn-primary-action { min-height: 44px; padding: 11px 16px; margin: 0; font-size: 14px; font-weight: 600; border-radius: 7px; background: #192a40; border: 1px solid #192a40; color: #fff; box-shadow: none; transform: none; white-space: nowrap; }
+#tab-clientes .clientes-header-actions .btn-primary-action:hover { background: #30475e; }
+#tab-clientes .clientes-metrics-grid { grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap: 12px; margin: 0; flex-shrink: 0; }
+#tab-clientes .summary-metric-card { box-shadow: none !important; padding: 16px !important; border-radius: 12px !important; }
+#tab-clientes .summary-metric-card > div:first-child { font-size: 12px !important; line-height: 1.5; text-transform: none !important; letter-spacing: 0 !important; }
+#tab-clientes .summary-metric-card > div:last-child { font-size: 24px !important; font-weight: 700 !important; font-variant-numeric: tabular-nums; line-height: 1.3; margin-top: 6px !important; }
+#tab-clientes .clientes-metrics-grid:has(> :nth-child(4)) > :nth-child(4) > div { color: #7d500b !important; }
+#tab-clientes .data-table-card { border: 1px solid #d8dfe7; border-radius: 12px; box-shadow: none; background: #fff; }
+#tab-clientes .table-scroll-area { overflow: auto; scrollbar-color: #96a3b1 #edf0f4; scrollbar-width: thin; }
+#tab-clientes .pdv-table { width: 100%; border-collapse: collapse; }
+#tab-clientes .pdv-table th { padding: 15px 14px; background: #eef2f6; color: #526174; font-size: 12px; font-weight: 600; border-bottom: 1px solid #d8dfe7; white-space: nowrap; }
+#tab-clientes .pdv-table td { padding: 16px 14px; font-size: 14px; line-height: 1.5; border-bottom: 1px solid #e5eaf0; vertical-align: middle; }
+#tab-clientes .pdv-table tbody tr:hover { background: #f5f7fa; }
+/* Somente as duas colunas monetárias do modo com fiado (sete colunas). */
+#tab-clientes .pdv-table tr:has(> :nth-child(7)) > :is(:nth-child(4),:nth-child(5)) { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+#tab-clientes .pdv-table td:first-child { min-width: 190px; }
+#tab-clientes .btn-action-sm { min-height: 36px; min-width: 36px; border-radius: 6px; box-shadow: none; }
+#tab-clientes .btn-whatsapp-pill { min-height: 36px; background: #226447 !important; color: #fff !important; box-shadow: none !important; font-size: 12px !important; }
+#tab-clientes .btn-receber-fiado { min-height: 36px; border-radius: 6px; font-size: 12px; box-shadow: none; }
+#tab-clientes .badge-stock { padding: 5px 9px; border-radius: 6px; font-size: 12px; white-space: nowrap; }
+#tab-clientes .badge-stock.ok { background: #e5f2e9; color: #225b3d; border-color: #c8dfcf; }
+#tab-clientes .badge-stock.low { background: #fff1d7; color: #7d500b; border-color: #ead4ae; }
+#tab-clientes .data-table-footer { padding: 14px 16px; border-top: 1px solid #d8dfe7; background: #f8fafc; color: #526174; font-size: 12px; flex-wrap: wrap; gap: 12px; }
+#tab-clientes :is(button,input,[tabindex]):focus-visible { outline: 3px solid #2466bd; outline-offset: 3px; }
+#tab-clientes button:disabled { opacity: .65; cursor: not-allowed; transform: none; }
+#tab-clientes ::selection { background: #ffcdac; color: #192a40; }
+@media(max-width:1100px) {
+  #tab-clientes .view-container { padding: 20px; gap: 16px; }
+  #tab-clientes .view-title-group h2 { font-size: 24px; }
+}
+@media(max-width:680px), (max-height:650px) {
+  #tab-clientes { overflow: auto !important; }
+  #tab-clientes .view-container { height: auto; min-height: 100%; overflow: visible; padding: 16px; }
+  #tab-clientes .view-title-group, #tab-clientes .clientes-header-actions { flex-basis: 100%; }
+  #tab-clientes .clientes-metrics-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  #tab-clientes .summary-metric-card { min-width: 0; padding: 12px !important; }
+  #tab-clientes .summary-metric-card > div:last-child { font-size: 20px !important; overflow-wrap: anywhere; }
+  #tab-clientes .data-table-card { flex: none; min-height: 240px; }
+  #tab-clientes .table-scroll-area { flex: none; max-height: 60vh !important; }
+  #tab-clientes :is(.btn-action-sm,.btn-whatsapp-pill,.btn-receber-fiado) { min-height: 44px; min-width: 44px; }
+}

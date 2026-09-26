@@ -1,0 +1,24 @@
+const assert=require('node:assert/strict'),{spawnSync}=require('node:child_process'),path=require('node:path'),{createHash}=require('node:crypto');
+const admin=require('../functions/node_modules/firebase-admin');
+(async()=>{
+  assert.equal(process.env.GCLOUD_PROJECT,'demo-flowpdv');assert.equal(process.env.FIRESTORE_EMULATOR_HOST,'127.0.0.1:8080');assert.equal(process.env.FIREBASE_AUTH_EMULATOR_HOST,'127.0.0.1:9099');
+  admin.initializeApp({projectId:'demo-flowpdv'});const db=admin.firestore(),base='lojas_v2/loja-app-ficticia';
+  await admin.auth().createUser({uid:'gerente-app',email:'gerente-app@example.test',password:'TesteLocal-123!',emailVerified:true});
+  await db.doc(base).set({nome:'Loja nativa fictícia',ativo:true,modulos:{balcao:true},caixaV2:{exigirTurno:true},ativacaoOperacionalV2:{schema:1,estado:'habilitada',ambiente:'homologacao',revisao:1}});
+  await db.doc(base+'/membros/gerente-app').set({papel:'gerente',tipo:'usuario',ativo:true});
+  const produto=JSON.parse(require('./fixture-aplicativo-completo.cjs')().adega_produtos)[0];
+  const plano=require('../functions/estoque-migracao-core.cjs').planejarSaldoLegado(produto);
+  await db.doc(base+'/migracoes_estoque/'+createHash('sha256').update(produto.id).digest('hex')).set({plano,estoqueId:'estoque-ficticio'});
+  await db.doc(base+'/estoque/estoque-ficticio').set({unidade:plano.unidade,saldoMili:plano.saldoMili});
+  const r=spawnSync(require('electron'),[path.join(__dirname,'electron-isolation.smoke.cjs')],{stdio:'inherit',timeout:180000,env:{...process.env,FLOWPDV_FULL_APP_TEST:'1',FLOWPDV_NATIVE_SALE_TEST:'1',FLOWPDV_OPERATIONAL_TEST:'1',FLOWPDV_VISIBLE_TEST:'0',FLOWPDV_PAIRING_UI_TEST:'0',FLOWPDV_INSTALL_UI_TEST:'0'}});
+  assert.equal(r.status,0,r.error?.message);
+  assert.equal((await db.doc(base+'/estoque/estoque-ficticio').get()).data().saldoMili,17000);
+  const vendas=await db.collection(base+'/vendas_locais_v2').get();assert.equal(vendas.size,3);assert.ok(vendas.docs.every(d=>d.data().status==='confirmado'));
+  const turnos=await db.collection(base+'/turnos_v2').get();assert.equal(turnos.size,2);assert.ok(turnos.docs.every(d=>(d.data().baixasLocaisPendentes??0)===0));
+  assert.ok(turnos.docs.every(d=>d.data().status==='fechado'));
+  const segundo=turnos.docs.map(d=>d.data()).find(t=>t.trocoInicialCentavos===1500);assert.equal(segundo.totalCentavos,500);
+  assert.equal((await db.collection(base+'/pedidos').get()).size,3);
+  assert.equal((await db.doc(base+'/estoque/lanche-app').get()).data().saldoMili,9000);
+  console.log('VENDA NATIVA SERVIDOR PASS: 3 vendas confirmadas, baixa única de três unidades e nenhuma confirmação pendente após reinício.');
+  await admin.app().delete();
+})().catch(e=>{console.error(e);process.exitCode=1;});

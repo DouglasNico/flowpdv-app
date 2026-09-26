@@ -2,6 +2,99 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // Nova fronteira de acesso. Clientes antigos continuam nas coleções legadas.
+    // Vínculos e documentos públicos só podem ser provisionados pelo servidor.
+    function adminV2() {
+      return request.auth != null && request.auth.token.get('admin', false) == true;
+    }
+
+    function identidadeMembroV2(lojaId, membro) {
+      let terminal = /databases/$(database)/documents/terminais_v2/$(request.auth.uid);
+      return (membro.get('tipo', '') == 'usuario'
+          && request.auth.token.get('email_verified', false) == true
+          && !exists(terminal))
+        || (membro.get('tipo', '') == 'terminal'
+          && membro.papel in ['caixa', 'cozinha']
+          && exists(terminal)
+          && get(terminal).data.ativo == true
+          && get(terminal).data.lojaId == lojaId
+          && get(terminal).data.papel == membro.papel);
+    }
+
+    function papelV2(lojaId, papeis) {
+      return request.auth != null && (
+        adminV2() || (
+          get(/databases/$(database)/documents/lojas_v2/$(lojaId)).data.ativo == true
+          && exists(/databases/$(database)/documents/lojas_v2/$(lojaId)/membros/$(request.auth.uid))
+          && get(/databases/$(database)/documents/lojas_v2/$(lojaId)/membros/$(request.auth.uid)).data.ativo == true
+          && get(/databases/$(database)/documents/lojas_v2/$(lojaId)/membros/$(request.auth.uid)).data.papel in papeis
+          && identidadeMembroV2(lojaId, get(/databases/$(database)/documents/lojas_v2/$(lojaId)/membros/$(request.auth.uid)).data)
+        )
+      );
+    }
+
+    match /lojas_v2/{lojaId} {
+      match /atendimentos/{atendimentoId} {
+        allow read: if papelV2(lojaId, ['gerente', 'caixa', 'cozinha']);
+        allow write: if false;
+      }
+      match /impressoes_cozinha/{jobId} {
+        allow read: if papelV2(lojaId, ['gerente', 'caixa', 'cozinha']);
+        allow write: if false;
+      }
+      match /vendas/{vendaId} {
+        allow read: if papelV2(lojaId, ['gerente', 'caixa']);
+        allow write: if false;
+      }
+      match /estoque/{itemId} {
+        allow read: if papelV2(lojaId, ['gerente', 'caixa']);
+        allow write: if false;
+      }
+      match /movimentos_financeiros/{id} {
+        allow read: if papelV2(lojaId, ['gerente', 'caixa']);
+        allow write: if false;
+      }
+      match /movimentos_estoque/{id} {
+        allow read: if papelV2(lojaId, ['gerente', 'caixa']);
+        allow write: if false;
+      }
+      match /avisos_cozinha/{id} {
+        allow read: if papelV2(lojaId, ['gerente', 'caixa', 'cozinha']);
+        allow write: if false;
+      }
+      allow get: if papelV2(lojaId, ['gerente', 'caixa', 'cozinha']);
+      allow list, write: if false;
+
+      match /membros/{uid} {
+        allow get: if papelV2(lojaId, ['gerente'])
+          || (request.auth != null && request.auth.uid == uid
+            && papelV2(lojaId, ['gerente', 'caixa', 'cozinha']));
+        allow list, write: if false;
+      }
+
+      // Só dados operacionais de preparo, sem endereço ou credenciais.
+      match /pedidos/{pedidoId} {
+        allow read: if papelV2(lojaId, ['gerente', 'caixa', 'cozinha']);
+        allow create, delete: if false;
+        allow update: if false; // Preparo e cancelamento passam pelas transações do servidor.
+      }
+
+      // Separados para não expor contato/endereço ao monitor da cozinha.
+      match /dados_entrega/{pedidoId} {
+        allow read: if papelV2(lojaId, ['gerente', 'caixa']);
+        allow write: if false;
+      }
+    }
+
+    // Slug é público e independente de licença, UID ou credencial.
+    match /catalogos_publicos_v2/{slug} {
+      allow get: if resource.data.publicado == true;
+      allow list, write: if false;
+    }
+    match /rotas_publicas_v2/{slug} {
+      allow read, write: if false;
+    }
+
     function isAdmin() {
       return request.auth != null && (
         request.auth.token.email == 'dougnvds26@gmail.com'
@@ -54,24 +147,35 @@ service cloud.firestore {
       allow update: if isAdmin() || (isLojaDaLicenca(chave) && soCamposDoPdv());
     }
 
+    function legadoGravavel(chave) {
+      return chave != 'LIC-FLOW-937278'
+        || !exists(/databases/$(database)/documents/lojas_v2/legado-lic-flow-937278)
+        || get(/databases/$(database)/documents/lojas_v2/legado-lic-flow-937278).data.get('corteOperacionalV2', {}).get('legadoBloqueado', false) != true;
+    }
+
     match /backups_lojas/{chave} {
-      allow get, write: if isAdmin() || isLoja(chave);
+      allow get: if isAdmin() || isLoja(chave);
+      allow write: if isAdmin() || (isLoja(chave) && legadoGravavel(chave));
       allow list: if false;
 
       match /partes/{parte} {
-        allow read, write: if isAdmin() || isLoja(chave);
+        allow read: if isAdmin() || isLoja(chave);
+        allow write: if isAdmin() || (isLoja(chave) && legadoGravavel(chave));
       }
 
       match /movimentos/{movimento} {
-        allow read, write: if isAdmin() || isLoja(chave);
+        allow read: if isAdmin() || isLoja(chave);
+        allow write: if isAdmin() || (isLoja(chave) && legadoGravavel(chave));
       }
 
       match /checkpoint/{docId} {
-        allow read, write: if isAdmin() || isLoja(chave);
+        allow read: if isAdmin() || isLoja(chave);
+        allow write: if isAdmin() || (isLoja(chave) && legadoGravavel(chave));
       }
 
       match /inventarios/{inventarioId} {
-        allow read, write: if isAdmin() || isLoja(chave);
+        allow read: if isAdmin() || isLoja(chave);
+        allow write: if isAdmin() || (isLoja(chave) && legadoGravavel(chave));
       }
 
       // Logs de auditoria da loja: a loja le, grava e apaga so o que e dela.
@@ -79,19 +183,24 @@ service cloud.firestore {
         allow read, create, update, delete: if isAdmin() || isLoja(chave);
       }
 
-      // Pedidos do cardápio online (o PDV Windows ainda não lê esta subcoleção).
+      // Pedidos do cardápio online: painel da loja atualiza status mesmo com corte V2.
+      // Create/delete de estoque legado continua sob legadoGravavel.
       match /pedidos/{pedidoId} {
-        allow read, update: if isAdmin() || isLoja(chave);
-        allow create, delete: if isAdmin() || isLoja(chave);
+        allow read: if isAdmin() || isLoja(chave);
+        allow update: if isAdmin() || isLoja(chave);
+        allow create, delete: if isAdmin() || (isLoja(chave) && legadoGravavel(chave));
       }
     }
 
     // Overlay do cardápio: foto/visível/descrição fora do backup do PDV.
+    // Continua gravável com o corte V2 — o bloqueio de legado é só estoque/venda local.
     match /cardapio_config/{chave} {
-      allow get, write: if isAdmin() || isLoja(chave);
+      allow get: if isAdmin() || isLoja(chave);
+      allow write: if isAdmin() || isLoja(chave);
       allow list: if false;
       match /produtos/{produtoId} {
-        allow read, write: if isAdmin() || isLoja(chave);
+        allow read: if isAdmin() || isLoja(chave);
+        allow write: if isAdmin() || isLoja(chave);
       }
     }
 

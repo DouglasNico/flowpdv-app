@@ -122,7 +122,7 @@ export const BackupModule = {
     } catch (e) {
       console.error('[BackupCloud] Erro ao salvar backup:', e);
       if (!silencioso && window.App) {
-        window.App.showToast('❌ Erro ao conectar com o servidor para backup.', 'error');
+        window.App.showToast('Não foi possível concluir o backup na nuvem. Confira a conexão e tente novamente; verifique a data do último backup confirmado.', 'error', { titulo: 'Backup não confirmado' });
       }
       return false;
     } finally {
@@ -134,6 +134,8 @@ export const BackupModule = {
   },
 
   async restaurarBackupNuvem() {
+    try { StorageService.exigirBaseLegadaPermitida(); }
+    catch (e) { window.App?.showToast(e.message, 'warning'); return; }
     const chave = this.getChaveLicenca();
     if (!chave) {
       if (window.App) window.App.showToast('⚠️ Licença não encontrada.', 'warning');
@@ -146,6 +148,10 @@ export const BackupModule = {
       const data = await CloudSyncModule.lerPacote(chave);
       if (!data) {
         if (window.App) window.App.showToast('⚠️ Nenhum backup encontrado na nuvem para esta licença.', 'warning');
+        return;
+      }
+      if (this.getChaveLicenca() !== chave || !CloudSyncModule.pacotePertenceALicenca(data)) {
+        window.App?.showToast('O backup recebido não corresponde à loja ativa. Confira a licença antes de restaurar.', 'warning', { titulo: 'Backup não aplicado', duracao: 0 });
         return;
       }
 
@@ -161,6 +167,12 @@ export const BackupModule = {
         textoCancelar: 'Cancelar [ESC]',
         perigo: false,
         onConfirm: () => {
+          try {
+          if (this.getChaveLicenca() !== chave || !CloudSyncModule.pacotePertenceALicenca(data)) {
+            window.App?.showToast('A loja ativa mudou. Busque novamente o backup da loja correta.', 'warning', { titulo: 'Restauração interrompida', duracao: 0 });
+            return;
+          }
+          StorageService.exigirBaseLegadaPermitida(data);
           // Aplicar restauração
           if (Array.isArray(data.produtos)) {
             StorageService.saveProdutos(data.produtos);
@@ -221,11 +233,15 @@ export const BackupModule = {
           this.atualizarStatusBackupUI();
 
           window.App.showToast('✅ Backup da nuvem restaurado com sucesso!', 'success');
+          } catch (e) {
+            console.error('[BackupCloud] Erro ao aplicar restauração:', e);
+            window.App?.showToast('A restauração não foi concluída. Alguns dados podem ter sido aplicados; confira a base e as pendências antes de continuar. ' + (e.message || e), 'error', { titulo: 'Confira a restauração' });
+          }
         }
       });
     } catch (e) {
       console.error('[BackupCloud] Erro ao restaurar:', e);
-      if (window.App) window.App.showToast('❌ Erro ao baixar dados da nuvem.', 'error');
+      if (window.App) window.App.showToast('Não foi possível buscar o backup. Confira a conexão e tente novamente.', 'error', { titulo: 'Backup indisponível' });
     }
   },
 

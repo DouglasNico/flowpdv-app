@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>FlowPDV — Roteiro para um ERP de supermercado</title>
+  <style>
+    @page { size: A4; margin: 18mm 16mm 20mm 16mm; }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      font-family: "Segoe UI", Calibri, Arial, sans-serif;
+      color: #0f172a;
+      font-size: 11.2pt;
+      line-height: 1.45;
+      background: #fff;
+    }
+    h1, h2, h3, h4 { font-family: "Segoe UI Semibold", "Segoe UI", sans-serif; page-break-after: avoid; }
+    h1 { font-size: 22pt; letter-spacing: -0.4px; margin: 0 0 6px; color: #0b1b33; }
+    h2 {
+      font-size: 14pt;
+      color: #0b1b33;
+      border-bottom: 2px solid #f59e0b;
+      padding-bottom: 4px;
+      margin: 22px 0 10px;
+    }
+    h3 { font-size: 12pt; color: #1e3a5f; margin: 16px 0 6px; }
+    h4 { font-size: 11pt; margin: 12px 0 4px; color: #334155; }
+    p { margin: 0 0 8px; }
+    ul, ol { margin: 0 0 10px; padding-left: 18px; }
+    li { margin: 0 0 4px; }
+    .cover {
+      min-height: 240mm;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      page-break-after: always;
+    }
+    .kicker { color: #d97706; font-weight: 800; letter-spacing: 1.4px; font-size: 9.5pt; text-transform: uppercase; }
+    .subtitle { font-size: 13.5pt; color: #475569; margin: 0 0 18px; }
+    .meta { font-size: 10pt; color: #64748b; }
+    .box {
+      border: 1px solid #e2e8f0;
+      border-left: 5px solid #f59e0b;
+      background: #fffbeb;
+      padding: 10px 12px;
+      margin: 10px 0 14px;
+      border-radius: 4px;
+    }
+    .box.warn { background: #fef2f2; border-left-color: #dc2626; }
+    .box.ok { background: #ecfdf5; border-left-color: #059669; }
+    .box.blue { background: #f0f9ff; border-left-color: #0284c7; }
+    table { width: 100%; border-collapse: collapse; margin: 8px 0 14px; font-size: 10pt; }
+    th, td { border: 1px solid #cbd5e1; padding: 6px 8px; text-align: left; vertical-align: top; }
+    th { background: #0f172a; color: #fff; font-weight: 700; }
+    tr:nth-child(even) td { background: #f8fafc; }
+    .phase {
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 10px 12px 6px;
+      margin: 0 0 12px;
+      page-break-inside: avoid;
+    }
+    .phase .tag {
+      display: inline-block;
+      background: #0f172a;
+      color: #fff;
+      font-size: 8.5pt;
+      font-weight: 800;
+      padding: 2px 8px;
+      border-radius: 99px;
+      margin-right: 6px;
+    }
+    .muted { color: #64748b; }
+    .small { font-size: 9.5pt; color: #475569; }
+    code, .mono { font-family: "Cascadia Mono", "Consolas", monospace; font-size: 9.5pt; }
+    .toc a { color: #0f172a; text-decoration: none; }
+    .toc li { margin: 3px 0; }
+    .footer-note { font-size: 9pt; color: #64748b; margin-top: 18px; }
+    .keep { color: #047857; font-weight: 700; }
+    .drop { color: #b91c1c; font-weight: 700; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .card { border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px; page-break-inside: avoid; }
+    .card h4 { margin-top: 0; }
+  </style>
+</head>
+<body>
+
+<section class="cover">
+  <div>
+    <div class="kicker">Documento interno · FlowPDV</div>
+    <h1>Como o FlowPDV pode virar<br>um ERP de supermercado</h1>
+    <p class="subtitle">Roteiro técnico e de produto, em fases, para o Douglas saber o que falta — e o que não vale a pena fazer agora.</p>
+    <div class="box">
+      <strong>Frase-guia.</strong> O FlowPDV de hoje é um PDV de loja (adega, conveniência, mercearia, bar). Um ERP de supermercado é outro produto. O caixa que vocês já têm pode ser a <em>frente</em> desse produto. O cérebro (estoque, compra, filial, preço, fiscal em volume) ainda não existe.
+    </div>
+    <p class="meta">
+      Versão do documento: 1.0 · Setembro de 2026<br>
+      Base: FlowPDV 3.2.x (Electron + localStorage + Firestore)<br>
+      Autor: material de planejamento interno
+    </p>
+  </div>
+  <div>
+    <h3>O que este PDF cobre</h3>
+    <ol class="toc">
+      <li>Onde o sistema está hoje (limites reais)</li>
+      <li>O que “ERP de supermercado” significa na prática</li>
+      <li>O que aproveitar e o que não esticar</li>
+      <li>Arquitetura alvo</li>
+      <li>Fases 0 a 4 (passo a passo, com critério de pronto)</li>
+      <li>Modelo de dados e regras de estoque</li>
+      <li>Offline, sync, fiscal, permissão, operação</li>
+      <li>Esforço, risco e o que não fazer</li>
+      <li>Checklist de decisão comercial</li>
+    </ol>
+    <p class="footer-note">Este não é um cronograma de sprint. É um mapa. Cada fase só começa quando a anterior está vendendo e estável.</p>
+  </div>
+</section>
+
+<h2>1. Onde o FlowPDV está hoje</h2>
+<p>Antes de virar ERP, convém cravar o que o produto <strong>já é</strong> e o que ele <strong>não tenta ser</strong>.</p>
+
+<table>
+  <thead>
+    <tr><th>Peça</th><th>Como está hoje</th><th>Consequência</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>App</td>
+      <td>Electron (Windows), um executável por caixa</td>
+      <td>Instala fácil. Não há servidor próprio da loja.</td>
+    </tr>
+    <tr>
+      <td>Dado local</td>
+      <td><span class="mono">localStorage</span> (cerca de 5–10 MB por máquina)</td>
+      <td>Catálogo + vendas + backup no mesmo teto. Estoura com volume.</td>
+    </tr>
+    <tr>
+      <td>Nuvem</td>
+      <td>Firestore (plano Spark). Backup fatiado porque cada documento só aceita 1 MB</td>
+      <td>Produtos em lotes de 300, vendas de 200, clientes de 400. Sem Cloud Functions.</td>
+    </tr>
+    <tr>
+      <td>Multi-caixa</td>
+      <td>Merge no próprio PDV (quem tem <span class="mono">atualizadoEm</span> mais novo vence)</td>
+      <td>2–3 terminais ok. 10 checkouts vendendo o mesmo SKU ao mesmo tempo, não.</td>
+    </tr>
+    <tr>
+      <td>Estoque</td>
+      <td>Número no JSON do produto + fila de movimentos (últimos ~800)</td>
+      <td>Não é um saldo atômico no servidor. Dois caixas podem divergir e depois “combinar”.</td>
+    </tr>
+    <tr>
+      <td>Licença</td>
+      <td>Uma chave = uma loja. PIN de gerente no cadastro master</td>
+      <td>SaaS de adega. Não é rede com CD e filial.</td>
+    </tr>
+    <tr>
+      <td>Perfil de loja</td>
+      <td>1–3 caixas, até ~2 mil SKUs com folga, ~5 mil no teto</td>
+      <td>Adega / conveniência / mercearia / bar. Não Extra, não atacado.</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="box ok">
+  <strong>Isso já dá para vender.</strong> Para o cliente pequeno/médio, o FlowPDV está no ponto: frente de caixa, turno, estoque, mesas, XML de entrada, auditoria, licença. O problema só aparece se alguém pedir “15 checkouts e 40 mil itens”.
+</div>
+
+<h2>2. O que é um ERP de supermercado</h2>
+<p>Não é “o PDV com mais telas”. É o sistema que a <strong>rede</strong> usa para comprar, receber, precificar, abastecer lojas e fechar o mês — e o PDV é só a ponta que cobra o cliente.</p>
+
+<h3>O supermercado precisa e o FlowPDV ainda não tem</h3>
+<ul>
+  <li><strong>Catálogo enorme</strong> — 20 a 80 mil SKUs, grade (P/M/G, sabor), vários códigos de barras no mesmo item, pack vs unidade.</li>
+  <li><strong>Preço por contexto</strong> — loja, praça, atacado, clube, de/por, leve 3 pague 2, encarte da semana.</li>
+  <li><strong>Estoque de verdade</strong> — saldo por loja e por CD, reserva na venda, ruptura, transferência, inventário cego, lote e validade em massa.</li>
+  <li><strong>Compra</strong> — pedido ao fornecedor, cotação, conferência de NF-e na entrada, custo médio, margem.</li>
+  <li><strong>Multi-loja</strong> — matriz, filiais, centro de distribuição, reposição automática, DRE por loja e consolidado.</li>
+  <li><strong>Caixa em volume</strong> — fila, TEF estável, NFC-e em alto volume, balança, 10–20 checkouts simultâneos.</li>
+  <li><strong>Gente</strong> — comprador, repositor, fiscal, gerente de loja, auditor da rede. Não é só gerente/caixa.</li>
+  <li><strong>Operação</strong> — SLA, monitoramento, backup que não depende do PC do caixa, homologação SEFAZ contínua.</li>
+</ul>
+
+<div class="box warn">
+  <strong>Tradução comercial.</strong> Cliente pergunta “serve para mercado?”. Mercado de bairro com 800 itens e 2 caixas: <em>sim</em>. Rede / supermercado / atacado: <em>não, hoje</em>. Prometer o segundo com o código do primeiro quebra confiança.
+</div>
+
+<h2>3. O que aproveitar e o que não esticar</h2>
+<div class="grid2">
+  <div class="card">
+    <h4 class="keep">Aproveitar</h4>
+    <ul>
+      <li>UX do PDV (leitor, atalhos, turno, fechamento cego)</li>
+      <li>Mesas/comandas (padaria, hortifruti com praça de alimentação)</li>
+      <li>Importação de XML de NF-e de entrada (embrião da compra)</li>
+      <li>Modelo de licença SaaS (evolui, não se joga fora)</li>
+      <li>Electron no Windows do caixa (pode continuar sendo o cliente)</li>
+      <li>Master admin como semente do painel da rede</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h4 class="drop">Não esticar</h4>
+    <ul>
+      <li><span class="mono">localStorage</span> como banco</li>
+      <li>Merge de JSON no cliente como “fonte da verdade” do estoque</li>
+      <li>Firestore Spark como backend de rede</li>
+      <li>Catálogo inteiro na memória do PDV</li>
+      <li>PIN no documento da licença como IAM</li>
+      <li>Um único documento de backup da loja (já foi problema; lotes ajudam, mas não viram ERP)</li>
+    </ul>
+  </div>
+</div>
+
+<div class="box blue">
+  <strong>Regra de ouro.</strong> O PDV continua burro e rápido. O servidor fica esperto. Cada venda manda “baixe 1 un do SKU X na loja Y”. O caixa não é o dono do saldo.
+</div>
+
+<h2>4. Arquitetura alvo (visão final)</h2>
+<pre class="mono" style="background:#0f172a;color:#e2e8f0;padding:12px;border-radius:6px;font-size:8.5pt;white-space:pre-wrap;">
+  [PDV Electron]  [App loja / inventário]  [Painel da rede]
+           \              |                    /
+            \             |                   /
+              ---- HTTPS / API autenticada ----
+                          |
+                    [API + filas]
+                          |
+        ---------------------------------------------
+        | Postgres (fonte da verdade)               |
+        |  produtos, preços, estoque, compras,      |
+        |  vendas, lojas, usuários, fiscal          |
+        ---------------------------------------------
+                          |
+              [SQLite no caixa = cache + fila offline]
+</pre>
+<p>Três camadas, sempre:</p>
+<ol>
+  <li><strong>Caixa</strong> — UI + cache local + fila de eventos se a internet cair.</li>
+  <li><strong>API</strong> — autenticação, baixa de estoque, preço vigente, emissão fiscal, auditoria.</li>
+  <li><strong>Banco central</strong> — Postgres (ou equivalente). Uma linha de estoque = loja + SKU + quantidade. Update atômico.</li>
+</ol>
+<p>Firestore pode continuar um tempo como “ônibus” na fase intermediária. No ERP de supermercado ele deixa de ser o banco.</p>
+
+<h2>5. Passo a passo em fases</h2>
+<p>Não pular fase. A Tentação é desenhar o Extra no quadro branco. O caminho que não quebra o caixa de hoje é este.</p>
+
+<div class="phase">
+  <h3><span class="tag">FASE 0</span> Congelar o PDV de loja (agora)</h3>
+  <p><strong>Objetivo:</strong> ganhar dinheiro e reputação com o que já existe. Sem reescrever o núcleo.</p>
+  <p><strong>Fazer</strong></p>
+  <ul>
+    <li>Vender FlowPDV para adega, conveniência, mercearia, bar (1–3 caixas, até ~2 mil SKUs).</li>
+    <li>Deixar explícito no comercial o teto: terminais, catálogo, internet para sync.</li>
+    <li>NFC-e / TEF só como “pronto” se já estiver rodando em loja real.</li>
+    <li>Limpar débito técnico que dói no suporte: ícone Windows, PIN legado, master admin, logs entre terminais (já encaminhado).</li>
+    <li>Homologar um roteiro de implantação de 1 dia (licença, cadastro, leitor, impressora, primeiro caixa).</li>
+  </ul>
+  <p><strong>Não fazer</strong> — “já vamos migrar para Postgres porque um dia vira supermercado.”</p>
+  <p><strong>Pronto quando:</strong> 5–10 lojas pagantes estáveis, suporte previsível, atualização automática confiável.</p>
+  <p class="small">Prazo típico: contínuo. Isso é o negócio atual, não um projeto paralelo.</p>
+</div>
+
+<div class="phase">
+  <h3><span class="tag">FASE 1</span> Trocar o chão (dado local + API mínima)</h3>
+  <p><strong>Objetivo:</strong> o PDV deixa de viver no <span class="mono">localStorage</span> sem o cliente perceber.</p>
+  <p><strong>Passos técnicos</strong></p>
+  <ol>
+    <li>Introduzir SQLite (ou IndexedDB bem modelado) no Electron: produtos, vendas, turno, fila de sync.</li>
+    <li>Uma camada <span class="mono">Repositorio</span> no código: PDV nunca fala mais com <span class="mono">localStorage</span> direto. Facilita migrar de novo depois.</li>
+    <li>Subir API própria (Node ou similar) + Postgres. Primeiras rotas: login da loja, catálogo, estoque, venda.</li>
+    <li>Estoque no servidor: <span class="mono">UPDATE estoque SET qtd = qtd - :n WHERE loja=:l AND sku=:s AND qtd &gt;= :n</span>. Se não afetar 1 linha, recusa a venda daquele item.</li>
+    <li>Caixa offline: grava a venda no SQLite, coloca na fila, replica quando voltar a rede. Conflito: servidor manda.</li>
+    <li>Migrar loja a loja (flag). Firestore vira espelho temporário, depois some.</li>
+    <li>Plano pago na nuvem (Blaze ou o host da API). Spark não aguenta essa fase.</li>
+  </ol>
+  <p><strong>Entrega visível:</strong> 5–10 caixas na mesma loja, 8–15 mil SKUs, busca ainda rápida, estoque que não “volta” sozinho.</p>
+  <p><strong>Pronto quando:</strong> uma loja piloto (mercado de bairro) opera uma semana sem divergência de estoque entre caixas.</p>
+  <p class="small">Esforço honesto: alguns meses de um dev sênior focado, não um sprint. É a fundação de tudo que vem depois.</p>
+</div>
+
+<div class="phase">
+  <h3><span class="tag">FASE 2</span> Mercado de bairro (o “meio termo”)</h3>
+  <p><strong>Objetivo:</strong> um único supermercado pequeno/médio. Ainda sem rede/CD.</p>
+  <p><strong>Módulos a construir</strong></p>
+  <ul>
+    <li><strong>Cadastro de item de varejo</strong> — NCM, vários EAN, unidade de compra ≠ unidade de venda (fardo / un), pesáveis (balança).</li>
+    <li><strong>Preço</strong> — preço vigente por loja, de/por, promoção com data início/fim. Motor simples no servidor: “qual o preço deste SKU agora neste caixa?”</li>
+    <li><strong>Recebimento</strong> — evoluir o XML: conferência cega, divergência, gera contas a pagar, atualiza custo médio.</li>
+    <li><strong>Inventário</strong> — contagem por corredor/setor, ajuste com auditoria, não “editar estoque na grade”.</li>
+    <li><strong>PDV em volume</strong> — TEF em produção, NFC-e em pico (sábado 11h), recuperação de cupom, gaveta, segundo monitor opcional.</li>
+    <li><strong>Permissão</strong> — papéis: caixa, fiscal de loja, gerente, comprador. Tudo no servidor.</li>
+  </ul>
+  <p><strong>Pronto quando:</strong> um mercado com 5–10 checkouts e 8–15 mil itens fecha o mês com estoque conferível e NFC-e sem drama.</p>
+  <p class="small">Esse já é um produto vendável com outro preço e outro contrato. Ainda não é Extra.</p>
+</div>
+
+<div class="phase">
+  <h3><span class="tag">FASE 3</span> Rede: filiais + CD + compra central</h3>
+  <p><strong>Objetivo:</strong> duas ou mais lojas + um centro de distribuição (mesmo que o “CD” comece como o estoque da matriz).</p>
+  <p><strong>Passos</strong></p>
+  <ol>
+    <li>Entidade <strong>Rede</strong> acima de Loja. Usuário da matriz vê todas; gerente só a sua.</li>
+    <li>Estoque <strong>por depósito</strong> (loja A, loja B, CD).</li>
+    <li>Documento de <strong>transferência</strong>: sai do CD, entra na loja, em trânsito, conferência na porta.</li>
+    <li>Pedido de compra da matriz, rateio para lojas, sugestão de reposição (ponto de pedido / curva ABC — vocês já têm ABC na gerência, dá para evoluir).</li>
+    <li>Preço por praça/loja. Encarte da rede com janela de vigência.</li>
+    <li>DRE por loja e consolidado (venda − CMV − despesas da loja).</li>
+    <li>Painel da rede (o master admin cresce: lojas, usuários, chaves, mas também estoque CD e transferências).</li>
+  </ol>
+  <p><strong>Pronto quando:</strong> a matriz manda carga, a filial confere, o PDV da filial vende com o preço dela, o estoque do CD bate.</p>
+</div>
+
+<div class="phase">
+  <h3><span class="tag">FASE 4</span> ERP de supermercado (o jogo grande)</h3>
+  <p><strong>Objetivo:</strong> competir no recorte “rede regional / supermercado completo”. Aqui já é outro time e outro posicionamento (Linx, TOTVS, Consinco como referência, não como cópia).</p>
+  <ul>
+    <li>Grade completa (tamanho/cor/sabor) e sortimento por loja (“essa filial não vende vinho importado”).</li>
+    <li>Mix e ruptura: o que deveria ter e não tem, lost sale.</li>
+    <li>Promoção complexa (combo, desconto progressivo, clube, cashback).</li>
+    <li>WMS leve no CD (endereço, picking, conferencia).</li>
+    <li>Conciliação TEF × vendas × banco.</li>
+    <li>Fiscal de rede (múltiplos CNs, contingência, inutilização, manifesto de destinatário em volume).</li>
+    <li>BI (não dashboard amador): margem por categoria, encarte que deu prejuízo, fila de caixa.</li>
+    <li>App de chão de loja (reposição, inventário com coletor).</li>
+    <li>Integrações: e-commerce, marketplace, iFood, balança de checkout, totem, self-checkout.</li>
+    <li>SLA, SOC, LGPD de verdade, ambiente homolog / produção, CI.</li>
+  </ul>
+  <p><strong>Pronto quando:</strong> uma rede de 5–20 lojas opera o mês sem planilha paralela de estoque e de preço.</p>
+  <p class="small">Isso é anos, não meses — a menos que se contrate um time e se foque num recorte (ex.: só redes de 3–8 lojas, sem WMS pesado).</p>
+</div>
+
+<h2>6. Modelo de dados (o mínimo que o ERP exige)</h2>
+<p>Hoje quase tudo é lista no JSON da loja. No alvo, tabelas. Sem isso, nenhuma fase 2+ segura.</p>
+<table>
+  <thead><tr><th>Tabela</th><th>Chave / ideia</th><th>Por quê</th></tr></thead>
+  <tbody>
+    <tr><td>rede, loja, deposito</td><td>loja pertence a uma rede; depósito é loja ou CD</td><td>Multi-loja</td></tr>
+    <tr><td>sku / produto</td><td>id interno estável; EAN é só um código, pode haver vários</td><td>Mesmo arroz, vários códigos</td></tr>
+    <tr><td>produto_ean</td><td>ean → sku</td><td>Leitor no PDV</td></tr>
+    <tr><td>embalagem</td><td>un, fardo, display + fator</td><td>Compra 12, vende 1</td></tr>
+    <tr><td>estoque</td><td>(deposito, sku) → quantidade, reservado, custo médio</td><td>Saldo atômico</td></tr>
+    <tr><td>movimento_estoque</td><td>evento imutável (venda, entrada, ajuste, transferência)</td><td>Auditoria e reconciliação</td></tr>
+    <tr><td>preco_vigente</td><td>sku + loja + vigência + tipo (normal, promo)</td><td>Encarte</td></tr>
+    <tr><td>venda + venda_item</td><td>cabeçalho e itens, turno, operador, fiscal</td><td>Não um array gigante</td></tr>
+    <tr><td>turno_caixa</td><td>abertura, sangria, fechamento, conferência</td><td>Já existe; vira tabela</td></tr>
+    <tr><td>pedido_compra, nfe_entrada</td><td>ciclo de compra</td><td>Fase 2–3</td></tr>
+    <tr><td>transferencia</td><td>origem, destino, status (rascunho, em trânsito, conferida)</td><td>Fase 3</td></tr>
+    <tr><td>usuario, papel, permissao</td><td>IAM no servidor</td><td>Sai o PIN solto</td></tr>
+  </tbody>
+</table>
+
+<h3>Regra de estoque que não pode falhar</h3>
+<ol>
+  <li>Toda mudança de saldo gera um <strong>movimento</strong> (nunca “editar o número e pronto”).</li>
+  <li>Venda no PDV: reserva → confirma no pagamento → baixa. Cancelamento estorna o movimento.</li>
+  <li>Dois caixas no mesmo SKU: o banco serializa. Quem não tem saldo recebe “sem estoque” na hora, não no sync de 2 minutos depois.</li>
+  <li>Inventário gera ajuste com responsável e motivo. O PDV não “corrige na unha” sem papel.</li>
+</ol>
+
+<h2>7. Offline e sincronização</h2>
+<p>Supermercado não pode parar se a internet cair 20 minutos. Também não pode inventar estoque.</p>
+<ul>
+  <li><strong>Online:</strong> preço e saldo vêm da API. Venda fecha no servidor.</li>
+  <li><strong>Offline curto:</strong> PDV usa último catálogo/preço em cache. Vendas vão para uma fila local. Ao voltar, o servidor aplica em ordem. Se o saldo não der, a venda fica marcada para conferência (não some, não duplica).</li>
+  <li><strong>Offline longo:</strong> política comercial: só itens não controlados? ou opera com risco e auditoria no retorno? Isso é decisão de produto, não de código.</li>
+  <li><strong>Proibido:</strong> dois caixas offline reescrevendo o catálogo inteiro um no outro (é o modelo atual, em escala menor).</li>
+</ul>
+
+<h2>8. Frente de caixa em volume</h2>
+<ul>
+  <li>Busca de produto por EAN em índice local (SQLite), não varrer array de 40 mil no JS.</li>
+  <li>TEF: homologar uma adquirente, pinpad, cancelamento, reconciliação do fim do dia.</li>
+  <li>NFC-e: fila de emissão, contingência, inutilização, reimpressão, timeout de SEFAZ. Homologação contínua, não “uma vez”.</li>
+  <li>Balança de checkout (preço-peso) e etiquetas de balança de açougue/padaria.</li>
+  <li>Segundo monitor / autoatendimento só depois do checkout comum estar à prova de fila.</li>
+  <li>Impressora térmica: já existe caminho; precisa de cupom de supermercado (item, tributos, via do cliente) estável.</li>
+</ul>
+
+<h2>9. Pessoas, permissão e loja</h2>
+<table>
+  <thead><tr><th>Papel</th><th>O que pode</th><th>Fase</th></tr></thead>
+  <tbody>
+    <tr><td>Operador de caixa</td><td>Vender, sangria com autorização, fechar o próprio turno</td><td>0 (já existe, refinar)</td></tr>
+    <tr><td>Gerente de loja</td><td>Desconto, cancelamento, inventário, funcionários da loja</td><td>0–2</td></tr>
+    <tr><td>Fiscal / frente</td><td>Troca, NFC-e, gaveta, suporte ao caixa</td><td>2</td></tr>
+    <tr><td>Comprador</td><td>Pedido, custo, fornecedor — sem ver o caixa</td><td>2–3</td></tr>
+    <tr><td>Repositor / inventário</td><td>App ou coletor, sem preço de venda</td><td>3–4</td></tr>
+    <tr><td>Matriz / auditor</td><td>Todas as lojas, DRE, transferência, usuário</td><td>3</td></tr>
+  </tbody>
+</table>
+<p>PIN de gerente no JSON da licença não escala. Login com usuário, senha (ou PIN local amarrado a um usuário do servidor), sessão, log de quem fez o quê (vocês já têm auditoria — ela precisa nascer no servidor, não só no PC).</p>
+
+<h2>10. Operação, suporte e dinheiro da nuvem</h2>
+<ul>
+  <li><strong>Ambientes:</strong> homologação ≠ produção. Loja nova nasce em prod com backup, não no PC do Douglas.</li>
+  <li><strong>Observabilidade:</strong> cada caixa reporta versão, última sync, erro de TEF/NFC-e. Sem isso, suporte é WhatsApp eterno.</li>
+  <li><strong>Backup:</strong> Postgres com PITR. O “backup da loja” deixa de ser um JSON na nuvem.</li>
+  <li><strong>Atualização:</strong> o auto-update que vocês já têm continua. API versionada para não quebrar caixa antigo.</li>
+  <li><strong>Custo:</strong> Spark acaba na fase 1. Precisa precificar o SaaS incluindo banco, NFC-e, storage, suporte. Rede paga por loja + CD, não “uma chave barata”.</li>
+  <li><strong>Contrato:</strong> SLA, quem homologa SEFAZ, quem treina, o que acontece se o cliente tiver 40 mil itens no dia 1 (recusar ou cobrar implantação).</li>
+</ul>
+
+<h2>11. Esforço e risco (números honestos)</h2>
+<table>
+  <thead><tr><th>Fase</th><th>O que é</th><th>Ordem de grandeza</th><th>Risco se pular</th></tr></thead>
+  <tbody>
+    <tr><td>0</td><td>PDV de loja, vender</td><td>Agora</td><td>—</td></tr>
+    <tr><td>1</td><td>SQLite + API + estoque atômico</td><td>Meses (fundação)</td><td>Tudo que vier por cima desaba</td></tr>
+    <tr><td>2</td><td>Mercado de bairro</td><td>Mais alguns meses em cima da 1</td><td>Vender “supermercado” cedo demais</td></tr>
+    <tr><td>3</td><td>Rede + CD</td><td>Projeto à parte, team pequeno</td><td>Planilha paralela na matriz</td></tr>
+    <tr><td>4</td><td>ERP completo</td><td>Anos / time dedicado</td><td>Virar eterno 80% feito</td></tr>
+  </tbody>
+</table>
+<div class="box warn">
+  <strong>Risco nº 1:</strong> começar a fase 4 no mesmo código da 3.2. O caixa atual paga a conta. Um rewrite no meio da operação de adega quebra o que já vende. A fase 1 tem que ser <em>atrás</em> da mesma tela, com flag por loja.
+</div>
+
+<h2>12. O que não fazer</h2>
+<ul>
+  <li>Não aumentar lote do Firestore para 5.000 e achar que virou supermercado.</li>
+  <li>Não guardar foto de produto em base64 no cadastro (estoura local e nuvem).</li>
+  <li>Não fazer “ERP” só com mais abas no Electron e o mesmo JSON.</li>
+  <li>Não copiar TOTVS/Linx tela a tela. Copiar o <em>problema</em> (estoque, preço, carga, fiscal), não o menu.</li>
+  <li>Não prometer 50 mil SKUs no comercial do FlowPDV atual.</li>
+  <li>Não misturar adega e Extra no mesmo preço e no mesmo suporte.</li>
+</ul>
+
+<h2>13. Checklist de decisão (imprimir e marcar)</h2>
+<p>Antes de qualquer código de “ERP”, responder por escrito:</p>
+<ol>
+  <li>☐ Quantas lojas pagantes do PDV atual eu quero ter antes de abrir a fase 1?</li>
+  <li>☐ O primeiro alvo é <strong>mercado de bairro</strong> (fase 2) ou eu estou fantasiando a fase 4?</li>
+  <li>☐ Quem paga a nuvem e o certificado fiscal quando forem 10 checkouts?</li>
+  <li>☐ Qual adquirente TEF e qual provedor NFC-e entram no piloto?</li>
+  <li>☐ Qual loja real aceita ser cobaia da fase 1 (flag, rollback, treino)?</li>
+  <li>☐ O FlowPDV de adega continua sendo o produto A, e o de mercado o produto B (mesmo PDV, outro contrato)?</li>
+  <li>☐ Eu tenho caixa para N meses de fundação sem vender o ERP ainda?</li>
+</ol>
+<p>Se a maioria for “não sei”, a resposta é: <strong>continuar na fase 0</strong>.</p>
+
+<h2>14. Resumo em uma página</h2>
+<div class="box ok">
+  <p><strong>Hoje:</strong> PDV de loja, vendável, teto ~2 mil produtos e 1–3 caixas.</p>
+  <p><strong>Amanhã (fase 1–2):</strong> mesmo PDV, chão novo (SQLite + API + Postgres), mercado de bairro com 5–10 caixas e 8–15 mil SKUs.</p>
+  <p><strong>Depois (fase 3–4):</strong> rede, CD, preço por loja, compra central, fiscal e BI — aí sim a conversa de ERP de supermercado.</p>
+  <p style="margin-bottom:0"><strong>Como chegar:</strong> não reescrever o caixa na cara do cliente; extrair o dado para um servidor; só então construir compra, filial e promoção. O Electron permanece a vitrine. O estoque deixa de morar no PC.</p>
+</div>
+
+<p class="footer-note">
+  Documento interno FlowPDV · Roteiro ERP de supermercado v1.0 · Setembro 2026<br>
+  Relacionado ao código atual: Electron, <span class="mono">adega-pdv-gestao</span>, sync em <span class="mono">cloud-sync.js</span> / <span class="mono">merge-core.js</span>, persistência em <span class="mono">storage.js</span>.
+</p>
+
+</body>
+</html>

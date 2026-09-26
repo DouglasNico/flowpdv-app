@@ -1,4 +1,13 @@
+import { showToast, mostrarCarregando, fecharCarregando } from './notificacoes.js';
+import { instalarConexaoCardapio } from './conexao-cardapio.js';
 import { StorageService } from './storage.js';
+import { iniciarPainelTeste } from './painel-teste.js';
+import { instalarPareamentoTeste } from './pareamento-teste.js';
+import { iniciarObservacaoTerminalHomologacao } from './sessoes-homologacao.js';
+import { instalarRecebimentoTeste } from './recebimento-teste.js';
+import { instalarCozinhaTeste } from './cozinha-teste.js';
+import { instalarFechamentoTeste } from './fechamento-teste.js';
+import { instalarConfiguracaoTeste } from './configuracao-teste.js';
 import { AuthModule } from './auth.js';
 import { PdvModule } from './pdv.js';
 import { EstoqueModule } from './estoque.js';
@@ -47,6 +56,7 @@ export const App = {
 
     try { StorageService.init(); }
     catch (e) { window.alert('Não foi possível recuperar a última venda. Libere espaço em disco e reabra o FlowPDV. Não cobre novamente.\n' + e.message); return; }
+    if (iniciarPainelTeste()) return;
     AuthModule.init();
     PdvModule.init();
     EstoqueModule.init();
@@ -72,6 +82,7 @@ export const App = {
     this.bindMascarasTelefone();
     this.iniciarRelogioAoVivo();
     this.carregarConfiguracoes();
+    instalarConexaoCardapio({ storage: StorageService, auth: AuthModule });
     this.iniciarAutoUpdaterListeners();
     this.verificarBoasVindasPosAtualizacao();
     this.atualizarPermissoesUsuario();
@@ -190,14 +201,19 @@ export const App = {
   },
 
   salvarTipoTerminalLocal(valor) {
+    if (!AuthModule.isGerente()) { this.sincronizarSelectTipoTerminal(); return; }
     if (window.LicencaModule && typeof window.LicencaModule.setTipoTerminalAtual === 'function') {
-      window.LicencaModule.setTipoTerminalAtual(valor).then(() => {
+      const seletor = document.getElementById('cfg-tipo-terminal');
+      if (seletor) seletor.disabled = true;
+      window.LicencaModule.setTipoTerminalAtual(valor).then(async () => {
         this.sincronizarSelectTipoTerminal();
         this.aplicarModoTerminal();
+        if (await window.ConexaoCardapio?.conferirAposTroca()) return;
         this.showToast('Função deste computador salva. O operador vê a tela nova no próximo login.', 'success');
       }).catch(() => {
+        this.sincronizarSelectTipoTerminal();
         this.showToast('Não foi possível gravar na nuvem. Tente de novo.', 'error');
-      });
+      }).finally(() => { if (seletor) seletor.disabled = false; });
     } else {
       StorageService.setTipoTerminal(valor);
       this.aplicarModoTerminal();
@@ -220,7 +236,7 @@ export const App = {
   },
 
   trocarAba(nomeAba) {
-    if (window.AuthModule && typeof window.AuthModule.isGerente === 'function' && !window.AuthModule.isGerente() && nomeAba !== 'pdv') {
+    if (window.AuthModule && typeof window.AuthModule.isGerente === 'function' && !window.AuthModule.isGerente() && nomeAba !== 'pdv' && nomeAba !== 'cardapio') {
       return;
     }
     // Sempre que sair das abas protegidas, re-bloquear o acesso do operador
@@ -343,6 +359,30 @@ export const App = {
 
   bindAtalhosTeclado() {
     document.addEventListener('keydown', (e) => {
+      // Modal de impressão pós-venda: prioridade máxima (ENTER/F/ESC) — antes de ignorar Enter do leitor
+      const modalSucessoImpressao = document.getElementById('modal-sucesso-venda-impressao');
+      if (modalSucessoImpressao && (modalSucessoImpressao.style.display === 'flex' || modalSucessoImpressao.style.display === 'block')) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          e.stopPropagation();
+          if (window.PdvModule) PdvModule.ignorarProximoEnterGlobal = false;
+          PdvModule.confirmarImpressaoVendaFinalizada();
+          return;
+        }
+        if (e.key === 'f' || e.key === 'F') {
+          e.preventDefault();
+          e.stopPropagation();
+          PdvModule.confirmarImpressaoA4VendaFinalizada();
+          return;
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          PdvModule.fecharModalSucessoImpressao();
+          return;
+        }
+      }
+
       if (e.key === 'Enter' && window.PdvModule && window.PdvModule.ignorarProximoEnterGlobal) {
         window.PdvModule.ignorarProximoEnterGlobal = false;
         return;
@@ -398,30 +438,9 @@ export const App = {
         }
       }
 
-      // 1. Se o modal de sucesso/impressão de venda estiver ativo
-      const modalSucessoImpressao = document.getElementById('modal-sucesso-venda-impressao');
-      if (modalSucessoImpressao && modalSucessoImpressao.style.display === 'flex') {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          PdvModule.confirmarImpressaoVendaFinalizada();
-          return;
-        }
-        if (e.key === 'f' || e.key === 'F') {
-          e.preventDefault();
-          PdvModule.confirmarImpressaoA4VendaFinalizada();
-          return;
-        }
-        if (e.key === 'Escape') {
-          e.preventDefault();
-          e.stopPropagation();
-          PdvModule.fecharModalSucessoImpressao();
-          return;
-        }
-      }
-
       // 2. Se o modal de confirmação custom estiver ativo
       const modalConfirmacaoCustom = document.getElementById('modal-confirmacao-custom');
-      if (modalConfirmacaoCustom && modalConfirmacaoCustom.style.display === 'flex') {
+      if (modalConfirmacaoCustom && (modalConfirmacaoCustom.style.display === 'flex' || modalConfirmacaoCustom.style.display === 'block')) {
         if (Date.now() - (this._confirmacaoAbertaEm || 0) < 400) {
           e.preventDefault();
           e.stopPropagation();
@@ -984,6 +1003,10 @@ export const App = {
         if (this.abaAtiva === 'pdv') {
           PdvModule.abrirModalReimpressaoCupom();
         }
+      } else if (e.altKey && !e.ctrlKey && (e.key === 'e' || e.key === 'E')) {
+        e.preventDefault();
+        if (this.operadorEmAtendimento()) return;
+        if (this.abaAtiva === 'pdv' && window.CaixaModule) CaixaModule.abrirListaEstornoNoPdv();
       } else if (e.altKey && (e.key === 'g' || e.key === 'G')) {
         e.preventDefault();
         ThermalPrintModule.abrirGavetaDinheiro();
@@ -1070,6 +1093,7 @@ export const App = {
     setInterval(update, 1000);
   },
   carregarConfiguracoes() {
+    window.ConexaoCardapio?.atualizar();
     const cfg = StorageService.getConfig() || {};
     const lic = StorageService.getLicenca() || {};
 
@@ -1772,34 +1796,16 @@ export const App = {
     });
   },
 
-  showToast(mensagem, tipo = 'info') {
-    // Blindagem: não exibir nenhuma notificação toast apenas se o modal de login estiver visível na tela
-    const loginModal = document.getElementById('modal-login-operador');
-    if (loginModal && loginModal.classList.contains('active')) {
-      return;
-    }
+  showToast(mensagem, tipo = 'info', opcoes = {}) {
+    return showToast(mensagem, tipo, opcoes);
+  },
 
-    let toastContainer = document.getElementById('toast-container');
-    if (!toastContainer) {
-      toastContainer = document.createElement('div');
-      toastContainer.id = 'toast-container';
-      toastContainer.style.cssText = 'position: fixed; top: 20px; right: 20px; z-index: 999999; display: flex; flex-direction: column; gap: 10px; pointer-events: none;';
-      document.body.appendChild(toastContainer);
-    }
+  mostrarCarregando(texto) {
+    mostrarCarregando(texto);
+  },
 
-    const toast = document.createElement('div');
-    toast.className = 'toast-item';
-    const bg = tipo === 'success' ? '#10b981' : (tipo === 'error' ? '#ef4444' : (tipo === 'warning' ? '#f59e0b' : '#3b82f6'));
-    toast.style.cssText = 'background: ' + bg + '; color: #ffffff; padding: 12px 20px; border-radius: 8px; font-weight: 700; font-size: 14px; box-shadow: 0 10px 25px rgba(0,0,0,0.25); pointer-events: auto;';
-    toast.textContent = mensagem;
-
-    toastContainer.appendChild(toast);
-
-    setTimeout(() => {
-      toast.style.opacity = '0';
-      toast.style.transition = 'opacity 0.3s ease';
-      setTimeout(() => toast.remove(), 300);
-    }, 3500);
+  fecharCarregando() {
+    fecharCarregando();
   },
   gerenciaDesbloqueadaTemp: false,
 
@@ -1938,7 +1944,7 @@ export const App = {
 
     this.fecharModalEditarConfigLoja();
     this.carregarConfiguracoes();
-    this.showToast('💾 Dados da empresa atualizados com sucesso!', 'success');
+    this.showToast('Dados da empresa salvos neste computador.', 'success', { titulo: 'Configurações salvas' });
   },
 
   irParaEstoqueComFiltro(filtro = 'todos') {
@@ -1981,7 +1987,20 @@ window.ThermalPrintModule = ThermalPrintModule;
 window.AtendimentoPdvModule = AtendimentoPdvModule;
 
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => App.init());
+  document.addEventListener('DOMContentLoaded', () => { App.init(); instalarTelasV2(); });
 } else {
   App.init();
+  instalarTelasV2();
+}
+
+window.addEventListener('flowpdv-operacao-v2-pronta', instalarTelasV2);
+function instalarTelasV2() {
+  instalarPareamentoTeste();
+  if (window.electronAPI?.pilotoHospedado !== true) {
+    instalarRecebimentoTeste();
+    instalarCozinhaTeste();
+    instalarFechamentoTeste();
+    instalarConfiguracaoTeste();
+  }
+  iniciarObservacaoTerminalHomologacao();
 }

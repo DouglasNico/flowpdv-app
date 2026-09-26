@@ -245,7 +245,7 @@ export const TefModule = {
   abrirPendencias() {
     let modal = document.getElementById('modal-pendencias-tef');
     if (!modal) {
-      modal = document.createElement('div'); modal.id = 'modal-pendencias-tef'; modal.className = 'modal-overlay'; modal.style.zIndex = '20000';
+      modal = document.createElement('div'); modal.id = 'modal-pendencias-tef'; modal.className = 'modal-overlay flow-dialog'; modal.dataset.dialogSize = 'wide'; modal.style.zIndex = '20000';
       document.body.appendChild(modal);
     }
     modal.replaceChildren();

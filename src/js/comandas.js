@@ -914,7 +914,7 @@ export const ComandasModule = {
     // Agrupa e consolida todo o atendimento da mesa em 1 único registro de auditoria
     AuditModule.registrarOuAtualizarLogMesa(c, 'atualizacao');
 
-    if (window.App) window.App.showToast(`➕ ${quantidade}x ${produto.nome} lançado na ${c.nome}!`, 'success');
+    if (window.App) window.App.showToast(`${quantidade}× ${produto.nome} lançado na ${c.nome}.`, 'success', { chave: 'item-comanda', titulo: 'Item lançado' });
   },
 
   alterarQtdItem(comandaId, index, delta) {
@@ -1285,7 +1285,6 @@ export const ComandasModule = {
     `;
 
     ThermalPrintModule.executarImpressao(html);
-    if (window.App) window.App.showToast(`🖨️ Pré-conta da ${c.nome} enviada para a impressora!`, 'info');
   },
 
   interpretarAtalhoCaixa(entrada) {

@@ -1,0 +1,65 @@
+/* Gerência: apresentação local, sem alterar controles de acesso ou cálculos. */
+#tab-gerencia { --text-main: #192a40; --text-muted: #526174; --text-dim: #526174; --border-card: #d8dfe7; background: #f5f6f8; color: var(--text-main); }
+#tab-gerencia > .view-container { padding: 24px 28px !important; gap: 20px !important; }
+#tab-gerencia .gerencia-header { gap: 20px !important; }
+#tab-gerencia .gerencia-header h2 { font-size: 28px !important; font-weight: 700 !important; line-height: 1.2; letter-spacing: -.025em; flex-wrap: wrap; }
+#tab-gerencia .gerencia-header p { font-size: 14px !important; line-height: 1.5; margin-top: 8px !important; }
+#tab-gerencia .gerencia-navigation { width: 100%; background: #e9eef4 !important; padding: 6px !important; gap: 6px !important; border-color: #d8dfe7 !important; }
+#tab-gerencia .gerencia-subnav-btn { min-height: 42px; padding: 10px 14px; font-size: 13px; border-radius: 7px; font-weight: 600; box-shadow: none; }
+#tab-gerencia .gerencia-subnav-btn.active { background: #192a40; color: #fff; border-color: #192a40; }
+#tab-gerencia .gerencia-subnav-btn:not(.active):hover { background: #fff; color: #192a40; }
+#tab-gerencia .gerencia-subpanel { gap: 16px; }
+#tab-gerencia :is(.gerencia-inicio-grid,#gerencia-abc-metrics,#gerencia-contas-metrics) { grid-template-columns: repeat(auto-fit,minmax(180px,1fr)) !important; gap: 12px; padding-top: 0; flex-shrink: 0; }
+#tab-gerencia :is(.summary-metric-card,.gerencia-inicio-card,.gerencia-inicio-hoje-card,.gerencia-categoria-card,.data-table-card) { border-radius: 12px; box-shadow: none !important; }
+#tab-gerencia .gerencia-inicio-card { padding: 16px; gap: 8px; min-width: 0; }
+#tab-gerencia .gerencia-inicio-kicker { text-transform: none; letter-spacing: 0; font-size: 13px; }
+#tab-gerencia .gerencia-inicio-valor { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+#tab-gerencia .gerencia-inicio-sub { line-height: 1.5; }
+#tab-gerencia .summary-metric-card { padding: 16px !important; min-width: 0; }
+#tab-gerencia .summary-metric-card > :first-child { font-size: 12px !important; line-height: 1.5; text-transform: none !important; }
+#tab-gerencia .summary-metric-card > :nth-child(2) { font-size: 24px !important; font-weight: 700 !important; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+#tab-gerencia .gerencia-inicio-hoje-card { padding: 20px; }
+#tab-gerencia .gerencia-inicio-hoje-head { gap: 6px; margin-bottom: 16px; }
+#tab-gerencia .gerencia-inicio-hoje-head strong { font-size: 16px; }
+#tab-gerencia .gerencia-inicio-item { min-height: 52px; }
+#tab-gerencia .gerencia-inicio-item-txt { min-width: 0; overflow-wrap: anywhere; }
+#tab-gerencia .btn-primary-action { min-height: 42px; height: auto !important; padding: 10px 14px !important; margin: 0; background: #192a40 !important; color: #fff !important; border: 1px solid #192a40; border-radius: 7px; font-size: 13px !important; font-weight: 600 !important; box-shadow: none; transform: none; }
+#tab-gerencia .filter-pill-btn { min-height: 38px; border-radius: 7px; font-size: 12px; }
+#tab-gerencia .filter-pill-btn.active { background: #192a40; color: #fff; border-color: #192a40; }
+#tab-gerencia .btn-action-sm { min-height: 36px; min-width: 36px; border-radius: 6px; }
+#tab-gerencia .auditoria-toolbar { gap: 12px; }
+#tab-gerencia .auditoria-acoes { flex-wrap: wrap; gap: 8px; }
+#tab-gerencia :is(select,.filtro-data-wrap) { min-height: 38px; max-width: 100%; }
+#tab-gerencia .table-scroll-area { overflow: auto !important; scrollbar-color: #96a3b1 #edf0f4; scrollbar-width: thin; }
+#tab-gerencia .pdv-table th { padding: 15px 14px; background: #eef2f6; color: #526174; font-size: 12px; font-weight: 600; white-space: nowrap; border-bottom: 1px solid #d8dfe7; }
+#tab-gerencia .pdv-table td { padding: 15px 14px; font-size: 14px; line-height: 1.5; border-bottom: 1px solid #e5eaf0; }
+#tab-gerencia .pdv-table tbody tr:hover { background: #f5f7fa; }
+#tab-gerencia #gerencia-contas-tbody td:nth-child(4), #tab-gerencia #gerencia-abc-tbody td:nth-child(5) { font-variant-numeric: tabular-nums; white-space: nowrap; }
+#tab-gerencia .data-table-footer { padding: 14px 16px; background: #f8fafc; font-size: 12px; flex-wrap: wrap; gap: 12px; }
+#tab-gerencia :is(button,input,select,[tabindex]):focus-visible { outline: 3px solid #2466bd; outline-offset: 3px; }
+#tab-gerencia ::selection { background: #ffcdac; color: #192a40; }
+@media(max-width:1100px) {
+  #tab-gerencia > .view-container { padding: 20px !important; gap: 16px !important; }
+  #tab-gerencia .gerencia-header h2 { font-size: 24px !important; }
+}
+@media(max-width:680px), (max-height:650px) {
+  #tab-gerencia { overflow: auto !important; }
+  #tab-gerencia > .view-container { height: auto !important; min-height: 100%; overflow: visible !important; padding: 16px !important; }
+  #tab-gerencia .gerencia-navigation { flex-wrap: nowrap !important; overflow-x: auto; }
+  #tab-gerencia .gerencia-subnav-btn { flex-shrink: 0; min-height: 44px; }
+  #tab-gerencia .gerencia-header { min-width: 0; }
+  #tab-gerencia .auditoria-acoes { width: 100%; min-width: 0; flex-shrink: 1; }
+  #tab-gerencia .gerencia-subpanel.active { flex: none; min-height: 240px; overflow: visible; }
+  #tab-gerencia :is(.gerencia-inicio-grid,#gerencia-abc-metrics,#gerencia-contas-metrics) { grid-template-columns: repeat(2,minmax(0,1fr)) !important; }
+  #tab-gerencia .gerencia-inicio-valor, #tab-gerencia .summary-metric-card > :nth-child(2) { font-size: 20px !important; }
+  #tab-gerencia .gerencia-subpanel > div:not(.data-table-card) { flex-wrap: wrap; gap: 12px; }
+  #tab-gerencia .gerencia-subpanel > div > div:has(> button), #tab-gerencia .gerencia-subpanel > div > div:has(> .filtro-data-wrap) { flex-wrap: wrap; }
+  #tab-gerencia .data-table-card { flex: none !important; min-height: 220px !important; }
+  #tab-gerencia .table-scroll-area { max-height: 60vh; flex: none !important; }
+  #tab-gerencia .gerencia-inicio-hoje-card { flex: none; overflow: visible; }
+  #tab-gerencia :is(.btn-action-sm,.filter-pill-btn) { min-height: 44px; }
+}
+
+#tab-gerencia .summary-metric-card > :first-child { color: #526174 !important; }
+#tab-gerencia .summary-metric-card > :nth-child(2) { color: #192a40 !important; }
+#tab-gerencia .gerencia-inicio-card:last-child .gerencia-inicio-valor { color: #80510d !important; }

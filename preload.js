@@ -3,8 +3,24 @@
  */
 
 const { contextBridge, ipcRenderer, shell } = require('electron');
+const testMode = process.argv.includes('--flowpdv-test-renderer');
+const hostedPilot = testMode && process.argv.includes('--flowpdv-piloto-v2-renderer');
+if (testMode) {
+  window.addEventListener('DOMContentLoaded', () => {
+    const banner = document.createElement('div');
+    banner.id = 'flowpdv-profile-banner';
+    banner.textContent = hostedPilot ? 'PILOTO V2 — conectado ao Firebase real; TEF, emissão fiscal e impressão física bloqueados' : 'AMBIENTE DE TESTE — dados separados; serviços reais bloqueados';
+    banner.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:2147483647;background:#9a3412;color:white;text-align:center;padding:6px;font:14px sans-serif;pointer-events:none';
+    document.body.appendChild(banner);
+  });
+}
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  ambienteTeste: testMode,
+  pilotoHospedado: hostedPilot,
+  homologacaoOperacional: testMode && process.argv.includes('--flowpdv-homologacao-renderer'),
+  aplicativoCompletoTeste: testMode && process.argv.includes('--flowpdv-homologacao-renderer') && process.argv.includes('--flowpdv-app-completo-renderer'),
+  perfilTesteNomeado: testMode && process.argv.includes('--flowpdv-recovery-profile-renderer'),
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   iniciarDownloadAtualizacao: () => ipcRenderer.invoke('iniciar-download-atualizacao'),
@@ -28,7 +44,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onSitefEvento: (callback) => {
     ipcRenderer.on('sitef-evento', (_event, data) => callback(data));
   },
-  openExternal: (url) => shell.openExternal(url),
+  openExternal: (url) => testMode ? Promise.reject(new Error('Links externos desativados no ambiente de teste.')) : shell.openExternal(url),
   salvarLicencaArquivo: (lic) => ipcRenderer.invoke('salvar-licenca-arquivo', lic),
   carregarLicencaArquivo: () => ipcRenderer.invoke('carregar-licenca-arquivo'),
   carregarLicencaArquivoSync: () => ipcRenderer.sendSync('carregar-licenca-arquivo-sync'),

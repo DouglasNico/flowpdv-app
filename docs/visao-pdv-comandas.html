@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FlowPDV — Visão do PDV de atendimento (mesas e comandas)</title>
+  <style>
+    :root {
+      --navy: #0f172a;
+      --slate: #475569;
+      --muted: #64748b;
+      --line: #e2e8f0;
+      --bg: #f1f5f9;
+      --card: #ffffff;
+      --orange: #f97316;
+      --amber: #d97706;
+      --green: #059669;
+      --green-bg: #ecfdf5;
+      --red: #dc2626;
+      --blue-bg: #f0f9ff;
+      --warn-bg: #fffbeb;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--navy);
+      line-height: 1.55;
+    }
+    a { color: var(--amber); }
+    .top {
+      position: sticky; top: 0; z-index: 20;
+      background: var(--navy); color: #fff;
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 16px; padding: 12px 28px;
+      box-shadow: 0 8px 24px rgba(15,23,42,.18);
+    }
+    .brand { font-weight: 800; letter-spacing: -.3px; font-size: 18px; }
+    .brand span { color: var(--orange); }
+    nav { display: flex; gap: 4px; flex-wrap: wrap; }
+    nav a {
+      color: #e2e8f0; text-decoration: none; font-size: 13px; font-weight: 700;
+      padding: 7px 11px; border-radius: 999px;
+    }
+    nav a:hover { background: rgba(255,255,255,.1); color: #fff; }
+    .wrap { max-width: 1120px; margin: 0 auto; padding: 28px 20px 80px; }
+    .hero {
+      background: linear-gradient(180deg, #fff, #f8fafc);
+      border: 1px solid var(--line); border-radius: 20px;
+      padding: 32px 32px 28px;
+      box-shadow: 0 10px 40px rgba(15,23,42,.06);
+    }
+    .kicker {
+      color: var(--amber); font-weight: 800; letter-spacing: 1.6px;
+      text-transform: uppercase; font-size: 12px; margin: 0 0 8px;
+    }
+    h1 { margin: 0 0 10px; font-size: 32px; letter-spacing: -.8px; line-height: 1.15; }
+    .lead { font-size: 18px; color: var(--slate); max-width: 760px; margin: 0 0 18px; }
+    .pills { display: flex; gap: 8px; flex-wrap: wrap; }
+    .pill {
+      font-size: 12px; font-weight: 800; border-radius: 999px;
+      padding: 6px 12px; border: 1px solid var(--line); background: #fff;
+    }
+    .pill.ok { background: var(--green-bg); border-color: #a7f3d0; color: var(--green); }
+    .pill.warn { background: var(--warn-bg); border-color: #fde68a; color: #92400e; }
+    .pill.off { background: #f8fafc; color: var(--muted); }
+    h2 {
+      font-size: 22px; margin: 42px 0 14px; letter-spacing: -.4px;
+      padding-bottom: 8px; border-bottom: 3px solid var(--orange);
+      display: inline-block;
+    }
+    h3 { margin: 0 0 8px; font-size: 16px; }
+    p { margin: 0 0 10px; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .card {
+      background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+      padding: 18px; box-shadow: 0 4px 16px rgba(15,23,42,.04);
+    }
+    .card.keep { border-top: 4px solid var(--green); }
+    .card.new { border-top: 4px solid var(--orange); }
+    .card.muted-card { border-top: 4px solid #94a3b8; }
+    .tag {
+      display: inline-block; font-size: 11px; font-weight: 800; letter-spacing: .4px;
+      text-transform: uppercase; padding: 3px 8px; border-radius: 6px; margin-bottom: 8px;
+    }
+    .tag.green { background: #d1fae5; color: #065f46; }
+    .tag.orange { background: #ffedd5; color: #9a3412; }
+    .tag.gray { background: #e2e8f0; color: #334155; }
+    .tag.blue { background: #e0f2fe; color: #075985; }
+    .mock {
+      background: #0f172a; border-radius: 18px; padding: 10px 10px 14px;
+      box-shadow: 0 18px 50px rgba(15,23,42,.22); margin: 0;
+    }
+    .mock .dots { display: flex; gap: 6px; padding: 4px 8px 10px; }
+    .mock .dots i { width: 10px; height: 10px; border-radius: 50%; display: block; background: #334155; }
+    .mock .dots i:first-child { background: #f87171; }
+    .mock img { width: 100%; display: block; border-radius: 10px; background: #e2e8f0; cursor: zoom-in; }
+    .cap { font-size: 13px; color: #cbd5e1; padding: 10px 8px 0; }
+    .cap strong { color: #fff; }
+    .num {
+      width: 28px; height: 28px; border-radius: 50%; background: var(--navy); color: #fff;
+      font-weight: 800; font-size: 13px; display: grid; place-items: center; margin-bottom: 8px;
+    }
+    .box {
+      border-radius: 12px; padding: 14px 16px; margin: 12px 0 0;
+      border: 1px solid var(--line);
+    }
+    .box.ok { background: var(--green-bg); border-color: #a7f3d0; }
+    .box.warn { background: #fef2f2; border-color: #fecaca; }
+    .box.blue { background: var(--blue-bg); border-color: #bae6fd; }
+    .flow {
+      display: flex; align-items: stretch; gap: 8px; flex-wrap: wrap;
+      background: #fff; border: 1px dashed #cbd5e1; border-radius: 14px; padding: 14px;
+    }
+    .flow .n {
+      flex: 1; min-width: 120px; background: #f8fafc; border: 1px solid var(--line);
+      border-radius: 12px; padding: 12px; text-align: center; font-weight: 700; font-size: 13px;
+    }
+    .arrow { align-self: center; color: var(--orange); font-weight: 900; font-size: 20px; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; background: #fff; border-radius: 12px; overflow: hidden; }
+    th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { background: var(--navy); color: #fff; font-size: 12px; letter-spacing: .4px; }
+    .pct { font-weight: 800; white-space: nowrap; }
+    .pct.zero { color: var(--green); }
+    .pct.low { color: var(--amber); }
+    .pct.no { color: var(--red); }
+    ol.passos { margin: 0; padding: 0; list-style: none; counter-reset: p; }
+    ol.passos li {
+      counter-increment: p;
+      background: #fff; border: 1px solid var(--line); border-radius: 14px;
+      padding: 16px 16px 16px 58px; margin: 0 0 10px; position: relative;
+    }
+    ol.passos li::before {
+      content: counter(p);
+      position: absolute; left: 14px; top: 16px;
+      width: 28px; height: 28px; border-radius: 50%;
+      background: var(--navy); color: #fff; font-weight: 800; font-size: 13px;
+      display: grid; place-items: center;
+    }
+    ol.passos li.skip::before { background: #94a3b8; }
+    ol.passos strong { display: block; margin-bottom: 4px; }
+    .nao { color: #b91c1c; font-weight: 700; }
+    .sim { color: #047857; font-weight: 700; }
+    .mini-ui {
+      background: #e2e8f0; border-radius: 10px; padding: 10px; margin-top: 10px;
+      font-size: 12px; font-weight: 800; text-align: center;
+    }
+    .mini-ui .bar {
+      background: #f8fafc; border: 1px solid #cbd5e1; color: #16a34a;
+      letter-spacing: 1px; padding: 8px; border-radius: 6px; margin-bottom: 8px;
+    }
+    .chips { display: flex; gap: 8px; justify-content: center; }
+    .chip { border: 1.5px solid #0f172a; border-radius: 8px; padding: 6px 14px; background: #fff; }
+    .chip.on { background: #0f172a; color: #fff; }
+    footer { color: var(--muted); font-size: 13px; margin-top: 36px; }
+    dialog { border: none; padding: 0; background: transparent; max-width: 92vw; }
+    dialog::backdrop { background: rgba(15,23,42,.82); }
+    dialog img { max-width: 92vw; max-height: 88vh; border-radius: 12px; display: block; }
+    @media (max-width: 900px) {
+      .grid-2, .grid-3 { grid-template-columns: 1fr; }
+      h1 { font-size: 26px; }
+      .top { flex-direction: column; align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <div class="brand">Flow<span>PDV</span> · visão de atendimento</div>
+    <nav>
+      <a href="#ideia">A ideia</a>
+      <a href="#layout">Layout</a>
+      <a href="#mesas">Mesas e comandas</a>
+      <a href="#telas">Telas</a>
+      <a href="#passos">Roteiro fácil</a>
+      <a href="#risco">Risco</a>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    <section class="hero">
+      <p class="kicker">Conceito · nada disso está no ar ainda</p>
+      <h1>Um layout. Três jeitos de loja.<br>O caixa clássico não muda.</h1>
+      <p class="lead">O PC do balcão é um PDV de <strong>atendimento</strong>: mesma cara do caixa, logo do cliente, sem foto de produto e sem faixa vermelha. O que muda é só o texto — mesa, comanda, ou os dois.</p>
+      <div class="pills">
+        <span class="pill ok">Caixa clássico intacto</span>
+        <span class="pill warn">Novo terminal só se o PC for marcado Atendimento</span>
+        <span class="pill off">Moderno: nem apagar</span>
+      </div>
+    </section>
+
+    <h2 id="ideia">Duas camadas (não misturar)</h2>
+    <div class="grid-2">
+      <article class="card keep">
+        <span class="tag green">Já existe · da loja</span>
+        <h3>O que a loja vende no salão</h3>
+        <p>Campo <code>moduloComandas</code>, igual hoje na Gestão:</p>
+        <p style="margin:0;font-size:14px">
+          Mesas e comandas · Só mesas · Só comandas · Desativado
+        </p>
+      </article>
+      <article class="card new">
+        <span class="tag orange">Novo · deste PC</span>
+        <h3>O que este computador mostra</h3>
+        <p>Campo <code>tipoTerminal</code> no equipamento:</p>
+        <p style="margin:0;font-size:14px">
+          Caixa (padrão) · Atendimento · Completo (gerente)
+        </p>
+      </article>
+    </div>
+    <div class="box blue">
+      Se você ligar “só comandas” na <strong>loja</strong>, o caixa também perde o PDV. Por isso o terminal novo é por computador: o caixa continua caixa; o PC do salão vira atendimento.
+    </div>
+
+    <h2 id="layout">Ajustes do visual (o que você marcou)</h2>
+    <div class="grid-3">
+      <article class="card keep">
+        <h3>Sem faixa vermelha</h3>
+        <p>Usa a barra do caixa clássico: fundo cinza claro, título verde tipo “CAIXA ABERTO”. Aberto = verde. Livre para próxima = o mesmo cinza, texto “DIGITE A MESA / COMANDA”.</p>
+      </article>
+      <article class="card keep">
+        <h3>Sem foto de produto</h3>
+        <p>Não temos cadastro de foto. No lugar fica o <strong>logo do cliente</strong>, o mesmo do caixa (<code>lic.logoUrl</code> / fallback FlowPDV).</p>
+      </article>
+      <article class="card keep">
+        <h3>Código, unitário, total do item</h3>
+        <p>Igual o clássico à esquerda. À direita a lista. Embaixo o leitor. Sem F4 de pagar neste PC.</p>
+      </article>
+    </div>
+
+    <h2 id="mesas">E as mesas?</h2>
+    <p style="color:var(--slate);max-width:760px">Sim, o mesmo layout serve. Mesa 12 e Comanda 12 já são registros diferentes hoje (<code>MESA-12</code> e <code>CMD-12</code>). O PC de atendimento só pergunta o número; o <em>tipo</em> vem do modo da loja.</p>
+    <div class="grid-3">
+      <article class="card">
+        <span class="tag blue">Padaria</span>
+        <h3>Só comandas</h3>
+        <p>Sem chips. “DIGITE A COMANDA”. Enter 12 abre CMD-12.</p>
+        <div class="mini-ui"><div class="bar">COMANDA 12 ABERTA</div></div>
+      </article>
+      <article class="card">
+        <span class="tag blue">Restaurante</span>
+        <h3>Só mesas</h3>
+        <p>Sem chips. “DIGITE A MESA”. Enter 5 abre MESA-5.</p>
+        <div class="mini-ui"><div class="bar">MESA 05 ABERTA</div></div>
+      </article>
+      <article class="card new">
+        <span class="tag orange">Bar / misto</span>
+        <h3>Mesas e comandas</h3>
+        <p>Dois botões no topo: Mesa | Comanda (lembra o último). Aí o número. Assim 12 não mistura mesa com comanda.</p>
+        <div class="mini-ui">
+          <div class="chips"><span class="chip">MESA</span><span class="chip on">COMANDA</span></div>
+        </div>
+      </article>
+    </div>
+    <div class="box ok">
+      Recomendação: um único shell. Só os rótulos mudam. A aba <strong>Gestão de Comandas &amp; Mesas</strong> do gerente continua com o grid. Este PDV é o atalho de lançar, não substitui a gestão.
+    </div>
+
+    <h2 id="telas">Mockups atualizados</h2>
+    <p style="color:var(--slate)">Conceito. Clique para ampliar. No app real a faixa de status copia o caixa (cinza + verde), não a faixa escura do desenho.</p>
+    <div class="grid-2" style="margin-top:16px">
+      <figure class="mock">
+        <div class="dots"><i></i><i></i><i></i></div>
+        <img src="visao-comandas/01-entrada.png" alt="Entrada com chips Mesa e Comanda" data-zoom>
+        <figcaption class="cap"><strong>1. Entrada (loja mista).</strong> Escolhe Mesa ou Comanda, digita o número. Loja só-mesa ou só-comanda nem mostra os chips.</figcaption>
+      </figure>
+      <figure class="mock">
+        <div class="dots"><i></i><i></i><i></i></div>
+        <img src="visao-comandas/02-lancamento.png" alt="Lançamento com logo do cliente, sem foto de produto" data-zoom>
+        <figcaption class="cap"><strong>2. Lançamento.</strong> Logo do cliente à esquerda, lista à direita, leitor embaixo. Sem foto de produto.</figcaption>
+      </figure>
+    </div>
+    <p class="box" style="background:#fff;margin-top:16px">
+      Atalhos deste terminal: <strong>F2</strong> buscar · <strong>DEL</strong> excluir · <strong>Esc</strong> soltar e pedir o próximo número.
+      Pagamento só no caixa (Gestão → F4), como hoje.
+    </p>
+
+    <h2>Fluxo</h2>
+    <div class="flow">
+      <div class="n">Login operador</div>
+      <div class="arrow">→</div>
+      <div class="n">Tipo (se a loja tiver os dois)</div>
+      <div class="arrow">→</div>
+      <div class="n">Número</div>
+      <div class="arrow">→</div>
+      <div class="n">Lança produto</div>
+      <div class="arrow">→</div>
+      <div class="n">Esc · próxima</div>
+    </div>
+
+    <h2 id="passos">Roteiro fácil (o que a gente faz, na ordem)</h2>
+    <p style="color:var(--slate);max-width:760px">Pensa em dois computadores: um cobra (já existe) e outro só lança pedido (vamos construir). Cada etapa só avança se o caixa continuar funcionando igual.</p>
+    <ol class="passos">
+      <li class="skip">
+        <strong>Hoje: não mexe no programa.</strong>
+        Só conversa e este HTML. Ninguém na loja percebe nada.
+      </li>
+      <li>
+        <strong>A gente coloca uma plaquinha escondida em cada PC:</strong> “este é caixa” ou “este é do salão”.
+        Ainda ninguém lê a plaquinha. A tela continua a mesma.
+      </li>
+      <li>
+        <strong>Você passa a poder escolher a plaquinha</strong> no Master e no gerente.
+        Marca “salão” e… a tela ainda não muda. É de propósito: prova que o caixa não quebrou.
+      </li>
+      <li>
+        <strong>A gente desenha a tela nova, mas deixa desligada.</strong>
+        Igual o caixa: logo do cliente, lista, leitor. Sem foto de produto, sem faixa vermelha, sem botão de cobrar.
+        Login ainda abre o caixa de sempre.
+      </li>
+      <li>
+        <strong>Agora sim: o PC marcado “salão” abre a tela nova.</strong>
+        O PC do caixa nem vê isso. Você testa o caixa: vender, F4, leitor — tem que estar igual.
+      </li>
+      <li>
+        <strong>O atendente digita o número e põe produto.</strong>
+        Loja só comanda: pede a comanda. Loja só mesa: pede a mesa. Loja com os dois: escolhe Mesa ou Comanda, depois o número.
+        O pedido aparece no caixa / na gestão, como já aparece hoje.
+      </li>
+      <li>
+        <strong>Nesse PC não se cobra.</strong>
+        Esc = solta e pede o próximo número. F2 busca produto. Pagar continua no caixa.
+      </li>
+      <li class="skip">
+        <strong>Não apaga a outra cara do PDV (a moderna).</strong>
+        Ela já está escondida. Mexer nisso é outro assunto, outro dia.
+      </li>
+    </ol>
+    <div class="box warn">
+      <strong>Não misturar na mesma entrega:</strong> tela nova + apagar o moderno + mudar a gestão de mesas. Cozinha e impressão de pedido ficam para depois.
+    </div>
+
+    <h2>Onde se escolhe</h2>
+    <div class="grid-3">
+      <article class="card">
+        <span class="tag orange">Master</span>
+        <h3>No cliente</h3>
+        <p>Terminais (hostname). Função: Caixa · Atendimento · Completo.</p>
+      </article>
+      <article class="card">
+        <span class="tag green">Gerente</span>
+        <h3>Neste computador</h3>
+        <p>PIN: “Este PC é Caixa ou Atendimento”. Troca se um equipamento queimar.</p>
+      </article>
+      <article class="card muted-card">
+        <span class="tag gray">Padrão</span>
+        <h3>Não marcou nada</h3>
+        <p>Caixa clássico. Loja sem este PC não vê tela nova.</p>
+      </article>
+    </div>
+
+    <h2 id="risco">Risco no caixa de hoje</h2>
+    <table>
+      <thead>
+        <tr><th>Etapa</th><th>Chance de estragar o caixa</th><th>Quando</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Não executar (passo 0)</td>
+          <td class="pct zero">0%</td>
+          <td>Agora.</td>
+        </tr>
+        <tr>
+          <td>Campo sem ninguém ler (passo 1–2)</td>
+          <td class="pct low">~1–3%</td>
+          <td>Quando você aceitar. Heartbeat com merge.</td>
+        </tr>
+        <tr>
+          <td>Tela nova só no PC Atendimento (passos 3–6)</td>
+          <td class="pct low">~5%</td>
+          <td>Caixa fora do if. F4/F2/leitor ainda são globais — por isso o passo 6 existe.</td>
+        </tr>
+        <tr>
+          <td>Apagar o PDV moderno</td>
+          <td class="pct no">nunca 0%</td>
+          <td>Não entra nesta sequência.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <footer>
+      Arquivo: <code>adega-pdv-gestao/docs/visao-pdv-comandas.html</code>.
+      Mockups são conceito — no app a barra de status copia o clássico (cinza + verde).
+    </footer>
+  </main>
+
+  <dialog id="zoom"><img alt=""></dialog>
+  <script>
+    const dlg = document.getElementById('zoom');
+    const img = dlg.querySelector('img');
+    document.querySelectorAll('[data-zoom]').forEach((el) => {
+      el.addEventListener('click', () => { img.src = el.src; img.alt = el.alt; dlg.showModal(); });
+    });
+    dlg.addEventListener('click', () => dlg.close());
+  </script>
+</body>
+</html>

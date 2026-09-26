@@ -1,3 +1,4 @@
+import { montarOfertasProduto, lerOfertasProduto } from './ofertas-cadastro.js';
 /**
  * estoque.js - Gestão de Produtos, Estoque e Grade Fracionada com RBAC
  */
@@ -920,11 +921,11 @@ export const EstoqueModule = {
         const iconeExtra = StorageService.getIconeCategoria(extraAtivaNome);
         html += `
           <div class="category-dropdown-wrapper" style="position: relative; display: inline-block;">
-            <div class="cat-filter-btn active" style="background: var(--accent-orange, #d97706); color: #ffffff; border: 1px solid var(--accent-orange, #d97706); font-weight: 800; display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px; box-shadow: 0 4px 12px rgba(217, 119, 6, 0.3);">
+            <div class="cat-filter-btn active" style="background: #0f172a; color: #ffffff; border: 1px solid #0f172a; font-weight: 800; display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);">
               <span onclick="EstoqueModule.toggleDropdownCategorias(event)" style="cursor: pointer; display: flex; align-items: center; gap: 4px;">
                 📂 ${iconeExtra} ${extraAtivaNome} ▾
               </span>
-              <span onclick="event.stopPropagation(); EstoqueModule.filtrarCategoria('todas');" title="Voltar para Todas" style="background: rgba(0,0,0,0.25); color: #fff; width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 900; cursor: pointer; margin-left: 2px;">
+              <span onclick="event.stopPropagation(); EstoqueModule.filtrarCategoria('todas');" title="Voltar para Todas" style="background: rgba(255,255,255,0.2); color: #fff; width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 900; cursor: pointer; margin-left: 2px;">
                 ✕
               </span>
             </div>
@@ -1435,6 +1436,7 @@ export const EstoqueModule = {
       setTimeout(() => document.getElementById('prod-codigo-barras')?.focus(), 150);
     }
 
+    montarOfertasProduto(StorageService.getProdutos().find(p => String(p.id) === String(id)), StorageService.getProdutos(), StorageService.isModuloAtivo('combos'));
     const inputPrecoFardo = document.getElementById('prod-preco-fardo');
     if (inputPrecoFardo) inputPrecoFardo.dataset.autoCalculado = id ? 'false' : 'true';
     this.atualizarFeedbackDescontoGrade();
@@ -1479,12 +1481,49 @@ export const EstoqueModule = {
 
   salvarProduto(e) {
     e.preventDefault();
+    try {
+      return this._salvarProdutoInterno(e);
+    } catch (err) {
+      const msg = err?.message || String(err);
+      console.error('[Estoque] salvarProduto', err);
+      if (window.App?.showToast) window.App.showToast(msg, 'error');
+      else alert(msg);
+    }
+  },
 
+  _exigirCampo(el, mensagem) {
+    if (!el) throw new Error(mensagem);
+    const vazio = el.type === 'checkbox' ? false : !String(el.value || '').trim();
+    if (vazio || (typeof el.checkValidity === 'function' && !el.checkValidity())) {
+      el.focus({ preventScroll: true });
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      if (el.classList) {
+        el.style.borderColor = '#dc2626';
+        setTimeout(() => { if (el.style) el.style.borderColor = ''; }, 2500);
+      }
+      throw new Error(mensagem);
+    }
+  },
+
+  _salvarProdutoInterno(e) {
+    void e;
     const codigoBarras = document.getElementById('prod-codigo-barras').value.trim().toUpperCase();
-    const nome = (document.getElementById('prod-nome').value.trim() || '').toUpperCase();
+    const nomeEl = document.getElementById('prod-nome');
+    const nome = (nomeEl.value.trim() || '').toUpperCase();
     const precoCusto = this.parseMoedaBR(document.getElementById('prod-preco-custo').value);
-    const precoVenda = this.parseMoedaBR(document.getElementById('prod-preco-venda').value);
+    const precoVendaEl = document.getElementById('prod-preco-venda');
+    const precoVenda = this.parseMoedaBR(precoVendaEl.value);
     const precoClube = this.parseMoedaBR(document.getElementById('prod-preco-clube')?.value || '');
+    let ofertaCardapio;
+    try { ofertaCardapio = lerOfertasProduto(precoVenda); }
+    catch (err) {
+      const msg = err?.message || String(err);
+      const alvo = document.getElementById('produto-ofertas') || document.getElementById('oferta-combo-preco');
+      alvo?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      window.App?.showToast?.(msg, 'warning');
+      if (!window.App?.showToast) alert(msg);
+      return;
+    }
     const controlarEstoque = document.getElementById('prod-controlar-estoque')?.checked ?? true;
     const parseQtd = (raw, fallback) => {
       const n = parseFloat(String(raw || '').replace(',', '.'));
@@ -1512,7 +1551,8 @@ export const EstoqueModule = {
       if (catSelect) {
         catSelect.style.border = '2px solid #dc2626';
         catSelect.style.background = '#fef2f2';
-        catSelect.focus();
+        catSelect.focus({ preventScroll: true });
+        catSelect.scrollIntoView({ block: 'center', behavior: 'smooth' });
         let errHint = document.getElementById('prod-categoria-erro-hint');
         if (!errHint) {
           errHint = document.createElement('span');
@@ -1526,7 +1566,10 @@ export const EstoqueModule = {
       return;
     }
 
-    if (!nome || precoVenda <= 0) {
+    this._exigirCampo(nomeEl, 'Informe o nome do produto.');
+    if (!nome || !(precoVenda > 0)) {
+      precoVendaEl?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      precoVendaEl?.focus({ preventScroll: true });
       window.App.showToast('Informe ao menos o nome e o preço de venda válido!', 'warning');
       return;
     }
@@ -1592,6 +1635,7 @@ export const EstoqueModule = {
         const estoqueAntes = parseFloat(produtos[index].estoque) || 0;
         produtos[index] = {
           ...produtos[index],
+          ...(ofertaCardapio ? { ofertaCardapio } : {}),
           codigoBarras,
           nome: nome.toUpperCase(),
           atualizadoEm: new Date().toISOString(),
@@ -1653,6 +1697,7 @@ export const EstoqueModule = {
       }
 
       const novoProduto = {
+        ...(ofertaCardapio ? { ofertaCardapio } : {}),
         id: 'PRD-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
         codigoBarras: codFinal,
         nome: nome.toUpperCase(),
@@ -2604,15 +2649,18 @@ export const EstoqueModule = {
       produtosAtuais.forEach(p => mapaProdutos.set(p.id, p));
 
       const categoriasExistentes = StorageService.getCategorias() || [];
-      const novasCategoriasSet = new Set(categoriasExistentes);
+      const categoriasPorNome = new Map(categoriasExistentes.map(c => [c.trim().toLowerCase(), c]));
+      const totalImportados = this.produtosParaImportar.length;
 
       let novosQtd = 0;
       let atualizadosQtd = 0;
 
       this.produtosParaImportar.forEach(p => {
-        if (p.categoria && !novasCategoriasSet.has(p.categoria)) {
-          novasCategoriasSet.add(p.categoria);
-        }
+        const categoria = String(p.categoria || 'Geral').trim() || 'Geral';
+        const chaveCategoria = categoria.toLowerCase();
+        if (!categoriasPorNome.has(chaveCategoria)) categoriasPorNome.set(chaveCategoria, categoria);
+        p.categoria = categoriasPorNome.get(chaveCategoria);
+        StorageService.removerCategoriaExcluida(p.categoria);
 
         const { isNovo, originalId, ...dadosProduto } = p;
         const controlaEstoque = p.controlarEstoque !== false;
@@ -2663,10 +2711,16 @@ export const EstoqueModule = {
       const listaFinal = Array.from(mapaProdutos.values());
 
       // 1. Salvar Categorias
-      StorageService.salvarCategorias(Array.from(novasCategoriasSet));
+      const categoriasFinais = Array.from(categoriasPorNome.values());
+      StorageService.salvarCategorias(categoriasFinais);
 
       // 2. Salvar Produtos
       StorageService.saveProdutos(listaFinal);
+
+      if (window.LicencaModule?.atualizarCategoriasNuvem) {
+        Promise.resolve(window.LicencaModule.atualizarCategoriasNuvem(categoriasFinais, StorageService.getCategoriasExcluidas()))
+          .catch(err => console.warn('Categorias salvas localmente; sincronização pendente.', err));
+      }
 
       // 3. Sincronizar com a Nuvem Multi-Terminal
       if (window.CloudSyncModule && typeof window.CloudSyncModule.enviarAlteracaoNuvem === 'function') {
@@ -2684,7 +2738,7 @@ export const EstoqueModule = {
       this.renderBarraCategorias();
       this.renderTabelaProdutos();
 
-      window.App.showToast(`🎉 ${this.produtosParaImportar.length} produtos importados com sucesso no estoque!`, 'success');
+      window.App.showToast(`🎉 ${totalImportados} produtos importados com sucesso no estoque! Dados salvos neste computador.`, 'success', { titulo: 'Importação concluída' });
     } catch (err) {
       console.error('Erro na importação em massa:', err);
       window.App.showToast('Erro ao importar produtos!', 'error');

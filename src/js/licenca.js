@@ -302,6 +302,7 @@ export const LicencaModule = {
   },
 
   async setTipoTerminalAtual(tipo) {
+    const anterior = StorageService.getTipoTerminal();
     const registroBase = mesclarDadosTerminal({}, { tipoTerminal: tipo });
     const normalizado = registroBase.tipoTerminal || 'caixa';
     StorageService.setTipoTerminal(normalizado);
@@ -329,6 +330,10 @@ export const LicencaModule = {
       }
     } catch (e) {
       console.warn('[CloudLic] Falha ao gravar tipoTerminal:', e);
+      if (StorageService.getLicenca()?.chaveLicenca) {
+        StorageService.setTipoTerminal(anterior);
+        throw e;
+      }
     }
     if (window.App && typeof window.App.aplicarModoTerminal === 'function') {
       window.App.aplicarModoTerminal();

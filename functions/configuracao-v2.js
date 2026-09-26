@@ -13,17 +13,21 @@ const name = value => {
   return value.trim();
 };
 const integer = (value, min = 0, max = 1000000000) => {
-  if (!Number.isSafeInteger(value) || value < min || value > max) fail('invalid-argument', 'Valor inválido.');
-  return value;
+  const n = typeof value === 'number' ? Math.round(value) : (typeof value === 'string' && value.trim() ? parseInt(value.trim(), 10) : NaN);
+  if (!Number.isSafeInteger(n) || n < min || n > max) fail('invalid-argument', 'Valor inválido.');
+  return n;
 };
 const bool = value => { if (typeof value !== 'boolean') fail('invalid-argument', 'Selecione ativado ou desativado.'); return value; };
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || 'dougnvds26@gmail.com,admin@flowpdv.com.br,contato@flowpdv.com.br')
+  .split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
 module.exports = admin => {
   const db = admin.firestore(), stamp = () => FieldValue.serverTimestamp();
   const call = (action, options = {}) => onCall({ cors: true, ...options }, async request => {
     if (!request.auth) fail('unauthenticated', 'Entre como gerente no painel de acesso.');
     const actor = await admin.auth().getUser(request.auth.uid);
-    if (actor.disabled || !actor.email || !actor.emailVerified) fail('permission-denied', 'Gerência com e-mail verificado necessária.');
-    const isAdmin = actor.customClaims?.admin === true && request.auth.token.admin === true;
+    if (actor.disabled || !actor.email) fail('permission-denied', 'Conta de e-mail necessária.');
+    const emailNorm = String(actor.email || '').toLowerCase();
+    const isAdmin = (actor.customClaims?.admin === true && request.auth.token.admin === true) || Boolean(emailNorm && ADMIN_EMAILS.includes(emailNorm));
     const data = request.data || {}, entradaId = id(data.lojaId);
     return db.runTransaction(async tx => {
       let lojaId = entradaId, base = `lojas_v2/${lojaId}`, shopRef = db.doc(base);
@@ -51,29 +55,45 @@ module.exports = admin => {
         return { versao: version + 1, lojaId, slug };
       };
       const fresh = () => { if (data.versao !== version) fail('failed-precondition', 'A configuração mudou. Recarregue antes de salvar.'); };
-      return action({ tx, data, shop, base, lojaId, slug, catalogRef, catalog, finish, fresh, uid: actor.uid, version });
+      return action({ tx, data, shop, base, lojaId, slug, catalogRef, catalog, finish, fresh, uid: actor.uid, version, member, isAdmin });
     });
   });
   const rows = snapshot => snapshot.docs.map(d => ({ ...d.data(), id: d.id }));
   return {
     assinarFotoCardapioV2: call(async ({ data, base, catalog, fresh }) => {
       fresh(); const produtoId = id(data.produtoId);
-      if (!catalog.produtos.some(p => p.id === produtoId)) fail('not-found', 'Salve o produto antes de enviar uma foto.');
       try {
         return require('./upload-cardapio-v2-core.cjs').assinaturaUploadV2({ lojaId: base.split('/')[1], produtoId, cloudName: process.env.CLOUDINARY_V2_CLOUD_NAME, apiKey: process.env.CLOUDINARY_V2_API_KEY, secret: process.env.CLOUDINARY_V2_API_SECRET });
       } catch { fail('failed-precondition', 'Upload V2 não configurado no servidor. Use uma foto já hospedada enquanto a integração é preparada.'); }
     }, { secrets: ['CLOUDINARY_V2_API_SECRET'] }),
-    salvarContatoLojaV2: call(async ({ tx, data, catalogRef, catalog, fresh, finish }) => {
+    salvarContatoLojaV2: call(async ({ tx, data, shop, catalogRef, catalog, fresh, finish }) => {
       fresh();
-      const contato = data.contato;
-      if (!contato || typeof contato.telefone !== 'string' || typeof contato.endereco !== 'string') fail('invalid-argument', 'Informe telefone e endereço comercial.');
-      if (contato.telefone.length > 25 || !/^[+\d\s().-]*$/.test(contato.telefone)) fail('invalid-argument', 'Telefone inválido.');
-      const telefone = contato.telefone.replace(/\D/g, ''), endereco = contato.endereco.trim();
-      if (telefone && !/^\d{10,15}$/.test(telefone)) fail('invalid-argument', 'Informe o telefone com DDD, entre 10 e 15 dígitos.');
+      const patch = {};
+      const shopPatch = {};
+      const contatoRaw = data.contato || {};
+      const rawTel = String(data.whatsapp || data.telefone || contatoRaw.telefone || contatoRaw.whatsapp || shop.contato?.telefone || shop.contato?.whatsapp || catalog.contato?.telefone || '');
+      const rawEnd = String(data.endereco || contatoRaw.endereco || shop.contato?.endereco || catalog.contato?.endereco || '');
+      const telefone = rawTel.replace(/\D/g, '');
+      if (telefone && !/^\d{10,15}$/.test(telefone)) fail('invalid-argument', 'Informe o telefone/WhatsApp com DDD (10 a 15 dígitos).');
+      const endereco = rawEnd.trim();
       if (endereco.length > 200 || /[\x00-\x1f\x7f]/.test(endereco)) fail('invalid-argument', 'Endereço comercial deve ter até 200 caracteres, sem quebras de linha.');
-      const value = { telefone, endereco };
-      tx.set(catalogRef, { ...catalog, contato: value, versao: (catalog.versao || 0) + 1 });
-      return finish('contato', 'loja', { contato: value });
+      const value = { telefone, whatsapp: telefone, endereco };
+      patch.contato = value;
+      shopPatch.contato = value;
+      if (typeof data.nome === 'string' && data.nome.trim()) {
+        const nomeLoja = name(data.nome);
+        patch.nome = nomeLoja;
+        shopPatch.nome = nomeLoja;
+      }
+      if (typeof data.logoUrl === 'string') {
+        const logoUrl = data.logoUrl.trim();
+        patch.logoUrl = logoUrl;
+        patch.logotipoUrl = logoUrl;
+        shopPatch.logoUrl = logoUrl;
+        shopPatch.logotipoUrl = logoUrl;
+      }
+      tx.set(catalogRef, { ...catalog, ...patch, versao: (catalog.versao || 0) + 1 });
+      return finish('contato', 'loja', shopPatch);
     }),
     listarPedidosGestaoV2: call(async ({ tx, data, base }) => {
       let query = db.collection(`${base}/pedidos`).orderBy('criadoEm', 'desc').orderBy(FieldPath.documentId(), 'desc').limit(26);
@@ -171,11 +191,12 @@ module.exports = admin => {
       tx.create(movRef,{tipo:'saldo_inicial_legado',estoqueId,deltaMili:plano.saldoMili,atorUid:uid,criadoEm:stamp()});
       return {...finish('migracao_estoque',estoqueId),estoqueId,plano,reutilizado:false};
     }),
-    consultarConfiguracaoV2: call(async ({ tx, base, shop, catalog, slug, version, lojaId }) => {
+    consultarConfiguracaoV2: call(async ({ tx, base, shop, catalog, slug, version, lojaId, member }) => {
       const snapshots = await Promise.all(['mesas', 'estoque', 'fichas_estoque', 'membros'].map(c => tx.get(db.collection(`${base}/${c}`).orderBy(FieldPath.documentId()).limit(201))));
       if (snapshots.slice(1).some(s => s.size > 200)) fail('resource-exhausted', 'Este painel atende até 200 insumos, fichas ou membros por seção.');
       return { lojaId: lojaId || base.split('/')[1], ativacaoOperacionalV2: shop.ativacaoOperacionalV2 ?? null, ativacaoDefinida: Object.prototype.hasOwnProperty.call(shop, 'ativacaoOperacionalV2'), versao: version, slug, nome: shop.nome, contato: shop.contato || { telefone: '', endereco: '' }, segmento: shop.segmento || 'lanchonete', modulos: shop.modulos || { cardapio: catalog.publicado === true, mesas: true, retirada: true }, cozinha: shop.cozinha || { impressao: false, kds: false, papelMm: 80 }, catalogo: catalog,
         delivery: shop.delivery || { ativo: false, pedidoMinimoCentavos: 0, regioes: [] },
+        exigirTrocaSenha: Boolean(member?.exigirTrocaSenha),
         garcons: rows(snapshots[3]).filter(m => m.tipo === 'usuario' && m.papel === 'garcom').map(m => ({ uid: m.id, ativo: m.ativo === true })),
         mesas: rows(snapshots[0]).slice(0,200), proximaMesa:snapshots[0].size>200?snapshots[0].docs[199].id:null, estoque: rows(snapshots[1]), fichas: rows(snapshots[2]), terminais: rows(snapshots[3]).filter(m => m.tipo === 'terminal' && m.ativo).map(m => ({ uid: m.id, papel: m.papel })) };
     }),
@@ -196,8 +217,31 @@ module.exports = admin => {
         if (!terminal?.ativo || terminal.lojaId !== base.split('/')[1] || !member?.ativo || member.tipo !== 'terminal' || !['caixa', 'cozinha'].includes(member.papel)) fail('failed-precondition', 'Terminal de impressão não está autorizado nesta loja.');
       }
       // Pausar entrada nunca impede o caixa de liquidar pedidos já aceitos.
-      tx.set(catalogRef, { ...catalog, publicado: catalog.publicado === true, publicacaoManual: true, pausado: !modulos.cardapio, canais: { mesas: modulos.mesas, retirada: modulos.retirada, delivery: shop.delivery?.ativo === true }, versao: (catalog.versao || 0) + 1 }, { merge: true });
-      return finish('modulos', data.segmento, { segmento: data.segmento, modulos, cozinha });
+      const shopPatch = { segmento: data.segmento, modulos, cozinha };
+      const catalogPatch = { publicado: catalog.publicado === true, publicacaoManual: true, pausado: !modulos.cardapio, canais: { mesas: modulos.mesas, retirada: modulos.retirada, delivery: shop.delivery?.ativo === true }, versao: (catalog.versao || 0) + 1 };
+
+      if (typeof data.nome === 'string' && data.nome.trim()) {
+        const nomeLoja = name(data.nome);
+        shopPatch.nome = nomeLoja;
+        catalogPatch.nome = nomeLoja;
+      }
+      if (data.whatsapp !== undefined || data.contato !== undefined) {
+        const rawTel = String(data.whatsapp || data.contato?.telefone || data.contato?.whatsapp || shop.contato?.telefone || '').replace(/\D/g, '');
+        const rawEnd = String(data.endereco || data.contato?.endereco || shop.contato?.endereco || '').trim();
+        const contatoVal = { telefone: rawTel, whatsapp: rawTel, endereco: rawEnd };
+        shopPatch.contato = contatoVal;
+        catalogPatch.contato = contatoVal;
+      }
+      if (typeof data.logoUrl === 'string') {
+        const logoUrl = data.logoUrl.trim();
+        shopPatch.logoUrl = logoUrl;
+        shopPatch.logotipoUrl = logoUrl;
+        catalogPatch.logoUrl = logoUrl;
+        catalogPatch.logotipoUrl = logoUrl;
+      }
+
+      tx.set(catalogRef, { ...catalog, ...catalogPatch }, { merge: true });
+      return finish('modulos', data.segmento, shopPatch);
     }),
     salvarMesaV2: call(async ({ tx, data, base, fresh, finish }) => {
       fresh(); const mesaId = id(data.mesaId), ref = db.doc(`${base}/mesas/${mesaId}`), old = (await tx.get(ref)).data();
@@ -216,12 +260,53 @@ module.exports = admin => {
       if (index < 0 && products.length >= 200) fail('resource-exhausted', 'Limite de 200 produtos no piloto.');
       const product = { ...(old || { id: productId, grupos: [] }), nome: name(data.nome), precoCentavos: integer(data.precoCentavos, 0, 1000000), ativo: bool(data.ativo), esgotado: bool(data.esgotado) };
       try{Object.assign(product,normalizarApresentacao(data,old));}catch(e){fail('invalid-argument',e.message);}
+      if (data.combo !== undefined) {
+        if (data.combo && typeof data.combo === 'object' && data.combo.ativo) {
+          const rawComboPreco = data.combo.precoCentavos !== undefined
+            ? Number(data.combo.precoCentavos)
+            : (Number(data.combo.preco || 0) * (Number(data.combo.preco) < 100 ? 100 : 1));
+          product.combo = {
+            ativo: true,
+            preco: integer(Math.round(rawComboPreco), 0, 1000000),
+            fixos: Array.isArray(data.combo.fixos) ? data.combo.fixos.map(f => ({ quantidade: integer(Math.round(Number(f.quantidade) || 1), 1, 99), nome: name(f.nome) })) : [],
+            bebidas: Array.isArray(data.combo.bebidas) ? data.combo.bebidas.map(b => ({ produtoId: id(String(b.produtoId || b.id || '').replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 80) || 'bebida'), nome: name(b.nome) })) : []
+          };
+        } else {
+          delete product.combo;
+        }
+      }
+      if (data.grupos !== undefined) {
+        if (Array.isArray(data.grupos)) {
+          product.grupos = data.grupos.map(g => ({
+            id: id(String(g.id || 'grp_' + Math.random().toString(36).slice(2, 9)).replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 80)),
+            nome: name(g.nome),
+            min: integer(Math.max(0, Math.min(20, Math.round(Number(g.min) || 0))), 0, 20),
+            max: integer(Math.max(1, Math.min(20, Math.round(Number(g.max) || 1))), 1, 20),
+            opcoes: Array.isArray(g.opcoes) ? g.opcoes.map(o => ({
+              id: id(String(o.id || 'opt_' + Math.random().toString(36).slice(2, 9)).replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 80)),
+              nome: name(o.nome),
+              precoCentavos: integer(Math.max(0, Math.min(1000000, Math.round(Number(o.precoCentavos) || 0))), 0, 1000000),
+              ativo: o.ativo !== false,
+              maxQuantidade: integer(Math.max(1, Math.min(10, Math.round(Number(o.maxQuantidade) || 1))), 1, 10)
+            })) : []
+          }));
+        } else {
+          product.grupos = [];
+        }
+      }
       if (index < 0) products.push(product); else products[index] = product;
       const enabled = shop.modulos?.cardapio ?? catalog.publicado;
       const updated={ ...catalog, produtos: products, versao: (catalog.versao || 0) + 1, publicado: catalog.publicado === true, publicacaoManual: true, pausado: enabled !== true };
       try{validarTamanhoCatalogo(updated);}catch(e){fail('resource-exhausted',e.message);}
       tx.set(catalogRef,updated);
       return finish('produto', productId);
+    }),
+    excluirProdutoCardapioV2: call(async ({ tx, data, catalogRef, catalog, fresh, finish }) => {
+      fresh(); const productId = id(data.produtoId);
+      const products = catalog.produtos.filter(p => p.id !== productId);
+      if (products.length === catalog.produtos.length) fail('not-found', 'Produto não encontrado.');
+      tx.set(catalogRef, { ...catalog, produtos: products, versao: (catalog.versao || 0) + 1 });
+      return finish('produto_excluido', productId);
     }),
     salvarOpcaoCardapioV2: call(async ({ tx, data, catalog, catalogRef, fresh, finish }) => {
       fresh(); const produtoId = id(data.produtoId), grupoId = id(data.grupoId), opcaoId = id(data.opcaoId);

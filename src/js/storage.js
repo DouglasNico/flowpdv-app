@@ -1,3 +1,4 @@
+import { usarFluxoOperacionalV2, usarAplicativoIntegradoV2, usarPdvOficialV2 } from './perfil-operacional-v2.js';
 /**
  * storage.js - Armazenamento Local (Offline-First) para PDV Adega & Motor SaaS
  */
@@ -7,6 +8,7 @@ import { normalizarTipoTerminal } from './tipo-terminal.js';
 
 export const StorageService = {
   init() {
+    if (this.perfilEmRecuperacao()) return; // A tela de recuperação deve abrir sem inicializar ou reaplicar dados.
     this.recuperarVendaPendente();
     this.getProdutos();
     this.getConfig();
@@ -202,7 +204,8 @@ export const StorageService = {
       fiadoWhatsApp: true,
       importadorXml: true,
       fiscalNfce: true,
-      tefCartao: true
+      tefCartao: true,
+      cardapioOnline: false
     };
   },
 
@@ -309,6 +312,8 @@ export const StorageService = {
   },
 
   adicionarProdutoExcluidoId(id) {
+    this.exigirVendaRecuperada();
+    this.exigirEstoqueLocalDisponivel([id]);
     if (!id) return;
     const excluidos = this.getProdutosExcluidosIds();
     const idStr = String(id);
@@ -320,6 +325,24 @@ export const StorageService = {
 
   saveProdutos(produtos) {
     this.exigirVendaRecuperada();
+    if(localStorage.getItem('flowpdv_migracoes_estoque_teste') !== null){
+      const anteriores=JSON.parse(localStorage.getItem('adega_produtos')||'[]');
+      const chaveEstoque = (p) => JSON.stringify({
+        estoque: Number(p?.estoque) || 0,
+        controlarEstoque: p?.controlarEstoque !== false,
+        unidade: String(p?.unidade || 'un'),
+        estoqueMinimo: Number(p?.estoqueMinimo) || 0,
+      });
+      const ids=new Set([...anteriores,...(produtos||[])].map(p=>String(p.id)));
+      // Só bloqueia alteração de saldo/unidade em item já migrado — cadastro de combo/preço/nome segue liberado.
+      const alterados=[...ids].filter(id=>{
+        const ant=anteriores.find(p=>String(p.id)===id);
+        const novo=(produtos||[]).find(p=>String(p.id)===id);
+        if(!ant || !novo) return true;
+        return chaveEstoque(ant) !== chaveEstoque(novo);
+      });
+      this.exigirEstoqueLocalDisponivel(alterados);
+    }
     if (Array.isArray(produtos) && produtos.length > 0) {
       const backupAtual = this.getProdutos();
       if (produtos.length >= backupAtual.length) {
@@ -347,6 +370,7 @@ export const StorageService = {
   },
 
   getProximoNumeroVenda() {
+    this.exigirVendaRecuperada();
     let ultimo = parseInt(localStorage.getItem('flowpdv_ultimo_numero_venda'), 10);
     if (isNaN(ultimo) || ultimo <= 0) {
       const vendas = this.getVendas();
@@ -362,16 +386,31 @@ export const StorageService = {
   },
 
   temVendaPendente() { return !!localStorage.getItem('flowpdv_commit_venda'); },
+  perfilEmRecuperacao() {
+    return ['flowpdv_fechamento_recuperado_pendente', 'flowpdv_instalacao_perfil_pendente', 'flowpdv_recuperacao_operacao_bloqueada'].some(k => localStorage.getItem(k) !== null);
+  },
+  exigirPerfilOperavel() {
+    if (this.perfilEmRecuperacao()) throw new Error('Perfil em recuperação. Conclua a instalação e a conferência antes de alterar os dados.');
+  },
   exigirVendaRecuperada() {
+    this.exigirPerfilOperavel();
+    if(localStorage.getItem('flowpdv_pagamento_atendimento_pendente') !== null) throw new Error('Retome o pagamento pendente da conta antes de alterar ou encerrar o caixa.');
+    if(localStorage.getItem('flowpdv_estorno_local_pendente') !== null) throw new Error('Retome o estorno local antes de alterar ou encerrar o caixa.');
     if (this.temVendaPendente()) throw new Error('Recupere a venda pendente antes de alterar os dados do caixa.');
+    if(localStorage.getItem('flowpdv_venda_servidor_pendente') !== null) throw new Error('Retome a venda com estoque do servidor antes de alterar ou encerrar o caixa.');
   },
 
   recuperarVendaPendente() {
+    this.exigirPerfilOperavel();
     const raw = localStorage.getItem('flowpdv_commit_venda');
     if (!raw) return;
     const plano = JSON.parse(raw);
     if (plano.loja !== (this.getLicenca()?.chaveLicenca || '')) throw new Error('Existe uma venda pendente de recuperação na loja anterior.');
     const permitidas = new Set(['adega_vendas', 'adega_turno_atual', 'adega_produtos', 'adega_produtos_backup_seguranca', 'flowpdv_estoque_movimentos', 'adega_clientes']);
+    const licencaAuditoria = this.getLicenca() || {};
+    const chaveAuditoria = String(licencaAuditoria.chaveLicenca || licencaAuditoria.clienteId || 'LOCAL').trim().toUpperCase();
+    permitidas.add(`flowpdv_logs_auditoria_${chaveAuditoria}`);
+    permitidas.add(`flowpdv_logs_nuvem_pendentes_${chaveAuditoria}`);
     if (!plano.escritas || Object.keys(plano.escritas).some(k => !permitidas.has(k))) throw new Error('Diário de venda inválido.');
     // Reaplica valores finais, nunca incrementos. Repetir após uma queda é seguro.
     for (const [key, value] of Object.entries(plano.escritas)) localStorage.setItem(key, value);
@@ -379,7 +418,91 @@ export const StorageService = {
     localStorage.removeItem('flowpdv_commit_venda');
   },
 
+  exigirEstoqueLocalDisponivel(ids) {
+    ids=ids.filter(id=>!this._estoqueServidorTeste?.includes(String(id)));
+    const registros=JSON.parse(localStorage.getItem('flowpdv_migracoes_estoque_teste')||'[]');
+    if(registros.some(r=>ids.some(id=>String(id)===String(r.produto.id)||(r.produto.codigoBarras!=null&&String(id)===String(r.produto.codigoBarras))))) throw new Error('Item em migração ou controlado pelo restaurante. A venda/alteração local está bloqueada para evitar estoque duplicado.');
+  },
+
+  saveVendaComEstoqueServidorTeste(venda,recibo) {
+    if(!usarFluxoOperacionalV2()||!recibo?.reciboId||recibo.vendaId!==venda.id||recibo.turno?.id!==venda.turnoId||recibo.turno?.terminalId!==venda.terminalId||(!recibo.venda?.pagamentos&&venda.formaPagamento!=='Dinheiro')||Math.round(venda.total*100)!==recibo.venda?.totalCentavos) throw new Error('Comprovante de estoque incompatível com a venda.');
+    const itens=venda.itens||[],confirmados=recibo.venda.itens||[];
+    const ajuste=recibo.venda.ajuste;
+    if(JSON.stringify(venda.ajuste)!==JSON.stringify(ajuste))throw new Error('Ajuste diverge do comprovante.');
+    if(ajuste){
+      const subtotal=confirmados.reduce((sum,i)=>sum+i.totalCentavos,0);
+      if(!Number.isSafeInteger(ajuste.descontoCentavos)||ajuste.descontoCentavos<0||ajuste.descontoCentavos>subtotal||!Number.isSafeInteger(ajuste.acrescimoCentavos)||ajuste.acrescimoCentavos<0||subtotal!==recibo.venda.subtotalCentavos||subtotal-ajuste.descontoCentavos+ajuste.acrescimoCentavos!==recibo.venda.totalCentavos||venda.subtotal!==subtotal/100||venda.desconto!==ajuste.descontoCentavos/100||venda.acrescimo!==ajuste.acrescimoCentavos/100)throw new Error('Totais do ajuste divergem do comprovante.');
+    }else if(venda.desconto||venda.acrescimo)throw new Error('Ajuste sem comprovante.');
+    const pagamentos=recibo.venda.pagamentos;
+    if(pagamentos){
+      const ids=new Set();let soma=0;
+      for(const p of pagamentos){if(!['Dinheiro','PIX','Débito','Crédito','Voucher'].includes(p.forma)||ids.has(p.forma)||!Number.isSafeInteger(p.valorCentavos)||p.valorCentavos<=0)throw new Error('Pagamentos do comprovante inválidos.');ids.add(p.forma);soma+=p.valorCentavos;}
+      const esperados=pagamentos.map(p=>({forma:p.forma,valor:p.valorCentavos/100,...(p.forma==='Dinheiro'?{valorEntregue:venda.recebidoDinheiroCentavos/100}:{})}));
+      const formaEsperada=pagamentos.length===1?pagamentos[0].forma:'Múltiplos';
+      if(soma!==recibo.venda.totalCentavos||venda.formaPagamento!==formaEsperada||venda.pagamentoDividido!==(pagamentos.length>1)||JSON.stringify(venda.pagamentosCentavos)!==JSON.stringify(pagamentos)||JSON.stringify(venda.pagamentos)!==JSON.stringify(esperados))throw new Error('Pagamentos divergem do comprovante.');
+    }else if(venda.pagamentoDividido||venda.pagamentos||venda.pagamentosCentavos)throw new Error('Pagamentos sem comprovante.');
+    const dinheiro=pagamentos?(pagamentos.find(p=>p.forma==='Dinheiro')?.valorCentavos||0):Math.round(venda.total*100);
+    if(venda.recebidoDinheiroCentavos!==recibo.venda.recebidoDinheiroCentavos||venda.trocoCentavos!==recibo.venda.trocoCentavos)throw new Error('Dinheiro ou troco divergem do comprovante do servidor.');
+    if(venda.recebidoDinheiroCentavos!==undefined&&(!Number.isSafeInteger(venda.recebidoDinheiroCentavos)||!Number.isSafeInteger(venda.trocoCentavos)||venda.trocoCentavos<0||venda.recebidoDinheiroCentavos-venda.trocoCentavos!==dinheiro||(pagamentos&&!dinheiro&&venda.recebidoDinheiroCentavos!==0)))throw new Error('Dinheiro ou troco inválidos.');
+    if(venda.recebidoDinheiroCentavos!==undefined&&(venda.valorPago!==(pagamentos?(recibo.venda.totalCentavos+venda.trocoCentavos)/100:venda.recebidoDinheiroCentavos/100)||venda.troco!==venda.trocoCentavos/100))throw new Error('Valores do relatório divergem do dinheiro ou troco.');
+    const semEstoque=recibo.itensSemEstoque||[];
+    if(!Array.isArray(semEstoque)||!Array.isArray(recibo.consumos))throw new Error('Comprovante de estoque inválido.');
+    const cobertos=[...recibo.consumos.map(c=>c.legadoId),...semEstoque];
+    if(new Set(cobertos).size!==cobertos.length||!itens.length||itens.length!==confirmados.length||cobertos.length!==itens.length||itens.some((i,n)=>i.isFardo||String(i.id)!==confirmados[n].legadoId||Number(i.quantidade)!==Number(confirmados[n].quantidade)||Math.round(i.precoUnitario*100)!==confirmados[n].precoUnitarioCentavos||!cobertos.includes(String(i.id)))) throw new Error('Itens divergem da baixa confirmada.');
+    const registros=JSON.parse(localStorage.getItem('flowpdv_migracoes_estoque_teste')||'[]');
+    if(itens.some(i=>!registros.some(r=>r.status==='confirmado'&&r.lojaId===recibo.lojaId&&String(r.produto.id)===String(i.id)))) throw new Error('Migração local não confirmada para esta loja.');
+    if(itens.some(i=>{const r=registros.find(r=>r.status==='confirmado'&&r.lojaId===recibo.lojaId&&String(r.produto.id)===String(i.id));return semEstoque.includes(String(i.id))!==(r.semEstoque===true&&r.produto.controlarEstoque===false);} ))throw new Error('Controle de estoque diverge do comprovante.');
+    const anterior=this.getVendas().find(v=>v.id===venda.id);
+    if(anterior){const {estoqueServidorV2,...dados}=anterior;if(estoqueServidorV2?.reciboId!==recibo.reciboId||JSON.stringify(dados)!==JSON.stringify(venda)) throw new Error('Venda local existente diverge da retomada.');}
+    this._estoqueServidorTeste=itens.map(i=>String(i.id));
+    try{this.saveVenda({...venda,estoqueServidorV2:{reciboId:recibo.reciboId,lojaId:recibo.lojaId,consumos:recibo.consumos,...(semEstoque.length?{itensSemEstoque:semEstoque}:{})}});}finally{delete this._estoqueServidorTeste;}
+    this.espelharEstoqueVitrineServidor();
+  },
+
+  espelharEstoqueVitrineServidor() {
+    if (!usarFluxoOperacionalV2()) return;
+    const registros = JSON.parse(localStorage.getItem('flowpdv_migracoes_estoque_teste') || '[]').filter(r => r.status === 'confirmado' && r.produto && r.produto.id != null);
+    if (!registros.length) return;
+    const devolvidas = new Set();
+    for (const turno of [this.getTurnoAtual(), ...this.getHistoricoTurnos()]) {
+      for (const estorno of turno?.estornosLocaisV2 || []) {
+        if (estorno && estorno.devolverEstoque === true && estorno.vendaId) devolvidas.add(estorno.vendaId);
+      }
+    }
+    const vendido = new Map();
+    for (const venda of this.getVendas()) {
+      if (!venda || !venda.estoqueServidorV2 || devolvidas.has(venda.id)) continue;
+      for (const item of venda.itens || []) {
+        if (item.isFardo) continue;
+        const id = String(item.id);
+        vendido.set(id, (vendido.get(id) || 0) + (parseFloat(item.quantidade) || 0));
+      }
+    }
+    const produtos = JSON.parse(JSON.stringify(this.getProdutos()));
+    let mudou = false;
+    for (const registro of registros) {
+      if (registro.semEstoque === true || registro.produto.controlarEstoque === false) continue;
+      const base = parseFloat(registro.produto.estoque);
+      if (!Number.isFinite(base)) continue;
+      const prod = produtos.find(p => String(p.id) === String(registro.produto.id));
+      if (!prod || prod.controlarEstoque === false) continue;
+      const saldo = Math.max(0, base - (vendido.get(String(prod.id)) || 0));
+      if (parseFloat(prod.estoque) !== saldo) {
+        prod.estoque = saldo;
+        mudou = true;
+      }
+    }
+    if (!mudou) return;
+    localStorage.setItem('adega_produtos', JSON.stringify(produtos));
+    localStorage.setItem('adega_produtos_backup_seguranca', JSON.stringify(produtos));
+    this._produtosMem = null;
+  },
+
   saveVenda(venda, clientesAtualizados = null) {
+    this.exigirPerfilOperavel();
+    if(localStorage.getItem('flowpdv_estorno_local_pendente') !== null)throw new Error('Retome o estorno pendente antes de vender.');
+    if(localStorage.getItem('flowpdv_venda_servidor_pendente') !== null&&!this._estoqueServidorTeste) throw new Error('Retome a venda pendente com estoque do servidor.');
+    this.exigirEstoqueLocalDisponivel((venda.itens||[]).map(i=>i.id));
     this.recuperarVendaPendente();
     const vendas = this.getVendas();
     if (vendas.some(v => v.id === venda.id)) return; // Mesmo fechamento reenviado.
@@ -395,6 +518,7 @@ export const StorageService = {
     const produtos = JSON.parse(JSON.stringify(this.getProdutos()));
     const movimentos = this.getMovimentosEstoque();
     (venda.itens || []).forEach((item, index) => {
+      if(usarFluxoOperacionalV2()&&this._estoqueServidorTeste?.includes(String(item.id))) return;
       const prod = produtos.find(p => p.id === item.id || p.codigoBarras === item.id);
       if (prod && prod.controlarEstoque !== false) {
         const fator = item.isFardo ? (prod.fatorConversao || 1) : 1;
@@ -413,9 +537,19 @@ export const StorageService = {
     escritas.adega_produtos_backup_seguranca = escritas.adega_produtos;
     escritas.flowpdv_estoque_movimentos = JSON.stringify(movimentos);
     if (clientesAtualizados) escritas.adega_clientes = JSON.stringify(carimbarAlterados(clientesAtualizados, this.getClientes()));
+    const audit = window.AuditModule;
+    const descricaoAuditoria = `Venda #${this.formatarNumeroVenda(venda)} concluída: R$ ${(Number(venda.total) || 0).toFixed(2)} (${venda.formaPagamento || 'Não informado'})`;
+    const detalhesAuditoria = { vendaId: venda.id, total: venda.total, formaPagamento: venda.formaPagamento, turnoId: venda.turnoId || turno?.id || null };
+    const logVenda = audit?.prepararLog && audit?.prepararEscritasLog
+      ? audit.prepararLog('venda_realizada', descricaoAuditoria, detalhesAuditoria) : null;
+    if (logVenda) Object.assign(escritas, audit.prepararEscritasLog(logVenda));
     localStorage.setItem('flowpdv_commit_venda', JSON.stringify({ loja: this.getLicenca()?.chaveLicenca || '', vendaId: venda.id, escritas }));
     this.recuperarVendaPendente();
     // Notificações externas só podem observar a venda após o commit local completo.
+    try {
+      const registro = logVenda ? audit.descarregarPendentes() : audit?.registrarLog('venda_realizada', descricaoAuditoria, detalhesAuditoria);
+      Promise.resolve(registro).catch(e => console.warn('Falha ao registrar auditoria da venda.', e));
+    } catch (e) { console.warn('Venda gravada; falha na auditoria.', e); }
     try {
       const cloud = window.CloudSyncModule;
       if (turno && cloud?.atualizarTurnoAtivoDoTerminal) Promise.resolve(cloud.atualizarTurnoAtivoDoTerminal(cloud.getChaveLicenca?.() || '', this.getDeviceId(), turno)).catch(() => {});
@@ -432,6 +566,7 @@ export const StorageService = {
     const vendas = this.getVendas();
     const index = vendas.findIndex(item => item.id === venda.id);
     if (index < 0) return false;
+    if (Object.hasOwn(vendas[index], 'estoqueServidorV2') || Object.hasOwn(venda, 'estoqueServidorV2')) throw new Error('Venda confirmada no servidor: utilize o fluxo integrado de estorno ou recuperação.');
     vendas[index] = { ...vendas[index], ...venda };
     localStorage.setItem('adega_vendas', JSON.stringify(vendas));
     if (window.CloudSyncModule && typeof window.CloudSyncModule.enviarAlteracaoNuvem === 'function') {
@@ -453,6 +588,7 @@ export const StorageService = {
   },
 
   adicionarTurnoExcluidoId(id) {
+    this.exigirVendaRecuperada();
     if (!id) return;
     const excluidos = this.getTurnosExcluidosIds();
     const idStr = String(id);
@@ -463,6 +599,7 @@ export const StorageService = {
   },
 
   excluirTurnoHistorico(turnoId) {
+    this.exigirVendaRecuperada();
     if (!turnoId) return false;
     const idStr = String(turnoId);
     this.adicionarTurnoExcluidoId(idStr);
@@ -524,12 +661,14 @@ export const StorageService = {
   },
 
   salvarHistoricoTurnos(turnos) {
+    this.exigirVendaRecuperada();
     const excluidos = this.getTurnosExcluidosIds();
     const listaLimpa = Array.isArray(turnos) ? turnos.filter(t => t && t.id && !excluidos.includes(String(t.id))) : [];
     localStorage.setItem('adega_turnos_historico', JSON.stringify(listaLimpa));
   },
 
   arquivarTurnoFechado(turnoFechado) {
+    this.exigirVendaRecuperada();
     const historico = this.getHistoricoTurnos();
     historico.unshift(turnoFechado);
     this.salvarHistoricoTurnos(historico);
@@ -563,7 +702,7 @@ export const StorageService = {
       }
     }
     const defaults = [];
-    this.saveClientes(defaults);
+    if (!this.perfilEmRecuperacao()) this.saveClientes(defaults);
     return defaults;
   },
 
@@ -594,6 +733,7 @@ export const StorageService = {
   },
 
   _adicionarExcluidosIds(chaveStorage, ids) {
+    this.exigirVendaRecuperada();
     const atuais = new Set(this._getExcluidosIds(chaveStorage));
     (Array.isArray(ids) ? ids : [ids]).forEach(id => { if (id != null && id !== '') atuais.add(String(id)); });
     localStorage.setItem(chaveStorage, JSON.stringify(Array.from(atuais).slice(-2000)));
@@ -638,6 +778,7 @@ export const StorageService = {
   },
 
   saveContasPagar(contas) {
+    this.exigirVendaRecuperada();
     let anteriores = [];
     try {
       const saved = localStorage.getItem('flowpdv_contas_pagar');
@@ -960,6 +1101,8 @@ export const StorageService = {
   },
 
   registrarMovimentoEstoque({ produtoId, delta, origem, refId, saldoPara }) {
+    this.exigirVendaRecuperada();
+    this.exigirEstoqueLocalDisponivel([produtoId]);
     const qtd = parseFloat(delta) || 0;
     const temSaldo = saldoPara != null && saldoPara !== '';
     // Saldo absoluto vale mesmo com delta 0: o outro caixa pode estar com base diferente.
@@ -992,6 +1135,7 @@ export const StorageService = {
   },
 
   saveCheckpointEstoque(checkpoint) {
+    this.exigirVendaRecuperada();
     if (!checkpoint || typeof checkpoint !== 'object') return;
     localStorage.setItem('flowpdv_checkpoint_estoque', JSON.stringify(checkpoint));
   },
@@ -1007,6 +1151,7 @@ export const StorageService = {
   },
 
   saveInventarios(lista) {
+    this.exigirVendaRecuperada();
     localStorage.setItem('flowpdv_inventarios', JSON.stringify(Array.isArray(lista) ? lista : []));
   },
 
@@ -1023,6 +1168,7 @@ export const StorageService = {
   },
 
   saveComandas(comandas) {
+    this.exigirVendaRecuperada();
     if (!Array.isArray(comandas)) return;
     // Carimbar só o que mudou: é esse horário que decide qual terminal vence
     // quando duas máquinas mexem em mesas diferentes ao mesmo tempo.
@@ -1138,6 +1284,7 @@ export const StorageService = {
   },
 
   registrarNotaImportada(chaveAcesso, numero = '') {
+    this.exigirVendaRecuperada();
     const chave = String(chaveAcesso || '').replace(/\D/g, '');
     if (!chave) return;
     const lista = this.getNotasImportadas().filter(n => n && String(n.chave) !== chave);
@@ -1149,6 +1296,7 @@ export const StorageService = {
 
   // Limpeza de Isolamento Multi-Tenant ao Trocar de Empresa/Licença
   limparDadosLocaisParaNovaEmpresa(novaLic) {
+    this.exigirBaseLegadaPermitida();
     if (this.temVendaPendente() || window.TefModule?.temPendencias()) throw new Error('Resolva as vendas e pagamentos pendentes antes de trocar de loja.');
     // O cache em memória também é da loja anterior.
     this._produtosMem = null;
@@ -1179,7 +1327,35 @@ export const StorageService = {
     }
   },
 
+  // Backups legados não carregam o diário e os vínculos necessários ao fluxo V2.
+  exigirBaseLegadaPermitida(pacote = {}) {
+    const bloqueado = () => { throw new Error('Esta base possui operações V2. Use a recuperação específica; backup e sincronização antigos estão bloqueados para preservar estoque e pendências.'); };
+    if (this.perfilEmRecuperacao()) bloqueado();
+    for (const key of ['flowpdv_pagamento_atendimento_pendente','flowpdv_migracoes_estoque_teste', 'flowpdv_venda_servidor_pendente', 'flowpdv_estorno_local_pendente', 'flowpdv_ciclo_teste_pendente', 'flowpdv_restauracao_v2_pendente', 'flowpdv_commit_venda', 'flowpdv_instalacao_perfil_pendente', 'flowpdv_recuperacao_operacao_bloqueada']) {
+      const raw = localStorage.getItem(key);
+      if (raw !== null) {
+        let valor;
+        try { valor = JSON.parse(raw); } catch { bloqueado(); }
+        if (Array.isArray(valor) ? valor.length > 0 : valor !== null) bloqueado();
+      }
+    }
+    const turnoV2 = t => !!t && (Object.hasOwn(t, 'restauranteV2') || Object.hasOwn(t, 'estornosLocaisV2'));
+    const vendasV2 = lista => Array.isArray(lista) && lista.some(v => v && Object.hasOwn(v, 'estoqueServidorV2'));
+    const turnosV2 = lista => Array.isArray(lista) && lista.some(turnoV2);
+    const ler = (key, lista = false) => {
+      let valor;
+      try { valor = JSON.parse(localStorage.getItem(key) || 'null'); } catch { bloqueado(); }
+      if (valor !== null && (lista ? !Array.isArray(valor) : typeof valor !== 'object' || Array.isArray(valor))) bloqueado();
+      return valor;
+    };
+    if (vendasV2(ler('adega_vendas', true)) || turnoV2(ler('adega_turno_atual')) || turnosV2(ler('adega_turnos_historico', true))) bloqueado();
+    if (pacote && (pacote.tipo === 'flowpdv_homologacao_v2' || vendasV2(pacote.vendas) || turnoV2(pacote.turnoAtual)
+      || turnosV2(pacote.historicoTurnos) || turnosV2(pacote.turnosHistorico)
+      || Object.values(pacote.turnosAtivos || {}).some(turnoV2))) bloqueado();
+  },
+
   importarBackupCompleto(jsonObj) {
+    this.exigirBaseLegadaPermitida(jsonObj);
     if (!jsonObj || (jsonObj.tipo !== 'flowpdv_backup' && !jsonObj.produtos)) {
       throw new Error('Arquivo de backup inválido ou incompatível.');
     }

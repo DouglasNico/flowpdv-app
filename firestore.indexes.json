@@ -1,6 +1,14 @@
 {
   "indexes": [
     {
+      "collectionGroup": "pedidos",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "tipo", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "auditoria_lojas",
       "queryScope": "COLLECTION",
       "fields": [

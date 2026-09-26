@@ -31,6 +31,7 @@ function reset() {
 function load(file, name) {
   const source = fs.readFileSync(path.join(root, 'src/js', file), 'utf8').replace(/^import\s[\s\S]*?;\s*/gm, '').replace(/export const /g, 'const ');
   const ctx = { ...core, console, crypto, localStorage, sessionStorage, window, navigator, AbortSignal,
+    usarVendaAplicativoCompleto: () => false,
     document: { getElementById: () => null, querySelector: () => null },
     AuditModule: { registrarLog() {} }, AuthModule: { getUsuario: () => ({ id: 'U1', nome: 'Teste' }) },
     setTimeout: cb => { queueMicrotask(cb); return 1; }, clearTimeout() {}, setInterval() {}, clearInterval() {}

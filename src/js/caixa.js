@@ -1,12 +1,16 @@
+import { usarFluxoOperacionalV2, usarAplicativoIntegradoV2, usarPdvOficialV2 } from './perfil-operacional-v2.js';
+import { calcularResumoFinanceiroBase } from './resumo-financeiro-caixa.js';
 /**
  * caixa.js - Gestão de Turnos de Caixa, Sangrias, Fechamento Diário e Relatórios Históricos
  */
 
 import { StorageService } from './storage.js';
+import { mesclarResumoRestaurante, adicionarDetalhesRestauranteExcel } from './resumo-restaurante-caixa.js';
 import { AuthModule } from './auth.js';
 import { ThermalPrintModule } from './thermal-print.js';
 import { AuditModule } from './audit.js';
 import { vendaPertenceAoTurno, dinheiroLiquidoVenda } from './merge-core.js';
+import { mostrarCarregando, fecharCarregando } from './notificacoes.js';
 import ExcelJS from 'exceljs';
 
 export const CaixaModule = {
@@ -112,68 +116,7 @@ export const CaixaModule = {
   },
 
   calcularResumoFinanceiro(turno) {
-    if (!turno) return {
-      vendasCount: 0, totalVendas: 0, totalDinheiro: 0, totalPix: 0,
-      totalDebito: 0, totalCredito: 0, totalFiado: 0, totalSangrias: 0, saldoEmGaveta: 0
-    };
-
-    const vendas = StorageService.getVendas();
-    const vendasTurno = vendas.filter(v => vendaPertenceAoTurno(v, turno));
-
-    let totalDinheiro = 0;
-    let totalPix = 0;
-    let totalDebito = 0;
-    let totalCredito = 0;
-    let totalFiado = 0;
-    let totalVendas = 0;
-
-    vendasTurno.forEach(v => {
-      const tot = v.total || 0;
-      totalVendas += tot;
-
-      if (v.pagamentoDividido && Array.isArray(v.pagamentos)) {
-        v.pagamentos.forEach(p => {
-          const val = parseFloat(p.valor) || 0;
-          if (p.forma === 'PIX') totalPix += val;
-          else if (p.forma === 'Débito') totalDebito += val;
-          else if (p.forma === 'Crédito') totalCredito += val;
-          else if (p.forma === 'Fiado') totalFiado += val;
-        });
-        totalDinheiro += dinheiroLiquidoVenda(v);
-      } else if (v.pagamentoDividido && (v.parcela1 || v.parcela2)) {
-        const addParcela = (forma, valor) => {
-          const val = parseFloat(valor) || 0;
-          if (forma === 'PIX') totalPix += val;
-          else if (forma === 'Débito') totalDebito += val;
-          else if (forma === 'Crédito') totalCredito += val;
-          else if (forma === 'Fiado') totalFiado += val;
-        };
-        if (v.parcela1) addParcela(v.parcela1.forma, v.parcela1.valor);
-        if (v.parcela2) addParcela(v.parcela2.forma, v.parcela2.valor);
-        totalDinheiro += dinheiroLiquidoVenda(v);
-      } else {
-        if (v.formaPagamento === 'Dinheiro') totalDinheiro += tot;
-        else if (v.formaPagamento === 'PIX') totalPix += tot;
-        else if (v.formaPagamento === 'Débito') totalDebito += tot;
-        else if (v.formaPagamento === 'Crédito') totalCredito += tot;
-        else if (v.formaPagamento === 'Fiado') totalFiado += tot;
-      }
-    });
-
-    const totalSangrias = (turno.sangrias || []).reduce((acc, s) => acc + (s.valor || 0), 0);
-    const saldoEmGaveta = Math.max(0, (turno.trocoInicial || 0) + totalDinheiro - totalSangrias);
-
-    return {
-      vendasCount: vendasTurno.length,
-      totalVendas,
-      totalDinheiro,
-      totalPix,
-      totalDebito,
-      totalCredito,
-      totalFiado,
-      totalSangrias,
-      saldoEmGaveta
-    };
+    return calcularResumoFinanceiroBase(turno, StorageService.getVendas(), usarFluxoOperacionalV2());
   },
 
   renderStatusTurno() {
@@ -230,16 +173,63 @@ export const CaixaModule = {
   },
 
   // 1. Abertura de Turno (Modal Interativo)
+  abrirControleCaixaIntegrado(destino) {
+    if (usarPdvOficialV2()) return false;
+    if (!usarFluxoOperacionalV2() || !usarAplicativoIntegradoV2()) return false;
+    StorageService.exigirPerfilOperavel();
+    if (!AuthModule.getUsuario() || document.body.classList.contains('tela-login-ativa')) throw new Error('Entre como operador antes de movimentar o caixa.');
+    const botao = document.getElementById('checkout-open');
+    if (!botao) throw new Error('O controle integrado do caixa ainda está iniciando.');
+    this.fecharModalAbertura(); this.fecharModalFechamento();
+    botao.click();
+    const secao = document.getElementById(destino === 'abrir' ? 'cycle-title' : 'server-turn-title');
+    if (secao) { secao.tabIndex = -1; secao.focus(); secao.scrollIntoView({ block: 'start' }); }
+    window.App.showToast(destino === 'abrir' ? 'Confirme o novo turno no controle integrado de caixa.' : 'Encerre o turno no servidor e confira o caixa completo antes de arquivar.', 'info');
+    return true;
+  },
+
   abrirTurnoCaixa() {
+    if (this.abrirControleCaixaIntegrado('abrir')) return;
     const modal = document.getElementById('modal-abrir-caixa');
     const input = document.getElementById('abertura-troco-input');
     if (modal) {
       if (input) {
-        input.value = '50.00';
+        this.aplicarMascaraTrocoAbertura(input);
+        let valorInicial = 50;
+        try {
+          const bruto = JSON.parse(localStorage.getItem('adega_turno_atual') || 'null');
+          if (bruto?.status === 'abertura_pendente' && Number.isSafeInteger(bruto.fundoRestauranteCentavos)) {
+            valorInicial = bruto.fundoRestauranteCentavos / 100;
+          }
+        } catch (_) {}
+        input.value = StorageService.formatarMoeda(valorInicial);
         setTimeout(() => input.select(), 150);
       }
       modal.classList.add('active');
     }
+  },
+
+  aplicarMascaraTrocoAbertura(input) {
+    if (!input || input.dataset.hasMoneyMask) return;
+    input.dataset.hasMoneyMask = 'true';
+    input.setAttribute('type', 'text');
+    input.setAttribute('inputmode', 'decimal');
+    input.removeAttribute('step');
+    input.addEventListener('input', () => {
+      let v = input.value.replace(/\D/g, '');
+      if (!v) { input.value = ''; return; }
+      const num = parseInt(v, 10) / 100;
+      input.value = num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    });
+  },
+
+  definirTrocoAbertura(reais) {
+    const input = document.getElementById('abertura-troco-input');
+    if (!input) return;
+    this.aplicarMascaraTrocoAbertura(input);
+    input.value = StorageService.formatarMoeda(reais);
+    input.focus();
+    input.select();
   },
 
   fecharModalAbertura() {
@@ -250,9 +240,44 @@ export const CaixaModule = {
     }, 60);
   },
 
+  async confirmarAberturaOficial(valorTroco) {
+    if (!window.FlowCaixaOficial) {
+      window.App.showToast('O caixa do cardápio ainda está iniciando.', 'warning');
+      return;
+    }
+    mostrarCarregando('Abrindo o caixa…');
+    try {
+      await window.FlowCaixaOficial.abrir(valorTroco);
+      this.fecharModalAbertura();
+      this.init();
+      window.App.showToast(`Caixa aberto com R$ ${StorageService.formatarMoeda(valorTroco)} de troco inicial.`, 'success');
+    } catch (error) {
+      const msg = error?.message || 'Não foi possível abrir o caixa.';
+      if (/já possui outro turno aberto|referência local não foi encontrada|Não há turno aberto/i.test(msg) && typeof window.FlowCaixaOficial.retomar === 'function') {
+        try {
+          mostrarCarregando('Recuperando turno do servidor…');
+          await window.FlowCaixaOficial.retomar();
+          this.fecharModalAbertura();
+          this.init();
+          window.App.showToast('Turno já aberto no servidor foi recuperado neste caixa.', 'success');
+          return;
+        } catch (_) {}
+      }
+      window.App.showToast(msg, 'error');
+    } finally {
+      fecharCarregando();
+    }
+  },
+
   confirmarAberturaCaixa() {
+    if (usarPdvOficialV2()) {
+      const valorTroco = this.parseMoedaBR(document.getElementById('abertura-troco-input')?.value);
+      this.confirmarAberturaOficial(valorTroco);
+      return;
+    }
+    if (this.abrirControleCaixaIntegrado('abrir')) return;
     const input = document.getElementById('abertura-troco-input');
-    const valorTroco = parseFloat(input?.value) || 0;
+    const valorTroco = this.parseMoedaBR(input?.value);
     const usuario = AuthModule.getUsuario();
     if (!usuario) {
       window.App.showToast('Faça login para abrir o caixa.', 'warning');
@@ -314,7 +339,11 @@ export const CaixaModule = {
       const inputValor = document.getElementById('sangria-valor-input');
       const inputMotivo = document.getElementById('sangria-motivo-input');
 
-      if (saldoEl) saldoEl.textContent = `R$ ${this.calcularDinheiroGaveta(turno).toFixed(2).replace('.', ',')}`;
+      if (saldoEl) {
+        const podeVerSaldo = AuthModule.isGerente();
+        saldoEl.textContent = podeVerSaldo ? `R$ ${this.calcularDinheiroGaveta(turno).toFixed(2).replace('.', ',')}` : '';
+        saldoEl.parentElement.hidden = !podeVerSaldo;
+      }
       if (inputValor) {
         inputValor.value = '';
         setTimeout(() => inputValor.focus(), 150);
@@ -350,7 +379,7 @@ export const CaixaModule = {
 
     const saldoAtual = this.calcularDinheiroGaveta(turno);
     if (valor > saldoAtual) {
-      window.App.showToast(`Valor da sangria (R$ ${valor.toFixed(2)}) é maior que o dinheiro na gaveta (R$ ${saldoAtual.toFixed(2)})!`, 'warning');
+      window.App.showToast('Não foi possível realizar a retirada nesse valor. Solicite a conferência do responsável.', 'warning');
       return;
     }
 
@@ -389,6 +418,7 @@ export const CaixaModule = {
 
   // 3. Fechamento de Caixa (Conferência Cega & Auditoria)
   fecharTurnoCaixa() {
+    if (this.abrirControleCaixaIntegrado('fechar')) return;
     const turno = StorageService.getTurnoAtual();
     if (!turno) {
       window.App.showToast('Nenhum turno aberto no momento.', 'warning');
@@ -431,7 +461,37 @@ export const CaixaModule = {
     }, 60);
   },
 
+  async confirmarFechamentoOficial() {
+    if (!window.FlowCaixaOficial) {
+      window.App.showToast('O caixa do cardápio ainda está iniciando.', 'warning');
+      return;
+    }
+    const dinheiroInformado = this.parseMoedaBR(document.getElementById('fechamento-dinheiro-fisico-input')?.value);
+    mostrarCarregando('Encerrando o caixa…');
+    try {
+      const closed = await window.FlowCaixaOficial.encerrar(dinheiroInformado);
+      this.fecharModalFechamento();
+      this.init();
+      const diferenca = Number(closed.diferenca) || 0;
+      const texto = diferenca === 0
+        ? 'Turno encerrado. A gaveta fechou sem diferença.'
+        : `Turno encerrado. Diferença de R$ ${diferenca.toFixed(2).replace('.', ',')}.`;
+      window.App.showToast(texto, diferenca === 0 ? 'success' : 'warning');
+    } catch (error) {
+      window.App.showToast(error.message || 'Não foi possível encerrar o turno.', 'error');
+    } finally {
+      fecharCarregando();
+    }
+  },
+
   confirmarFechamentoCaixa(e) {
+    if (usarPdvOficialV2()) { e?.preventDefault(); this.confirmarFechamentoOficial(); return; }
+    if (usarAplicativoIntegradoV2()) { e?.preventDefault(); if (this.abrirControleCaixaIntegrado('fechar')) return; }
+    if (usarFluxoOperacionalV2() && !StorageService.getTurnoAtual()?.restauranteV2) {
+      e?.preventDefault();
+      window.App.showToast('Encerre o turno do restaurante e incorpore o resumo antes de fechar este caixa de teste.', 'warning');
+      return;
+    }
     if (StorageService.temVendaPendente() || window.TefModule?.temPendencias()) {
       e?.preventDefault();
       window.App.showToast('Resolva as pendências de venda e TEF antes de fechar o caixa.', 'warning');
@@ -462,6 +522,8 @@ export const CaixaModule = {
       totalDebito: r.totalDebito || 0,
       totalCredito: r.totalCredito || 0,
       totalFiado: r.totalFiado || 0,
+      totalCartaoNaoClassificado: r.totalCartaoNaoClassificado || 0,
+      fundoRestaurante: r.fundoRestaurante || 0,
       totalVendasGeral: r.totalVendas || 0,
       totalSangrias: r.totalSangrias || 0,
       dinheiroGaveta: saldoEsperado,
@@ -553,7 +615,7 @@ export const CaixaModule = {
       const operadorNome = t.operador || 'Operador';
       const trocoInicial = parseFloat(t.trocoInicial || t.valorAbertura) || 0;
       const totalVendas = r.totalVendas || 0;
-      const dinheiroGaveta = r.saldoEmGaveta || (trocoInicial + (r.totalDinheiro || 0) - (r.totalSangrias || 0));
+      const dinheiroGaveta = r.saldoEmGaveta ?? (trocoInicial + (r.totalDinheiro || 0) - (r.totalSangrias || 0));
 
       return `
         <tr>
@@ -708,9 +770,6 @@ export const CaixaModule = {
     }
     if (window.ThermalPrintModule && typeof window.ThermalPrintModule.imprimirFechamentoCaixa === 'function') {
       window.ThermalPrintModule.imprimirFechamentoCaixa(turno);
-      if (window.App && typeof window.App.showToast === 'function') {
-        window.App.showToast(`🖨️ Imprimindo cupom de fechamento do turno #${StorageService.formatarNumeroTurno(turno.id)}...`, 'success');
-      }
     }
   },
 
@@ -942,6 +1001,21 @@ export const CaixaModule = {
     c17C.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
     c17C.border = borderThin;
 
+    if (r.restauranteIntegrado) {
+      wsResumo.getCell('A19').value = 'Cartão do restaurante a classificar';
+      wsResumo.getCell('B19').value = r.totalCartaoNaoClassificado;
+      wsResumo.getCell('B19').numFmt = '"R$" #,##0.00';
+      wsResumo.getCell('A20').value = 'Fundo de troco adicional do restaurante';
+      wsResumo.getCell('B20').value = r.fundoRestaurante;
+      wsResumo.getCell('B20').numFmt = '"R$" #,##0.00';
+      wsResumo.getCell('A21').value = 'Vendas e Itens: fluxo local. Itens restaurante: recebimentos e estornos do resumo encerrado.';
+      adicionarDetalhesRestauranteExcel(workbook, [turno]);
+    }
+    if(usarFluxoOperacionalV2()&&!r.restauranteIntegrado&&turno.estornosLocaisV2?.length)adicionarDetalhesRestauranteExcel(workbook,[turno]);
+    if(usarFluxoOperacionalV2()&&turno.estornosLocaisV2?.length){
+      wsResumo.getCell('A22').value='Estornos locais já descontados do total';
+      wsResumo.getCell('B22').value=r.totalEstornosLocais;wsResumo.getCell('B22').numFmt='"R$" #,##0.00';
+    }
     // ==========================================
     // ABA 2: VENDAS DO TURNO
     // ==========================================
@@ -959,7 +1033,7 @@ export const CaixaModule = {
       { key: 'J', width: 12 }
     ];
 
-    wsVendas.mergeCells('A1:J1');
+    wsVendas.mergeCells('A1:L1');
     const v1 = wsVendas.getCell('A1');
     v1.value = 'FLOWPDV — RELATÓRIO DETALHADO DE VENDAS DO TURNO';
     v1.font = fontTitle;
@@ -967,7 +1041,7 @@ export const CaixaModule = {
     v1.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
     wsVendas.getRow(1).height = 34;
 
-    wsVendas.mergeCells('A2:J2');
+    wsVendas.mergeCells('A2:L2');
     const v2 = wsVendas.getCell('A2');
     v2.value = `Turno #${StorageService.formatarNumeroTurno(turno.id)} | Período: ${dataAb} até ${dataFc} | Total de Vendas: ${vendasTurno.length}`;
     v2.font = fontSubtitle;
@@ -975,7 +1049,8 @@ export const CaixaModule = {
     v2.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF059669' } };
     wsVendas.getRow(2).height = 22;
 
-    const vendasHeaders = ['ID da Venda', 'Data / Hora', 'Operador', 'Forma de Pagamento', 'Subtotal (R$)', 'Desconto (R$)', 'Total da Venda (R$)', 'Valor Pago (R$)', 'Troco (R$)', 'Qtd Itens'];
+    wsVendas.getColumn(11).width=20;wsVendas.getColumn(12).width=45;
+    const vendasHeaders = ['ID da Venda', 'Data / Hora', 'Operador', 'Forma de Pagamento', 'Subtotal (R$)', 'Desconto (R$)', 'Total da Venda (R$)', 'Valor Pago (R$)', 'Troco (R$)', 'Qtd Itens', 'Acréscimo (R$)', 'Motivo do ajuste'];
     const vHeadRow = wsVendas.getRow(4);
     vHeadRow.height = 26;
     vendasHeaders.forEach((vh, i) => {
@@ -997,13 +1072,15 @@ export const CaixaModule = {
         v.id || '',
         new Date(v.data).toLocaleString('pt-BR'),
         v.operador || turno.operador || '',
-        v.formaPagamento || '',
-        v.subtotal || v.total || 0,
+        v.estoqueServidorV2&&v.pagamentosCentavos?v.pagamentosCentavos.map(p=>p.forma+': R$ '+(p.valorCentavos/100).toFixed(2)).join(' + '):v.formaPagamento || '',
+        v.subtotal ?? v.total ?? 0,
         v.desconto || 0,
         v.total || 0,
         v.valorPago || v.total || 0,
         v.troco || 0,
-        (v.itens || []).length
+        (v.itens || []).length,
+        v.acrescimo || 0,
+        v.ajuste?.motivo || ''
       ];
 
       vals.forEach((val, colIdx) => {
@@ -1011,7 +1088,7 @@ export const CaixaModule = {
         cell.value = val;
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
         cell.border = borderThin;
-        if (colIdx >= 4 && colIdx <= 8) {
+        if ((colIdx >= 4 && colIdx <= 8) || colIdx === 10) {
           cell.font = colIdx === 6 ? fontBold : fontRegular;
           cell.numFmt = '"R$" #,##0.00';
           cell.alignment = { horizontal: 'right' };
@@ -1255,6 +1332,17 @@ export const CaixaModule = {
     h2.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF059669' } };
     ws.getRow(2).height = 22;
 
+    if (usarFluxoOperacionalV2() && turnos.some(t => t.restauranteV2||t.estornosLocaisV2?.length)) {
+      const extra = workbook.addWorksheet('Restaurante por turno');
+      adicionarDetalhesRestauranteExcel(workbook, turnos);
+      extra.columns = Array.from({ length: 6 }, () => ({ width: 26 }));
+      const rows = [['Turno', 'Recebimentos', 'Estornos', 'Líquido (R$)', 'Cartão a classificar (R$)', 'Fundo adicional (R$)']];
+      for (const t of turnos.filter(t => t.restauranteV2)) {
+        const r = this.calcularResumoFinanceiro(t);
+        rows.push([t.id, r.recebimentosRestaurante, r.estornosRestaurante, r.totalRestaurante, r.totalCartaoNaoClassificado, r.fundoRestaurante]);
+      }
+      rows.forEach((values, row) => values.forEach((value, col) => { extra.getRow(row + 1).getCell(col + 1).value = value; }));
+    }
     const headers = [
       'ID Turno', 'Operador', 'Abertura', 'Fechamento', 'Troco Inicial (R$)',
       'Total Vendas (R$)', 'Qtd Vendas', 'Dinheiro (R$)', 'PIX (R$)',
@@ -1430,6 +1518,7 @@ export const CaixaModule = {
 
         <div style="background: #ffffff; border: 1px solid var(--border-card); border-radius: var(--radius-md); padding: 16px; margin-bottom: 16px;">
           <h4 style="font-size: 14px; font-weight: 800; color: var(--text-main); margin-bottom: 12px;">📊 Resumo do Faturamento por Forma de Pagamento</h4>
+          ${r.restauranteIntegrado ? '<p>Inclui resumo encerrado do restaurante. Cartão a classificar: R$ ' + r.totalCartaoNaoClassificado.toFixed(2) + ' • Fundo adicional: R$ ' + r.fundoRestaurante.toFixed(2) + '. Os detalhes de itens permanecem no histórico de cada origem.</p>' : ''}
           <div style="display: flex; flex-direction: column; gap: 8px; font-size: 13px;">
             <div style="display: flex; justify-content: space-between;">
               <span>💵 Dinheiro:</span>
@@ -1522,9 +1611,6 @@ export const CaixaModule = {
   imprimirCupomTurnoVisualizado() {
     if (this.turnoDetalheSelecionado) {
       ThermalPrintModule.imprimirFechamentoCaixa(this.turnoDetalheSelecionado);
-      if (window.App && typeof window.App.showToast === 'function') {
-        window.App.showToast('🖨️ Enviando relatório de fechamento para a impressora térmica...', 'info');
-      }
     }
   },
 
@@ -1537,6 +1623,8 @@ export const CaixaModule = {
     }
 
     this.vendaDetalheSelecionada = venda;
+    const botaoEstorno = document.getElementById('btn-estornar-venda-detalhe');
+    if (botaoEstorno) botaoEstorno.hidden = !this.podeEstornarVenda(venda);
 
     const modal = document.getElementById('modal-detalhes-venda');
     const title = document.getElementById('detalhes-venda-title');
@@ -1573,7 +1661,9 @@ export const CaixaModule = {
             </div>
             <div>
               <span style="color: var(--text-muted); display: block; font-size: 11px; font-weight: 700;">STATUS:</span>
-              <span style="display: inline-block; background: #dcfce7; color: #15803d; font-weight: 800; font-size: 11px; padding: 2px 8px; border-radius: 4px;">✅ CONCLUÍDA</span>
+              ${this.vendaJaEstornada(venda)
+                ? `<span style="display: inline-block; background: #fee2e2; color: #991b1b; font-weight: 800; font-size: 11px; padding: 2px 8px; border-radius: 4px;">ESTORNADA</span>`
+                : `<span style="display: inline-block; background: #dcfce7; color: #15803d; font-weight: 800; font-size: 11px; padding: 2px 8px; border-radius: 4px;">CONCLUÍDA</span>`}
             </div>
           </div>
         </div>
@@ -1608,7 +1698,7 @@ export const CaixaModule = {
         <div style="background: #f8fafc; border: 1px solid var(--border-card); border-radius: var(--radius-md); padding: 12px; font-size: 13px;">
           <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
             <span style="color: var(--text-muted);">Subtotal:</span>
-            <strong style="font-family: 'JetBrains Mono';">R$ ${(venda.subtotal || venda.total || 0).toFixed(2).replace('.', ',')}</strong>
+            <strong style="font-family: 'JetBrains Mono';">R$ ${(venda.subtotal ?? venda.total ?? 0).toFixed(2).replace('.', ',')}</strong>
           </div>
           ${venda.desconto > 0 ? `
             <div style="display: flex; justify-content: space-between; margin-bottom: 4px; color: #dc2626;">
@@ -1616,6 +1706,7 @@ export const CaixaModule = {
               <strong style="font-family: 'JetBrains Mono';">- R$ ${(venda.desconto).toFixed(2).replace('.', ',')}</strong>
             </div>
           ` : ''}
+          ${venda.estoqueServidorV2 && venda.acrescimo > 0 ? `<div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Acréscimo:</span><strong>+ R$ ${venda.acrescimo.toFixed(2).replace('.', ',')}</strong></div>` : ''}
           <div style="display: flex; justify-content: space-between; border-top: 2px solid var(--border-card); padding-top: 6px; margin-top: 4px; font-size: 16px;">
             <strong style="color: var(--text-main);">VALOR TOTAL:</strong>
             <strong style="color: #059669; font-family: 'JetBrains Mono'; font-size: 18px;">R$ ${(venda.total || 0).toFixed(2).replace('.', ',')}</strong>
@@ -1633,7 +1724,269 @@ export const CaixaModule = {
     if (modal) modal.classList.add('active');
   },
 
+  vendaJaEstornada(venda) {
+    if (!venda) return false;
+    return [StorageService.getTurnoAtual(), ...StorageService.getHistoricoTurnos()].filter(Boolean)
+      .some(turno => (turno.estornosLocaisV2 || []).some(estorno => estorno.vendaId === venda.id));
+  },
+
+  podeEstornarVenda(venda) {
+    return !!(usarPdvOficialV2() && venda?.estoqueServidorV2 && venda.terminalId === StorageService.getDeviceId() && !this.vendaJaEstornada(venda));
+  },
+
+  estornoLocalPendente() {
+    try {
+      return JSON.parse(localStorage.getItem('flowpdv_estorno_local_pendente') || 'null');
+    } catch {
+      return null;
+    }
+  },
+
+  abrirListaEstornoNoPdv() {
+    const turno = StorageService.getTurnoAtual();
+    if (!turno) {
+      window.App.showToast('Abra o caixa antes de estornar.', 'warning');
+      return;
+    }
+    const abrir = () => this.mostrarListaEstornoNoPdv();
+    if (window.AuthModule && typeof window.AuthModule.solicitarAutorizacaoGerente === 'function') {
+      AuthModule.solicitarAutorizacaoGerente(abrir, 'Estornar uma venda', 'cancelarVenda');
+      return;
+    }
+    abrir();
+  },
+
+  resumoItensEstorno(venda) {
+    const itens = venda.itens || [];
+    if (!itens.length) return 'Sem itens';
+    const formatar = (item) => {
+      if (window.PdvModule && typeof window.PdvModule.formatarQtdItem === 'function') {
+        return `${window.PdvModule.formatarQtdItem(item)} ${item.nome}`;
+      }
+      return `${item.quantidade || 1}x ${item.nome || 'Item'}`;
+    };
+    const visiveis = itens.slice(0, 2).map(formatar);
+    if (itens.length > 2) visiveis.push(`+${itens.length - 2} item(ns)`);
+    return visiveis.join(' · ');
+  },
+
+  mostrarListaEstornoNoPdv() {
+    const turno = StorageService.getTurnoAtual();
+    const modal = document.getElementById('modal-estorno-venda');
+    const corpo = document.getElementById('modal-estorno-venda-corpo');
+    if (!turno || !modal || !corpo) return;
+    const pendenteId = this.estornoLocalPendente()?.payload?.vendaId || null;
+    let vendas = StorageService.getVendas()
+      .filter(venda => (this.podeEstornarVenda(venda) || venda.id === pendenteId) && (turno.vendasIds || []).includes(venda.id))
+      .sort((a, b) => new Date(b.data || 0) - new Date(a.data || 0))
+      .slice(0, 12);
+    if (pendenteId) {
+      const idxPendente = vendas.findIndex(v => v.id === pendenteId);
+      if (idxPendente > 0) {
+        const [item] = vendas.splice(idxPendente, 1);
+        vendas = [item, ...vendas];
+      } else if (idxPendente < 0) {
+        const vendaPendente = StorageService.getVendas().find(v => v.id === pendenteId);
+        if (vendaPendente) vendas = [vendaPendente, ...vendas].slice(0, 12);
+      }
+    }
+    this.estornoListaVendas = vendas;
+    this.estornoListaIndice = 0;
+    if (!vendas.length) {
+      corpo.innerHTML = '<p class="estorno-ajuda">Nenhuma venda deste turno para estornar.</p>';
+    } else {
+      corpo.innerHTML = `<p class="estorno-ajuda">Escolha a venda deste turno. Use ↑ ↓ e Enter.</p><div class="estorno-lista" role="listbox" aria-label="Vendas para estornar">${vendas.map(venda => {
+        const numero = StorageService.formatarNumeroVenda(venda);
+        const total = Number(venda.total || 0).toFixed(2).replace('.', ',');
+        const hora = venda.data
+          ? new Date(venda.data).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+          : '--:--:--';
+        const forma = venda.formaPagamento || 'Venda';
+        const itens = this.resumoItensEstorno(venda);
+        const pendenteTag = venda.id === pendenteId ? '<span class="estorno-lista-forma" style="background:#fef3c7;color:#b45309;">Pendente</span>' : '';
+        return `<button type="button" role="option" data-venda-id="${venda.id}" tabindex="-1">
+          <span class="estorno-lista-info">
+            <span class="estorno-lista-topo"><strong>#${numero}</strong><span>${hora}</span><span class="estorno-lista-forma">${forma}</span>${pendenteTag}</span>
+            <span class="estorno-lista-itens">${itens}</span>
+          </span>
+          <strong class="estorno-lista-total">R$ ${total}</strong>
+        </button>`;
+      }).join('')}</div>`;
+      const lista = corpo.querySelector('.estorno-lista');
+      corpo.querySelectorAll('[data-venda-id]').forEach((botao, idx) => {
+        botao.addEventListener('click', () => this.escolherVendaEstornoDaLista(botao.dataset.vendaId));
+        botao.addEventListener('mouseenter', () => {
+          this.estornoListaIndice = idx;
+          this.atualizarDestaqueListaEstorno();
+        });
+        botao.addEventListener('keydown', (e) => this.handleListaEstornoKeydown(e));
+      });
+      this.atualizarDestaqueListaEstorno();
+      setTimeout(() => {
+        const ativo = lista?.querySelector('.is-selected') || lista?.querySelector('[data-venda-id]');
+        ativo?.focus({ preventScroll: true });
+      }, 60);
+    }
+    modal.classList.add('active');
+  },
+
+  voltarListaEstornoNoPdv() {
+    if (this._estornando) return;
+    this.mostrarListaEstornoNoPdv();
+  },
+
+  atualizarDestaqueListaEstorno() {
+    const botoes = document.querySelectorAll('#modal-estorno-venda-corpo [data-venda-id]');
+    botoes.forEach((botao, idx) => {
+      const ativo = idx === this.estornoListaIndice;
+      botao.classList.toggle('is-selected', ativo);
+      botao.setAttribute('aria-selected', ativo ? 'true' : 'false');
+      botao.tabIndex = ativo ? 0 : -1;
+      if (ativo) {
+        botao.scrollIntoView({ block: 'nearest' });
+        if (document.activeElement?.closest?.('#modal-estorno-venda')) botao.focus({ preventScroll: true });
+      }
+    });
+  },
+
+  handleListaEstornoKeydown(e) {
+    const total = (this.estornoListaVendas || []).length;
+    if (!total) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      e.stopPropagation();
+      this.estornoListaIndice = Math.min(total - 1, (this.estornoListaIndice || 0) + 1);
+      this.atualizarDestaqueListaEstorno();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      e.stopPropagation();
+      this.estornoListaIndice = Math.max(0, (this.estornoListaIndice || 0) - 1);
+      this.atualizarDestaqueListaEstorno();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
+      const venda = this.estornoListaVendas[this.estornoListaIndice || 0];
+      if (venda) this.escolherVendaEstornoDaLista(venda.id);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      this.fecharModalEstorno();
+    }
+  },
+
+  escolherVendaEstornoDaLista(vendaId) {
+    const pendenteId = this.estornoLocalPendente()?.payload?.vendaId;
+    if (pendenteId && pendenteId !== vendaId) {
+      window.App.showToast('Conclua o estorno pendente antes de escolher outra venda.', 'warning');
+      return;
+    }
+    const venda = StorageService.getVendas().find(item => item.id === vendaId);
+    const pendenteMesma = pendenteId === vendaId;
+    if (!venda || (!this.podeEstornarVenda(venda) && !pendenteMesma)) return;
+    this.vendaDetalheSelecionada = venda;
+    this.abrirModalEstorno(pendenteMesma);
+  },
+
+  solicitarEstornoVendaSelecionada() {
+    const venda = this.vendaDetalheSelecionada;
+    if (!this.podeEstornarVenda(venda)) return;
+    const abrir = () => this.abrirModalEstorno();
+    if (window.AuthModule && typeof window.AuthModule.executarComPermissaoOuPin === 'function') {
+      AuthModule.executarComPermissaoOuPin('cancelarVenda', abrir, 'Estornar esta venda');
+      return;
+    }
+    abrir();
+  },
+
+  abrirModalEstorno(retomandoPendente = false) {
+    const venda = this.vendaDetalheSelecionada;
+    const corpo = document.getElementById('modal-estorno-venda-corpo');
+    const modal = document.getElementById('modal-estorno-venda');
+    const pendenteMesma = this.estornoLocalPendente()?.payload?.vendaId === venda?.id;
+    if ((!this.podeEstornarVenda(venda) && !pendenteMesma) || !corpo || !modal) return;
+    this._estornando = false;
+    const motivoAnterior = pendenteMesma ? (this.estornoLocalPendente()?.payload?.motivo || '') : '';
+    const numero = StorageService.formatarNumeroVenda(venda);
+    corpo.innerHTML = `
+      <form id="form-estorno-oficial" onsubmit="CaixaModule.registrarEstornoOficial(event)">
+        <p class="estorno-ajuda">${retomandoPendente || pendenteMesma
+          ? `Há um estorno pendente da venda #${numero}. Confirme o motivo e conclua, ou volte para a lista.`
+          : `Venda #${numero}. O produto volta para o estoque. O dinheiro ou o Pix você devolve ao cliente na hora, fora do sistema.`}</p>
+        <label class="form-label-custom" for="detalhe-estorno-motivo">Motivo</label>
+        <input id="detalhe-estorno-motivo" class="form-input-custom" minlength="5" maxlength="180" required placeholder="Ex.: cliente desistiu" value="${String(motivoAnterior).replace(/"/g, '&quot;')}">
+        <div class="estorno-acoes">
+          <button type="submit" id="btn-registrar-estorno" class="btn-primary-action">${pendenteMesma ? 'Concluir Estorno' : 'Registrar Estorno'}</button>
+          <button type="button" class="btn-estorno-secundario" onclick="CaixaModule.voltarListaEstornoNoPdv()">Voltar</button>
+        </div>
+      </form>`;
+    modal.classList.add('active');
+    const motivo = document.getElementById('detalhe-estorno-motivo');
+    setTimeout(() => {
+      motivo?.focus();
+      motivo?.select();
+    }, 60);
+  },
+
+  fecharModalEstorno() {
+    if (this._estornando) return;
+    const modal = document.getElementById('modal-estorno-venda');
+    if (modal) modal.classList.remove('active');
+    if (window.AuthModule && typeof window.AuthModule.limparAutorizacaoTemporaria === 'function') {
+      AuthModule.limparAutorizacaoTemporaria('cancelarVenda');
+    }
+  },
+
+  async registrarEstornoOficial(event) {
+    event?.preventDefault();
+    if (this._estornando) return;
+    const venda = this.vendaDetalheSelecionada;
+    if (!venda || !window.FlowCaixaOficial) {
+      window.App.showToast('O estorno do cardápio ainda está iniciando.', 'warning');
+      return;
+    }
+    const form = document.getElementById('form-estorno-oficial');
+    const motivo = document.getElementById('detalhe-estorno-motivo')?.value || '';
+    const devolverEstoque = true;
+    const botao = document.getElementById('btn-registrar-estorno');
+    this._estornando = true;
+    form?.querySelectorAll('input,button').forEach(campo => { campo.disabled = true; });
+    if (botao) botao.textContent = 'Registrando…';
+    mostrarCarregando('Registrando o estorno…');
+    try {
+      await window.FlowCaixaOficial.estornar(venda.id, motivo, devolverEstoque);
+      const numeroVenda = StorageService.formatarNumeroVenda(venda);
+      const produtos = (venda.itens || []).map(item => ({ nome: item.nome, quantidade: item.quantidade, precoUnitario: item.precoUnitario }));
+      AuditModule.registrarLog('estorno_venda', `Estornou a venda #${numeroVenda}: R$ ${Number(venda.total || 0).toFixed(2).replace('.', ',')}. Estoque ${devolverEstoque ? 'reposto' : 'não reposto'}.`, {
+        vendaId: venda.id,
+        total: venda.total,
+        devolverEstoque,
+        motivo: motivo.trim(),
+        produtos
+      });
+      window.App.showToast('Estorno registrado e estoque reposto.', 'info', { titulo: 'Estorno registrado', chave: 'estorno-andamento', duracao: 4000 });
+      this._estornando = false;
+      this.fecharModalEstorno();
+      this.fecharModalDetalhesVenda();
+      this.init();
+    } catch (error) {
+      this._estornando = false;
+      form?.querySelectorAll('input,button').forEach(campo => { campo.disabled = false; });
+      if (botao) botao.textContent = 'Registrar Estorno';
+      const msg = error?.message || 'Não foi possível estornar a venda.';
+      window.App.showToast(msg, 'info', { titulo: 'Não foi possível concluir', chave: 'estorno-andamento', duracao: 8000 });
+      if (/Liberamos o estorno pendente/i.test(msg)) {
+        this._estornando = false;
+        this.fecharModalEstorno();
+        this.init();
+      }
+    } finally {
+      fecharCarregando();
+    }
+  },
+
   fecharModalDetalhesVenda() {
+    if (this._estornando) return;
+    this.fecharModalEstorno();
     const modal = document.getElementById('modal-detalhes-venda');
     if (modal) modal.classList.remove('active');
   },
@@ -1641,9 +1994,6 @@ export const CaixaModule = {
   imprimirCupomVendaSelecionada() {
     if (this.vendaDetalheSelecionada) {
       ThermalPrintModule.imprimirCupomVenda(this.vendaDetalheSelecionada);
-      if (window.App && typeof window.App.showToast === 'function') {
-        window.App.showToast(`🖨️ Enviando cupom da venda #${StorageService.formatarNumeroVenda(this.vendaDetalheSelecionada)} para a impressora...`, 'info');
-      }
     }
   }
 };

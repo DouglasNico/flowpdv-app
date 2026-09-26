@@ -13,14 +13,18 @@ module.exports = admin => {
       const data = after.data();
       const chave = chaveDeLicenca(data, event.params.licencaId);
       const combos = combosDaLicenca(data);
-      if (!chave || combos === null) return null;
-      return espelharCombosLicenca(db, { chave, combos });
+      if (!chave) return null;
+      return espelharCombosLicenca(db, { chave, combos, data });
     }),
 
     // Backfill manual (admin): útil antes do trigger existir ou após script pontual.
     espelharCombosLicencaV2: onCall({ cors: true }, async request => {
       if (!request.auth) throw new HttpsError('unauthenticated', 'Autenticação necessária.');
+      const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || 'dougnvds26@gmail.com,admin@flowpdv.com.br,contato@flowpdv.com.br')
+        .split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+      const callerEmail = String(request.auth.token.email || '').toLowerCase();
       const isAdmin = request.auth.token.admin === true
+        || Boolean(callerEmail && ADMIN_EMAILS.includes(callerEmail))
         || (await admin.auth().getUser(request.auth.uid)).customClaims?.admin === true;
       if (!isAdmin) deny();
       const data = request.data || {};

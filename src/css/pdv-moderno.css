@@ -1,0 +1,42 @@
+/* Acabamento do Moderno. Nenhuma regra alcança o shell Clássico ou os modais. */
+#tab-pdv:not(.pdv-layout-classico) > .pdv-layout { --text-main: #192a40; --text-muted: #526174; --text-dim: #526174; --accent-green: #226447; --border-card: #d8dfe7; background: #f5f6f8; padding: 20px; gap: 20px; grid-template-columns: minmax(0,1.45fr) minmax(360px,1fr); }
+#tab-pdv:not(.pdv-layout-classico) .pdv-left-section { min-width: 0; gap: 16px; }
+#tab-pdv:not(.pdv-layout-classico) .pdv-barcode-bar { background: #fff; border: 1px solid #d8dfe7; border-radius: 12px; padding: 16px; box-shadow: none; }
+#tab-pdv:not(.pdv-layout-classico) .input-barcode { min-height: 52px; border: 1px solid #aebbc9; border-radius: 7px; background: #fff; color: #192a40; font-size: 16px; box-shadow: none; }
+#tab-pdv:not(.pdv-layout-classico) .barcode-helper-text { color: #526174; font-size: 12px; line-height: 1.5; flex-wrap: wrap; gap: 6px; }
+#tab-pdv:not(.pdv-layout-classico) .pdv-items-table-wrapper { border: 1px solid #d8dfe7; border-radius: 12px; box-shadow: none; overflow: auto; scrollbar-color: #96a3b1 #edf0f4; }
+#tab-pdv:not(.pdv-layout-classico) .pdv-table th { padding: 15px 12px; background: #eef2f6; color: #526174; font-size: 12px; font-weight: 600; white-space: nowrap; }
+#tab-pdv:not(.pdv-layout-classico) .pdv-table { min-width: 620px; }
+#tab-pdv:not(.pdv-layout-classico) .pdv-table td { padding: 16px 12px; font-size: 14px; line-height: 1.4; }
+#tab-pdv:not(.pdv-layout-classico) .pdv-table td:is(:nth-child(2),:nth-child(4)) { white-space: nowrap; font-variant-numeric: tabular-nums; text-align: right; }
+#tab-pdv:not(.pdv-layout-classico) .item-name-bold { font-size: 15px; line-height: 1.4; min-width: 160px; }
+#tab-pdv:not(.pdv-layout-classico) .item-code-tag { color: #526174; font-size: 11px; }
+#tab-pdv:not(.pdv-layout-classico) .btn-qty { min-width: 32px; min-height: 32px; border-radius: 6px; }
+#tab-pdv:not(.pdv-layout-classico) .pdv-right-section { min-width: 0; overflow-y: auto; gap: 16px; scrollbar-color: #96a3b1 #edf0f4; }
+#tab-pdv:not(.pdv-layout-classico) .pdv-total-card { background: #192a40; color: #fff; border: 0; border-radius: 12px; box-shadow: none; padding: 20px; flex-shrink: 0; }
+#tab-pdv:not(.pdv-layout-classico) .total-label { color: #d8e3ef; font-size: 14px; letter-spacing: 0; text-transform: none; }
+#tab-pdv:not(.pdv-layout-classico) .total-amount-display { color: #fff; font-size: clamp(36px,3.5vw,58px); font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; text-shadow: none; }
+#tab-pdv:not(.pdv-layout-classico) .items-counter-badge { background: #30475e; color: #fff; border: 1px solid #52677e; }
+#tab-pdv:not(.pdv-layout-classico) .subtotal-box { background: #243951; border-color: #52677e; }
+#tab-pdv:not(.pdv-layout-classico) .subtotal-box :is(span,strong) { color: #edf3fa; }
+#tab-pdv:not(.pdv-layout-classico) #pdv-desconto-box :is(span,strong) { color: #9b242c; }
+#tab-pdv:not(.pdv-layout-classico) .pdv-actions-panel { flex: none; gap: 16px; min-height: min-content; overflow: visible; }
+#tab-pdv:not(.pdv-layout-classico) .btn-finalize-sale { min-height: 50px; background: #a4460d; color: #fff; border: 1px solid #a4460d; border-radius: 7px; box-shadow: none; font-size: 15px !important; }
+#tab-pdv:not(.pdv-layout-classico) .btn-finalize-sale:hover { background: #843809; }
+#tab-pdv:not(.pdv-layout-classico) :is(.btn-pdv-operacao,.btn-cancel-sale-std,.btn-cancel-item-std) { min-height: 42px; box-shadow: none; border-radius: 7px; font-size: 12px; }
+#tab-pdv:not(.pdv-layout-classico) .btn-pdv-operacao { background: #fff; color: #192a40; border-color: #c6d1dd; }
+#tab-pdv:not(.pdv-layout-classico) .pdv-brand-card { box-shadow: none; border: 1px solid #d8dfe7; border-radius: 12px; background: #fff; }
+#tab-pdv:not(.pdv-layout-classico) :is(button,input,[tabindex]):focus-visible { outline: 3px solid #2466bd; outline-offset: 2px; }
+#tab-pdv:not(.pdv-layout-classico) ::selection { background: #ffcdac; color: #192a40; }
+@media(max-width:1050px) {
+  #tab-pdv:not(.pdv-layout-classico) > .pdv-layout { padding: 12px; gap: 12px; grid-template-columns: minmax(0,1fr) minmax(340px,.85fr); }
+}
+@media(max-width:760px) {
+  #tab-pdv:not(.pdv-layout-classico) { overflow-y: auto !important; }
+  #tab-pdv:not(.pdv-layout-classico) > .pdv-layout { height: auto; min-height: 100%; grid-template-columns: minmax(0,1fr); }
+  #tab-pdv:not(.pdv-layout-classico) .pdv-left-section { min-height: 300px; }
+  #tab-pdv:not(.pdv-layout-classico) .pdv-items-table-wrapper { max-height: 45vh; min-height: 160px; flex: none; }
+  #tab-pdv:not(.pdv-layout-classico) .pdv-right-section { overflow: visible; }
+  #tab-pdv:not(.pdv-layout-classico) .barcode-helper-text { display: block; }
+  #tab-pdv:not(.pdv-layout-classico) .barcode-helper-text > span { display: block; }
+}

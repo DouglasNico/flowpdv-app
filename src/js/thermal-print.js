@@ -157,32 +157,43 @@ export const ThermalPrintModule = {
       try {
         const resultado = await window.electronAPI.printThermalReceipt(html, false, { papelMm });
         if (!resultado || resultado.success !== true) throw new Error(resultado?.error || 'Impressão cancelada ou não confirmada.');
+        if (!exigirConfirmacao) window.App?.showToast('O sistema aceitou o envio. Confira a saída do papel na impressora.', 'info', { titulo: 'Documento enviado' });
         return resultado;
       } catch (err) {
         if (exigirConfirmacao) throw err;
-        window.App?.showToast('Venda preservada. Não foi possível imprimir: ' + err.message, 'warning');
+        window.App?.showToast('Não foi possível confirmar a impressão. Confira a impressora antes de tentar novamente. ' + err.message, 'warning', { titulo: 'Impressão não confirmada', duracao: 0 });
         return { success: false, error: err.message };
       }
     } else {
       if (exigirConfirmacao) throw new Error('O comprovante TEF exige impressão confirmada no aplicativo instalado.');
-      this.imprimirViaJanelaNavegador(html);
+      return this.imprimirViaJanelaNavegador(html);
     }
   },
 
-  imprimirViaJanelaNavegador(html) {
+  imprimirViaJanelaNavegador(html, a4 = false) {
     try {
-      const win = window.open('', '_blank', 'width=380,height=650');
-      if (win) {
+      const win = window.open('', '_blank', a4 ? 'width=850,height=900' : 'width=380,height=650');
+      if (!win) throw new Error('A janela de impressão foi bloqueada.');
         win.document.write(html);
         win.document.close();
         win.focus();
-        setTimeout(() => {
-          win.print();
-          setTimeout(() => win.close(), 1000);
-        }, 250);
-      }
+        return new Promise(resolve => setTimeout(() => {
+          try {
+            if (win.closed) { resolve({ success: false, cancelled: true }); return; }
+            window.App?.showToast('Selecione a impressora ou a opção de salvar em PDF na janela aberta.', 'info', { titulo: 'Opções de impressão' });
+            win.print();
+            setTimeout(() => win.close(), a4 ? 1500 : 1000);
+            // O navegador não informa se houve impressão, salvamento ou cancelamento.
+            resolve({ success: false, dialogOpened: true });
+          } catch (e) {
+            window.App?.showToast('Não foi possível abrir a impressão. ' + e.message, 'warning', { titulo: 'Impressão indisponível', duracao: 0 });
+            resolve({ success: false, error: e.message });
+          }
+        }, a4 ? 350 : 250));
     } catch (e) {
       console.error('[ThermalPrint] Erro na janela de impressão:', e);
+      window.App?.showToast('Não foi possível abrir a impressão. ' + e.message, 'warning', { titulo: 'Impressão indisponível', duracao: 0 });
+      return Promise.resolve({ success: false, error: e.message });
     }
   },  abrirGavetaDinheiro() {
     // Comando padrão ESC/POS para pulso no pino 2 da gaveta de dinheiro: ESC p 0 25 250 (27, 112, 0, 25, 250)
@@ -324,7 +335,7 @@ export const ThermalPrintModule = {
       </html>
     `;
 
-    this.executarImpressao(html);
+    return this.executarImpressao(html);
   },
 
   imprimirFechamentoCaixa(turno) {
@@ -408,6 +419,7 @@ export const ThermalPrintModule = {
           <span>- R$ ${(turno.totalSangrias || 0).toFixed(2).replace('.', ',')}</span>
         </div>
 
+        ${turno.restauranteV2 && window.electronAPI?.ambienteTeste === true ? '<div class="row-flex"><span>Cartão a classificar:</span><span>R$ ' + (turno.totalCartaoNaoClassificado || 0).toFixed(2) + '</span></div><div class="row-flex"><span>Fundo restaurante:</span><span>R$ ' + (turno.fundoRestaurante || 0).toFixed(2) + '</span></div>' : ''}
         <div class="divider"></div>
         <div class="bold" style="margin-bottom: 4px;">CONFERÊNCIA DE FECHAMENTO:</div>
         ${(window.AuthModule && (window.AuthModule.isGerente() || window.AuthModule.isSuperAdmin())) ? `
@@ -451,24 +463,11 @@ export const ThermalPrintModule = {
       </html>
     `;
 
-    this.executarImpressao(html);
+    return this.executarImpressao(html);
   },
 
   executarImpressaoA4(html) {
-    try {
-      const win = window.open('', '_blank', 'width=850,height=900');
-      if (win) {
-        win.document.write(html);
-        win.document.close();
-        win.focus();
-        setTimeout(() => {
-          win.print();
-          setTimeout(() => win.close(), 1500);
-        }, 350);
-      }
-    } catch (e) {
-      console.error('[ThermalPrint] Erro na janela A4:', e);
-    }
+    return this.imprimirViaJanelaNavegador(html, true);
   },
 
   imprimirA4Venda(venda) {
@@ -671,6 +670,6 @@ export const ThermalPrintModule = {
       </html>
     `;
 
-    this.executarImpressaoA4(html);
+    return this.executarImpressaoA4(html);
   }
 };

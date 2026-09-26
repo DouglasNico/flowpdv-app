@@ -1592,7 +1592,7 @@ export const GerenciaModule = {
             return t === 'cadastro_cliente' || t === 'edicao_cliente' || t === 'exclusao_cliente' || t === 'recebimento_fiado';
           }
           if (tipo === 'vendas' || tipo === 'operacao') {
-            return t === 'cancelamento_venda' || t === 'cancelamento_item' || t === 'desconto_concedido' || t === 'cortesia';
+            return t === 'venda_realizada' || t === 'estorno_venda' || t === 'cancelamento_venda' || t === 'cancelamento_item' || t === 'desconto_concedido' || t === 'cortesia';
           }
           if (tipo === 'fiscal') {
             return t === 'emissao_nfce' || t === 'configuracao_fiscal' || t === 'configuracao_tef';
@@ -1669,6 +1669,10 @@ export const GerenciaModule = {
         badgeTipo = '<span style="background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 800; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px;">🏷️ Desconto</span>';
       } else if (l.tipo === 'cortesia') {
         badgeTipo = '<span style="background: #ede9fe; color: #7c3aed; border: 1px solid #ddd6fe; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 800; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px;">🎁 Cortesia</span>';
+      } else if (l.tipo === 'venda_realizada') {
+        badgeTipo = '<span style="background: #ecfdf5; color: #059669; border: 1px solid #a7f3d0; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 800; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px;">🧾 Venda</span>';
+      } else if (l.tipo === 'estorno_venda') {
+        badgeTipo = '<span style="background: #fee2e2; color: #dc2626; border: 1px solid #fecaca; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 800; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px;">↩️ Estorno</span>';
       } else if (l.tipo === 'cancelamento_venda') {
         badgeTipo = '<span style="background: #fee2e2; color: #dc2626; border: 1px solid #fecaca; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 800; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px;">🛑 Cancelamento</span>';
       } else if (l.tipo === 'comandas') {
@@ -1681,7 +1685,7 @@ export const GerenciaModule = {
         <tr>
           <td style="font-family: 'JetBrains Mono'; font-size: 12px; color: var(--text-muted); white-space: nowrap;">${l.dataHoraFormatada || '--'}</td>
           <td style="white-space: nowrap; width: 140px;">${badgeTipo}</td>
-          <td><strong style="color: var(--text-main); font-size: 13.5px;">${l.descricao}</strong></td>
+          <td><strong style="color: var(--text-main); font-size: 13.5px;">${this.textoEventoAuditoria(l)}</strong></td>
           <td><span style="font-weight: 600; font-size: 12.5px; color: var(--text-main);">${l.operador || 'Caixa'}</span></td>
           <td><span style="font-family: 'JetBrains Mono'; font-size: 11.5px; color: var(--text-dim);">${l.hostname || l.terminalId || '-'}</span></td>
           <td style="text-align: right;">
@@ -1791,6 +1795,15 @@ export const GerenciaModule = {
     }
   },
 
+  textoEventoAuditoria(log) {
+    const texto = String(log?.descricao || '');
+    if (log?.tipo !== 'estorno_venda') return texto;
+    return texto.replace(/VL-[0-9a-f-]{8,}/gi, (id) => {
+      const venda = StorageService.getVendas().find(item => item.id === id);
+      return venda ? `#${StorageService.formatarNumeroVenda(venda)}` : id;
+    });
+  },
+
   verDetalhesAuditoria(logId) {
     const log = (this.logsAuditoriaCache || []).find(item => item.id === logId);
     if (!log) return;
@@ -1818,6 +1831,10 @@ export const GerenciaModule = {
       badgeTipo = '<span style="background: #ecfdf5; color: #0f766e; border: 1px solid #99f6e4; padding: 3px 10px; border-radius: 6px; font-size: 12px; font-weight: 800;">📋 Inventário</span>';
     } else if (log.tipo === 'cortesia') {
       badgeTipo = '<span style="background: #ede9fe; color: #7c3aed; border: 1px solid #ddd6fe; padding: 3px 10px; border-radius: 6px; font-size: 12px; font-weight: 800;">🎁 Cortesia</span>';
+    } else if (log.tipo === 'venda_realizada') {
+      badgeTipo = '<span style="background: #ecfdf5; color: #059669; border: 1px solid #a7f3d0; padding: 3px 10px; border-radius: 6px; font-size: 12px; font-weight: 800;">🧾 Venda</span>';
+    } else if (log.tipo === 'estorno_venda') {
+      badgeTipo = '<span style="background: #fee2e2; color: #dc2626; border: 1px solid #fecaca; padding: 3px 10px; border-radius: 6px; font-size: 12px; font-weight: 800;">↩️ Estorno</span>';
     } else if (log.tipo === 'cancelamento_venda') {
       badgeTipo = '<span style="background: #fee2e2; color: #dc2626; border: 1px solid #fecaca; padding: 3px 10px; border-radius: 6px; font-size: 12px; font-weight: 800;">🛑 Cancelamento</span>';
     } else if (log.tipo === 'comandas') {
@@ -1914,6 +1931,7 @@ export const GerenciaModule = {
       protocolo: 'Protocolo',
       idDaVenda: 'ID da Venda',
       vendaId: 'ID da Venda',
+      devolverEstoque: 'Estoque reposto',
       qtdVendas: 'Qtd de Vendas',
       totalVendas: 'Total em Vendas',
       saldoEsperado: 'Saldo Esperado',
@@ -1927,10 +1945,21 @@ export const GerenciaModule = {
     };
 
     let detalhesFormatados = '';
-    if (log.detalhes && Object.keys(log.detalhes).length > 0) {
+    const detalhesVisiveis = { ...(log.detalhes || {}) };
+    if (log.tipo === 'estorno_venda') {
+      const vendaId = detalhesVisiveis.vendaId || detalhesVisiveis.idDaVenda;
+      delete detalhesVisiveis.vendaId;
+      delete detalhesVisiveis.idDaVenda;
+      if (!Array.isArray(detalhesVisiveis.produtos) && vendaId) {
+        const venda = StorageService.getVendas().find(item => item.id === vendaId);
+        const produtos = (venda?.itens || []).map(item => ({ nome: item.nome, quantidade: item.quantidade, precoUnitario: item.precoUnitario }));
+        if (produtos.length) detalhesVisiveis.produtos = produtos;
+      }
+    }
+    if (Object.keys(detalhesVisiveis).length > 0) {
       const camposMonetarios = ['valorOriginal', 'valor', 'total', 'saldoInformado', 'saldoEsperado', 'diferenca', 'totalVendas', 'precoUnitario', 'totalAnterior', 'totalConsumo', 'taxaServicoValor', 'subtotal'];
 
-      const itensHtml = Object.entries(log.detalhes).map(([chave, valor]) => {
+      const itensHtml = Object.entries(detalhesVisiveis).map(([chave, valor]) => {
         // Se for cortesia e a chave for motivo, já está em destaque no card principal
         if (log.tipo === 'cortesia' && chave.toLowerCase() === 'motivo') return '';
         if (log.tipo === 'inventario' && ['linhas', 'operadores', 'sessaoId', 'criadoPor', 'processadoPor', 'itens', 'ajustes', 'entrada', 'saida'].includes(chave)) return '';
@@ -1972,6 +2001,8 @@ export const GerenciaModule = {
           valFormatado = /^\d{44}$/.test(digits)
             ? digits.replace(/(.{4})/g, '$1 ').trim()
             : String(valor);
+        } else if (typeof valor === 'boolean' || valor === 'true' || valor === 'false') {
+          valFormatado = (valor === true || valor === 'true') ? 'Sim' : 'Não';
         } else if (typeof valor === 'number') {
           if (isCampoMonetario) {
             valFormatado = formatarMoedaLocal(valor);
@@ -2014,7 +2045,7 @@ export const GerenciaModule = {
     }
 
     let tituloDescricao = 'Descrição do Evento';
-    let textoDescricao = (log.descricao || '-').replace(/R\$\s*([0-9]+)\.([0-9]{2})/g, 'R$ $1,$2');
+    let textoDescricao = this.textoEventoAuditoria(log).replace(/R\$\s*([0-9]+)\.([0-9]{2})/g, 'R$ $1,$2');
 
     if (log.tipo === 'cortesia') {
       tituloDescricao = 'Motivo da Cortesia';
@@ -2066,15 +2097,12 @@ export const GerenciaModule = {
 
   reimprimirFechamentoAuditoria(turnoId) {
     const turnos = StorageService.getHistoricoTurnos();
-    const turno = (turnoId ? turnos.find(t => t.id === turnoId) : null) || turnos[0] || StorageService.getTurnoAtual();
+    const turno = turnoId ? turnos.find(t => t.id === turnoId) : turnos[0] || StorageService.getTurnoAtual();
     if (turno && window.ThermalPrintModule && typeof window.ThermalPrintModule.imprimirFechamentoCaixa === 'function') {
-      window.ThermalPrintModule.imprimirFechamentoCaixa(turno);
-      if (window.App && typeof window.App.showToast === 'function') {
-        window.App.showToast('🖨️ Fechamento de Caixa enviado para impressão térmica!', 'info');
-      }
+      return window.ThermalPrintModule.imprimirFechamentoCaixa(turno);
     } else {
       if (window.App && typeof window.App.showToast === 'function') {
-        window.App.showToast('Turno não localizado para re-impressão.', 'warning');
+        window.App.showToast(turno ? 'Impressão indisponível. Reabra o aplicativo e tente novamente.' : 'Turno não localizado. Confira o fechamento selecionado antes de imprimir.', 'warning', { titulo: 'Fechamento não impresso' });
       }
     }
   },

@@ -1,0 +1,40 @@
+const assert=require('node:assert/strict');
+const admin=require('../functions/node_modules/firebase-admin');
+const {randomBytes,createHash}=require('node:crypto');
+module.exports=async(win,db)=>{
+  const js=code=>win.webContents.executeJavaScript(code);
+  const wait=async code=>{const deadline=Date.now()+25000;while(Date.now()<deadline){if(await js(code))return;await new Promise(r=>setTimeout(r,80));}throw Error(`Conta garçom: ${code}: ${await js('document.body.innerText')}`);};
+  const email='novo-garcom-ui@example.test',hash=value=>createHash('sha256').update(value).digest('hex'),secret=randomBytes(32).toString('base64url'),token=hash(email)+'.'+secret;
+  const base='lojas_v2/ui-store',ref=db.doc(`${base}/convites_garcom/${hash(email)}`);
+  await ref.set({email,hash:hash(secret),ativo:true,expiraEmMs:Date.now()+600000,usadoPor:null});
+  const extras=[],batch=db.batch();for(let i=0;i<205;i++){const table=db.doc(`${base}/mesas/zz-page-${String(i).padStart(3,'0')}`);extras.push(table);batch.set(table,{ativo:true,nome:`Mesa de paginação ${i}`,comandaPdvId:`MESA-${1000+i}`});}await batch.commit();
+  try{
+    await win.loadURL(`http://127.0.0.1:5173/v2/lanchonete-ui/garcom#convite=${token}`);
+    await wait("!!document.querySelector('#waiter-login')");
+    await js("document.querySelector('[name=email]').value='novo-garcom-ui@example.test';document.querySelector('[name=password]').value='Ficticia-123!';document.querySelector('#waiter-signup').click()");
+    await wait("!!document.querySelector('#waiter-verify-send')");
+    const user=await admin.auth().getUserByEmail(email);
+    assert.equal((await db.doc(`${base}/membros/${user.uid}`).get()).exists,false);
+    await js("document.querySelector('#waiter-verify-send').click()");
+    await wait("document.querySelector('#waiter-message').textContent.includes('Verificação solicitada')");
+    const response=await fetch('http://127.0.0.1:9099/emulator/v1/projects/demo-flowpdv/oobCodes');assert.equal(response.ok,true);
+    const oob=(await response.json()).oobCodes.find(c=>c.email===email&&c.requestType==='VERIFY_EMAIL');assert.ok(oob);
+    const verified=await fetch('http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/accounts:update?key=demo-flowpdv-key',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({oobCode:oob.oobCode})});assert.equal(verified.ok,true);
+    await js("document.querySelector('#waiter-verify-check').click()");
+    await wait("!!document.querySelector('#waiter-accept-invite')");
+    await js("document.querySelector('#waiter-accept-invite').click()");
+    await wait("!!document.querySelector('#waiter-table')");
+    assert.equal((await db.doc(`${base}/membros/${user.uid}`).get()).data().papel,'garcom');
+    assert.equal(await js('location.hash'),'');
+    assert.equal(await js("document.querySelector('#waiter-more-tables').hidden"),false);
+    await js("document.querySelector('#waiter-more-tables').click()");
+    await wait("document.querySelector('#waiter-more-tables').hidden");
+    assert.ok(await js("[...document.querySelector('#waiter-table').options].some(o=>o.value==='zz-page-204')"));
+    await js("document.querySelector('#waiter-logout').click()");await wait("!!document.querySelector('#waiter-login')");
+    await js("document.querySelector('[name=email]').value='novo-garcom-ui@example.test';document.querySelector('#waiter-reset').click()");
+    await wait("document.querySelector('#waiter-message').textContent.includes('instruções de recuperação')");
+    const codes=await(await fetch('http://127.0.0.1:9099/emulator/v1/projects/demo-flowpdv/oobCodes')).json();
+    assert.ok(codes.oobCodes.some(c=>c.email===email&&c.requestType==='PASSWORD_RESET'));
+    console.log('GARCOM CONTAS UI PASS: cadastro, verificação via código do emulador, convite, paginação acima de 200 mesas e recuperação de senha.');
+  }finally{const cleanup=db.batch();for(const table of extras)cleanup.delete(table);cleanup.delete(ref);await cleanup.commit();}
+};

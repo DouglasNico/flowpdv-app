@@ -7,6 +7,9 @@
  */
 
 import { initializeApp } from "firebase/app";
+import { connectFirestoreEmulator } from "firebase/firestore";
+import { connectAuthEmulator } from "firebase/auth";
+import { connectFunctionsEmulator } from "firebase/functions";
 import { getFirestore, doc, getDoc, getDocs, collection, onSnapshot, setDoc, updateDoc, deleteDoc, deleteField, addDoc, query, orderBy, limit, where, startAfter, getCountFromServer, writeBatch } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "firebase/auth";
@@ -21,10 +24,19 @@ const firebaseConfig = {
   measurementId: "G-9RSWDKL8WP"
 };
 
-const app = initializeApp(firebaseConfig);
+const testMode = typeof window !== 'undefined' && window.electronAPI?.ambienteTeste === true;
+const app = initializeApp(testMode ? {
+  apiKey: 'demo-flowpdv-key', projectId: 'demo-flowpdv', authDomain: 'demo-flowpdv.local', appId: 'demo-flowpdv'
+} : firebaseConfig);
 export const db = getFirestore(app);
 export const functions = getFunctions(app, "us-central1");
 export const auth = getAuth(app);
+if (testMode) {
+  // SDKs permanecem nos emuladores mesmo quando estes estão indisponíveis.
+  connectFirestoreEmulator(db, '127.0.0.1', 8080);
+  connectAuthEmulator(auth, 'http://127.0.0.1:9099');
+  connectFunctionsEmulator(functions, '127.0.0.1', 5001);
+}
 
 export { doc, getDoc, getDocs, collection, onSnapshot, setDoc, updateDoc, deleteDoc, deleteField, addDoc, query, orderBy, limit, where, startAfter, getCountFromServer, writeBatch };
 

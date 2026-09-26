@@ -1,0 +1,106 @@
+/* Apresentação das configurações. Não altera valores ou bloqueios de acesso. */
+#cfg-conexao-cardapio { margin-top: 12px; }
+#cfg-conexao-cardapio p { font-size: 12px; line-height: 1.5; margin-bottom: 8px; color: #526174; }
+#conexao-cardapio-dialog { width: min(480px, calc(100vw - 32px)); max-height: calc(100vh - 48px); margin: auto; padding: 24px; border: 1px solid #d8dfe7; border-radius: 14px; color: #192a40; background: #fff; overflow: auto; font-family: inherit; }
+#conexao-cardapio-dialog::backdrop { background: #192a4066; backdrop-filter: blur(2px); }
+#conexao-cardapio-dialog .conexao-cabecalho { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+#conexao-cardapio-dialog h2 { font-size: 20px; line-height: 1.3; margin: 0; }
+#conexao-cardapio-dialog p { font-size: 13px; line-height: 1.6; margin: 16px 0; }
+#conexao-cardapio-dialog .conexao-explicacao { color: #526174; }
+#conexao-cardapio-dialog label { display: block; font-size: 13px; font-weight: 600; margin: 16px 0 6px; }
+#conexao-cardapio-dialog input { width: 100%; box-sizing: border-box; min-height: 42px; padding: 10px 12px; border: 1px solid #a8b5c5; border-radius: 7px; background: #fff; color: #192a40; font: inherit; caret-color: #b74717; }
+#conexao-cardapio-dialog button { min-height: 42px; padding: 10px 14px; border: 1px solid #c6d1dd; border-radius: 7px; background: #eef2f6; color: #192a40; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+#conexao-cardapio-dialog button:hover { background: #dce5ef; }
+#conexao-cardapio-dialog button[type=submit] { background: #192a40; color: #fff; border-color: #192a40; }
+#conexao-cardapio-dialog button[type=submit]:hover { background: #2c4461; }
+#conexao-cardapio-dialog button:disabled { opacity: .65; cursor: wait; }
+#conexao-cardapio-dialog :is(button,input):focus-visible { outline: 3px solid #2466bd; outline-offset: 3px; }
+#conexao-cardapio-dialog ::selection { background: #ffcdac; color: #192a40; }
+#conexao-cardapio-dialog .conexao-acoes { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+#conexao-cardapio-mensagem { padding: 12px; background: #f1f5f9; border-radius: 7px; }
+#conexao-cardapio-mensagem[data-error=true] { color: #9b241c; background: #fff1f0; }
+#tab-config { --text-main: #192a40; --text-muted: #526174; --border-card: #d8dfe7; background: #f5f6f8; }
+#tab-config > .view-container { max-width: 1120px !important; padding: 24px 28px !important; height: 100% !important; gap: 20px; }
+#tab-config .view-header { align-items: flex-start !important; margin: 0 !important; }
+#tab-config .view-title-group, #tab-config .view-title-group :is(h2,p) { text-align: left !important; }
+#tab-config .view-title-group h2 { font-size: 28px !important; font-weight: 700 !important; letter-spacing: -.025em; }
+#tab-config .view-title-group p { font-size: 14px !important; line-height: 1.5; margin-top: 8px !important; }
+#tab-config .data-table-card { min-height: 0; border: 1px solid #d8dfe7; border-radius: 12px !important; box-shadow: none !important; }
+#tab-config .config-scroll { padding: 20px !important; gap: 20px !important; scrollbar-color: #96a3b1 #edf0f4; }
+#tab-config .config-scroll > div { flex-shrink: 0; }
+#tab-config .config-scroll > div:first-child { padding: 0 !important; border: none !important; box-shadow: none !important; }
+#tab-config .config-scroll > div:first-child > div:first-child { flex-wrap: wrap; gap: 12px; }
+#tab-config :is(.config-hardware-grid,.config-servicos-grid) > div { padding: 16px !important; border-radius: 12px !important; gap: 12px !important; }
+#tab-config .config-dados-grid > div { padding: 12px !important; }
+#tab-config .config-dados-grid strong { white-space: normal !important; overflow-wrap: anywhere; font-size: 14px !important; }
+#tab-config .config-dados-grid span { font-size: 12px !important; text-transform: none !important; }
+#tab-config :is(.btn-primary-action,.btn-hw-action,.btn-alterar-licenca-cfg,.btn-fazer-backup-cfg,.btn-restaurar-backup-cfg) { min-height: 42px; height: auto !important; padding: 10px 14px !important; border-radius: 7px; box-shadow: none !important; font-size: 13px !important; font-weight: 600 !important; white-space: normal; }
+#tab-config .btn-primary-action { background: #192a40 !important; color: #fff !important; }
+#tab-config .btn-hw-action { background: #eef2f6 !important; color: #192a40 !important; border: 1px solid #c6d1dd; }
+#tab-config .btn-hw-action:hover { background: #dce5ef !important; }
+#tab-config .btn-alterar-licenca-cfg { background: #192a40 !important; color: #fff !important; }
+#tab-config #cfg-tipo-terminal { min-height: 42px; font-size: 13px !important; }
+/* Mantém o foco dentro do seletor, sem invadir o rótulo acima. */
+#tab-config #cfg-tipo-terminal:focus-visible { outline: 2px solid #2466bd; outline-offset: -2px; border-color: #2466bd !important; }
+#tab-config .config-scroll > div:last-child { flex-wrap: wrap; padding: 16px !important; }
+#tab-config :is(button,input,select):focus-visible { outline: 3px solid #2466bd; outline-offset: 3px; }
+#tab-config ::selection { background: #ffcdac; color: #192a40; }
+/* Este modal usa display inline no App, preservado aqui. */
+#modal-editar-config-loja > div { width: 640px !important; max-width: calc(100vw - 48px) !important; max-height: calc(100dvh - 48px); overflow-y: auto !important; border-radius: 12px !important; }
+#modal-editar-config-loja > div > div:first-child { background: #192a40 !important; }
+#modal-editar-config-loja > div > div:first-child :is(h3,span,button) { color: #fff !important; }
+#modal-editar-config-loja :is(input,select,button):focus-visible { outline: 3px solid #2466bd; outline-offset: 2px; }
+@media(max-width:800px) {
+  #tab-config > .view-container { padding: 16px !important; gap: 16px; }
+  #tab-config .view-title-group h2 { font-size: 24px !important; }
+  #tab-config .config-scroll { padding: 14px !important; }
+  #tab-config :is(.config-hardware-grid,.config-servicos-grid) { grid-template-columns: minmax(0,1fr) !important; }
+  #tab-config .config-dados-grid { grid-template-columns: minmax(0,1fr) !important; }
+  #tab-config #cfg-license-key-badge { white-space: normal !important; overflow-wrap: anywhere; }
+  #modal-editar-config-loja > div { max-width: calc(100vw - 24px) !important; max-height: calc(100dvh - 24px); }
+  #modal-editar-config-loja form { padding: 16px !important; }
+  #modal-editar-config-loja form > div > div[style*="grid"] { grid-template-columns: minmax(0,1fr) !important; }
+}
+/* Notebooks com escala maior: reduz espaços, preservando texto e rolagem. */
+#tab-config .data-table-card > div, #tab-config .config-scroll { min-height: 0; }
+@media (max-height: 760px) {
+  #tab-config > .view-container { padding: 12px 18px !important; gap: 12px; }
+  #tab-config .view-title-group h2 { font-size: 24px !important; }
+  #tab-config .view-title-group p { margin-top: 4px !important; }
+  #tab-config .config-scroll { padding: 12px !important; gap: 12px !important; }
+  #tab-config :is(.config-hardware-grid,.config-servicos-grid) { align-items: start; }
+  #tab-config :is(.config-hardware-grid,.config-servicos-grid) > div { padding: 12px !important; gap: 8px !important; }
+  #tab-config .config-dados-grid > div { padding: 8px 10px !important; }
+  #tab-config :is(.btn-primary-action,.btn-hw-action,.btn-alterar-licenca-cfg,.btn-fazer-backup-cfg,.btn-restaurar-backup-cfg) { min-height: 36px; padding: 7px 12px !important; }
+  #tab-config #cfg-tipo-terminal { min-height: 36px; }
+  #tab-config #cfg-conexao-cardapio { margin-top: 8px; }
+  #tab-config #cfg-conexao-cardapio p { margin: 4px 0 6px; }
+}
+/* Equipamentos agora pertencem à edição da loja; preserva os módulos originais. */
+#modal-editar-config-loja .config-equipamentos { margin-top: 18px; }
+#modal-editar-config-loja .config-equipamentos h4 { margin: 0 0 10px; color: #192a40; font-size: 14px; }
+#modal-editar-config-loja .config-hardware-grid { grid-template-columns: minmax(0,1fr) !important; }
+#modal-editar-config-loja .config-hardware-grid > div { display: grid !important; grid-template-columns: minmax(0,1fr) 220px; align-items: center; gap: 12px !important; }
+#modal-editar-config-loja .btn-hw-action { min-height: 38px; height: auto; padding: 8px 12px; border: 1px solid #c6d1dd; border-radius: 7px; background: #eef2f6; color: #192a40; font-size: 13px; cursor: pointer; }
+#modal-editar-config-loja .btn-hw-action:hover { background: #dce5ef; }
+body:has(:is(#modal-config-fiscal,#modal-config-balanca,#modal-config-tef,#modal-leitura-balanca,#modal-tef-processamento).active) #modal-editar-config-loja { display: none !important; }
+@media(max-width:600px) {
+  #modal-editar-config-loja .config-hardware-grid > div { grid-template-columns: minmax(0,1fr); }
+}
+#cfg-computador { display: grid; grid-template-columns: minmax(0,1fr) minmax(240px,1fr) minmax(180px,.8fr); align-items: end; gap: 12px 18px; padding: 12px 16px; border: 1px solid #d8dfe7; border-radius: 12px; background: #f8fafc; }
+#cfg-computador h3 { margin: 0 0 6px; font-size: 14px; color: #192a40; }
+#cfg-computador #cfg-device-info-text { white-space: normal !important; overflow-wrap: anywhere; }
+#cfg-computador label { margin-top: 0 !important; }
+#tab-config #cfg-computador #cfg-conexao-cardapio { margin-top: 0; }
+#tab-config #cfg-computador #cfg-conexao-cardapio p { margin: 0 0 4px; font-size: 11px; }
+#cfg-computador > div:first-child { align-self: center; }
+#cfg-computador > div { min-width: 0; }
+#cfg-computador #cfg-conexao-cardapio-abrir { width: 100%; }
+#cfg-computador:not(:has(#cfg-conexao-cardapio:not([hidden]))) { grid-template-columns: repeat(2,minmax(0,1fr)); }
+@media(max-width:900px) {
+  #cfg-computador { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  #cfg-computador > div:first-child { grid-column: 1 / -1; }
+}
+@media(max-width:560px) { #cfg-computador, #cfg-computador:not(:has(#cfg-conexao-cardapio:not([hidden]))) { grid-template-columns: minmax(0,1fr); } }
+#modal-editar-config-loja .config-hardware-grid .btn-hw-action { background: #eef2f6 !important; color: #192a40 !important; box-shadow: none !important; }
+#modal-editar-config-loja .config-hardware-grid .btn-hw-action:hover { background: #dce5ef !important; }

@@ -92,7 +92,7 @@ export const AuditModule = {
     }
   },
 
-  async registrarLog(tipo, descricao, detalhes = {}) {
+  prepararLog(tipo, descricao, detalhes = {}) {
     const lic = StorageService.getLicenca() || {};
     const config = StorageService.getConfig() || {};
     const chaveLicenca = this.getChaveLicencaAtual();
@@ -114,8 +114,21 @@ export const AuditModule = {
       dataHoraFormatada: new Date().toLocaleString('pt-BR')
     };
 
+    return payload;
+  },
+
+  prepararEscritasLog(payload) {
+    const limpo = this.limparParaFirestore(payload);
+    return {
+      [this.getStorageKey()]: JSON.stringify([payload, ...this.getLocalLogs().filter(l => l.id !== payload.id)].slice(0, 200)),
+      [this.getPendentesKey()]: JSON.stringify([limpo, ...this.getPendentes().filter(l => l.id !== payload.id)].slice(0, 200))
+    };
+  },
+
+  async registrarLog(tipo, descricao, detalhes = {}) {
+    const payload = this.prepararLog(tipo, descricao, detalhes);
     this.salvarLogLocal(payload);
-    this.enviarLogNuvem(payload, chaveLicenca, myDevId);
+    this.enviarLogNuvem(payload, payload.chaveLicenca, payload.terminalId);
   },
 
   limparParaFirestore(valor) {
@@ -176,6 +189,7 @@ export const AuditModule = {
   async descarregarPendentes(chaveLicenca, deviceId) {
     const chave = String(chaveLicenca || this.getChaveLicencaAtual() || '').trim().toUpperCase();
     if (!chave || chave === 'LOCAL' || this.descarregando) return false;
+    if (chave !== this.getChaveLicencaAtual()) return false;
     if (typeof navigator !== 'undefined' && !navigator.onLine) return false;
 
     if (!localStorage.getItem(`flowpdv_logs_migrados_${chave}`)) {
@@ -192,6 +206,7 @@ export const AuditModule = {
     this.descarregando = true;
     try {
       const autenticou = await garantirSessaoLoja(chave, { deviceId: deviceId || StorageService.getDeviceId() });
+      if (chave !== this.getChaveLicencaAtual()) return false;
       if (!autenticou) {
         this.ultimoErroNuvem = 'Este terminal não autenticou na nuvem; o log ficou só neste computador.';
         return false;
@@ -206,13 +221,16 @@ export const AuditModule = {
       }
 
       const exclusao = await this.lerExclusaoNuvem(chave);
+      if (chave !== this.getChaveLicencaAtual()) return false;
       this.purgarPendentesExcluidos(exclusao);
       if (!this.exclusaoNuvemConfirmada && !exclusao) {
         return false;
       }
       const fila = this.getPendentes();
+      const idsFila = new Set(fila.map(item => item?.id));
       const restantes = [];
       for (const item of fila) {
+        if (chave !== this.getChaveLicencaAtual()) return false;
         if (hostname) item.hostname = hostname;
         const limpo = this.limparParaFirestore(item);
         if (!limpo || !limpo.id) continue;
@@ -230,9 +248,11 @@ export const AuditModule = {
           restantes.push(limpo);
         }
       }
-      this.salvarPendentes(restantes);
+      if (chave !== this.getChaveLicencaAtual()) return false;
+      const novos = this.getPendentes().filter(item => !idsFila.has(item?.id));
+      this.salvarPendentes([...novos, ...restantes]);
       if (!restantes.length) this.ultimoErroNuvem = '';
-      return restantes.length === 0;
+      return novos.length === 0 && restantes.length === 0;
     } catch (err) {
       console.warn('[AuditModule] Erro ao descarregar logs pendentes:', err);
       this.ultimoErroNuvem = 'Não foi possível enviar o log para a nuvem.';

@@ -1,0 +1,52 @@
+/* Gestão de mesas; não interfere no terminal de atendimento ou nas frentes de caixa. */
+#tab-comandas { --text-main: #192a40; --text-muted: #526174; --text-dim: #526174; --border-card: #d8dfe7; background: #f5f6f8; color: var(--text-main); }
+#tab-comandas > .view-container { padding: 24px 28px !important; gap: 16px; height: 100% !important; }
+#tab-comandas .view-header { align-items: flex-start !important; margin: 0 !important; }
+#tab-comandas .view-header :is(div,h2,p) { text-align: left !important; }
+#tab-comandas .view-header h2 { justify-content: flex-start !important; font-size: 28px !important; font-weight: 700 !important; line-height: 1.2; letter-spacing: -.025em; }
+#tab-comandas .view-header p { font-size: 14px !important; line-height: 1.5; margin-top: 8px !important; }
+#tab-comandas #comandas-header-icone { display: none; }
+#tab-comandas .comandas-metrics { margin: 0 !important; gap: 12px !important; }
+#tab-comandas .summary-metric-card { padding: 16px !important; border-radius: 12px !important; box-shadow: none !important; min-width: 0; gap: 6px; }
+#tab-comandas .summary-metric-card > span { color: #526174 !important; font-size: 12px !important; line-height: 1.4; text-transform: none !important; letter-spacing: 0 !important; }
+#tab-comandas .summary-metric-card > strong { color: #192a40 !important; font-size: 24px !important; font-weight: 700 !important; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+#tab-comandas .comandas-toolbar { flex-wrap: wrap !important; margin: 0 !important; gap: 12px !important; }
+#tab-comandas #comandas-filtros-bar { flex-wrap: wrap; }
+#tab-comandas .comanda-filtro-btn { min-height: 40px; padding: 10px 14px; font-size: 13px; border-radius: 6px; }
+#tab-comandas .comanda-filtro-btn.active { background: #192a40; color: #fff; box-shadow: none; }
+#tab-comandas :is(.btn-comandas-cadastrar-action,.btn-primary-action) { min-height: 42px; height: auto !important; padding: 10px 14px !important; border-radius: 7px; background: #192a40 !important; color: #fff !important; box-shadow: none; font-size: 13px !important; }
+#tab-comandas #comandas-busca-mesa-input { min-height: 42px; font-size: 13px !important; border-color: #aebbc9; }
+#tab-comandas .comandas-workspace { gap: 16px !important; }
+#tab-comandas .data-table-card { border: 1px solid #d8dfe7 !important; border-radius: 12px !important; box-shadow: none; }
+#tab-comandas #comandas-grid-container { grid-template-columns: repeat(auto-fill,minmax(170px,1fr)) !important; gap: 12px !important; }
+#tab-comandas .comanda-card-item { padding: 14px !important; min-height: 112px !important; border-width: 1px !important; border-radius: 8px !important; box-shadow: none !important; gap: 8px; }
+#tab-comandas .comanda-card-item:hover { outline: 2px solid #526174; outline-offset: -2px; }
+#tab-comandas .comanda-card-item > div:nth-child(2) > span { color: #526174 !important; }
+#tab-comandas .comanda-card-item > div:last-child > strong { font-size: 15px !important; color: #226447 !important; }
+#tab-comandas #comanda-detalhes-painel { padding: 14px !important; overflow-y: auto !important; }
+#tab-comandas .comanda-detalhe-shell { flex: none; height: auto; min-height: min-content; overflow: visible; }
+#tab-comandas .comanda-detalhe-resumo > div { flex-wrap: wrap; gap: 8px; }
+#tab-comandas .comanda-detalhe-resumo > div:last-child { grid-template-columns: repeat(2,minmax(0,1fr)) !important; }
+#tab-comandas .comanda-detalhe-resumo > div:last-child > button:last-child { grid-column: 1 / -1; }
+#tab-comandas .comanda-itens-scroll { overflow: auto; scrollbar-color: #96a3b1 #edf0f4; }
+#tab-comandas :is(input,button,[tabindex]):focus-visible { outline: 3px solid #2466bd; outline-offset: 2px; }
+#tab-comandas ::selection { background: #ffcdac; color: #192a40; }
+@media(max-width:1100px) {
+  #tab-comandas > .view-container { padding: 20px !important; }
+  #tab-comandas .view-header h2 { font-size: 24px !important; }
+}
+@media(max-width:900px), (max-height:650px) {
+  #tab-comandas { overflow: auto !important; }
+  #tab-comandas > .view-container { height: auto !important; min-height: 100%; padding: 16px !important; overflow: visible; }
+  #tab-comandas .comandas-workspace { grid-template-columns: minmax(0,1fr) !important; flex: none !important; }
+  #tab-comandas #comandas-grid-container { max-height: 50vh; }
+  #tab-comandas #comanda-detalhes-painel { min-height: 440px !important; overflow: visible !important; }
+  #tab-comandas .comanda-detalhe-shell { height: auto; overflow: visible; }
+  #tab-comandas .comanda-itens-scroll { max-height: 45vh; flex: none; }
+  #tab-comandas .comandas-metrics { grid-template-columns: repeat(2,minmax(0,1fr)) !important; }
+  #tab-comandas .summary-metric-card > strong { font-size: 20px !important; }
+  #tab-comandas .comandas-toolbar > div:last-child { flex-wrap: wrap; justify-content: flex-start !important; }
+  #tab-comandas .comandas-toolbar > div:last-child > div { flex: 1 1 200px !important; }
+  #tab-comandas #comandas-filtros-bar { flex-shrink: 1 !important; }
+  #tab-comandas #comandas-grid-container { grid-template-columns: repeat(auto-fill,minmax(150px,1fr)) !important; }
+}

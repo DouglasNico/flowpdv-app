@@ -1,0 +1,46 @@
+/* Gestão de caixa: escopo administrativo, sem alterar as frentes de venda. */
+#tab-caixa { --text-main: #192a40; --text-muted: #526174; --text-dim: #526174; --accent-green: #226447; --accent-amber: #80510d; --border-card: #d8dfe7; background: #f5f6f8; color: var(--text-main); }
+#tab-caixa .view-container { padding: 24px 28px; gap: 20px; }
+#tab-caixa .view-header { align-items: flex-start; gap: 20px; flex-wrap: wrap; margin-bottom: 0; }
+#tab-caixa .view-title-group { flex: 1 1 360px; min-width: 0; }
+#tab-caixa .view-title-group h2 { font-size: 28px; font-weight: 700; line-height: 1.2; letter-spacing: -.025em; }
+#tab-caixa .view-title-group p { font-size: 14px; line-height: 1.5; margin-top: 8px; max-width: 65ch; }
+#tab-caixa .caixa-header-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+#tab-caixa .caixa-header-actions button { min-height: 44px; padding: 11px 16px; margin: 0; border: 1px solid #192a40; border-radius: 7px; background: #192a40; color: #fff; font-size: 14px; font-weight: 600; box-shadow: none; transform: none; }
+#tab-caixa #btn-sangria-action { background: #fff3de !important; color: #80510d !important; border-color: #dec6a0; }
+#tab-caixa #btn-fechar-caixa-action { background: #fff !important; color: #a52b32 !important; border-color: #d8adb0; }
+#tab-caixa .caixa-header-actions button:hover { filter: brightness(.94); }
+#tab-caixa #caixa-status-card { padding: 20px !important; border-radius: 12px !important; gap: 20px; flex-wrap: wrap; box-shadow: none; flex-shrink: 0; }
+#tab-caixa #caixa-status-card.open { border-left: 4px solid #226447 !important; }
+#tab-caixa #caixa-status-card.closed { border-left: 4px solid #80510d !important; }
+#tab-caixa .caixa-banner > div { min-width: 0; overflow-wrap: anywhere; }
+#tab-caixa .caixa-banner strong { font-variant-numeric: tabular-nums; }
+#tab-caixa .data-table-card { border: 1px solid #d8dfe7; border-radius: 12px; box-shadow: none; background: #fff; }
+#tab-caixa .caixa-card-header { padding: 16px; gap: 12px; flex-wrap: wrap; background: #eef2f6; }
+#tab-caixa .caixa-card-header > div { gap: 10px !important; flex-wrap: wrap; min-width: 0; }
+#tab-caixa .caixa-card-header > div:first-child { flex: 1 1 260px; }
+#tab-caixa .badge-stock { border-radius: 6px; padding: 5px 9px; font-size: 12px; white-space: nowrap; }
+#tab-caixa .badge-stock.ok { background: #e5f2e9; color: #225b3d; border-color: #c8dfcf; }
+#tab-caixa .table-scroll-area { overflow: auto; scrollbar-color: #96a3b1 #edf0f4; scrollbar-width: thin; }
+#tab-caixa .pdv-table { width: 100%; border-collapse: collapse; }
+#tab-caixa .pdv-table th { padding: 15px 14px; background: #f8fafc; color: #526174; font-size: 12px; font-weight: 600; border-bottom: 1px solid #d8dfe7; white-space: nowrap; }
+#tab-caixa .pdv-table td { padding: 16px 14px; font-size: 14px; line-height: 1.5; border-bottom: 1px solid #e5eaf0; }
+#tab-caixa .pdv-table td:nth-child(5) { font-variant-numeric: tabular-nums; white-space: nowrap; }
+#tab-caixa .pdv-table tbody tr:hover { background: #f5f7fa; }
+#tab-caixa .pdv-table button { min-height: 36px; font-size: 12px !important; border-radius: 6px !important; }
+#tab-caixa .data-table-footer { padding: 14px 16px; background: #f8fafc; color: #526174; font-size: 12px; flex-wrap: wrap; gap: 12px; }
+#tab-caixa :is(button,[tabindex]):focus-visible { outline: 3px solid #2466bd; outline-offset: 3px; }
+@media(max-width:1100px) {
+  #tab-caixa .view-container { padding: 20px; gap: 16px; }
+  #tab-caixa .view-title-group h2 { font-size: 24px; }
+}
+@media(max-width:680px), (max-height:650px) {
+  #tab-caixa { overflow: auto !important; }
+  #tab-caixa .view-container { height: auto; min-height: 100%; overflow: visible; padding: 16px; }
+  #tab-caixa .caixa-header-actions { width: 100%; }
+  #tab-caixa .caixa-header-actions button { flex: 1 1 200px; justify-content: center; }
+  #tab-caixa .caixa-banner > div { text-align: left !important; }
+  #tab-caixa .data-table-card.secao-expandida { flex: none !important; min-height: 240px !important; }
+  #tab-caixa .data-table-card.secao-expandida .table-scroll-area { flex: none !important; max-height: 60vh !important; }
+  #tab-caixa .pdv-table button { min-height: 44px; }
+}

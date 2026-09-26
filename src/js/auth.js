@@ -3,6 +3,14 @@
  */
 
 import { StorageService } from './storage.js';
+import { limparNotificacoes } from './notificacoes.js';
+import { usarPdvOficialV2 } from './perfil-operacional-v2.js';
+
+function avisarOperadorLocal() {
+  if (window.electronAPI?.aplicativoCompletoTeste || usarPdvOficialV2()) {
+    window.dispatchEvent(new CustomEvent('flowpdv-operador-local'));
+  }
+}
 
 export const AuthModule = {
   usuarioAtual: null,
@@ -51,7 +59,15 @@ export const AuthModule = {
 
       const select = document.getElementById('login-operador-select');
       if (document.activeElement === select) {
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          const next = Math.max(0, Math.min(select.options.length - 1, select.selectedIndex + (e.key === 'ArrowDown' ? 1 : -1)));
+          if (select.options[next]) { select.selectedIndex = next; this.selecionarUsuarioLogin(select.value, false); }
+          return;
+        }
         if (e.key === 'Enter') {
+          e.preventDefault();
+          if (!select.value) return;
           const pinInput = document.getElementById('login-pin-input');
           if (pinInput) pinInput.focus();
         }
@@ -93,6 +109,7 @@ export const AuthModule = {
   temPermissao(permissaoKey) {
     if (!this.usuarioAtual) return false;
     if (this.isGerente() || this.isSuperAdmin()) return true;
+    if (this.temAutorizacaoTemporaria(permissaoKey)) return true;
 
     const padrao = {
       cancelarItem: true,
@@ -108,13 +125,44 @@ export const AuthModule = {
     return perms[permissaoKey] !== false;
   },
 
+  temAutorizacaoTemporaria(permissaoKey) {
+    const auth = this.autorizacaoTemporaria;
+    if (!auth || !permissaoKey) return false;
+    if (Date.now() > auth.expiraEm) {
+      this.autorizacaoTemporaria = null;
+      return false;
+    }
+    return auth.permissoes[permissaoKey] === true;
+  },
+
+  concederAutorizacaoTemporaria(permissaoKey) {
+    if (!permissaoKey) return;
+    const vigentes = this.autorizacaoTemporaria && Date.now() <= this.autorizacaoTemporaria.expiraEm
+      ? this.autorizacaoTemporaria.permissoes
+      : {};
+    this.autorizacaoTemporaria = {
+      permissoes: { ...vigentes, [permissaoKey]: true },
+      expiraEm: Date.now() + 10 * 60 * 1000
+    };
+  },
+
+  limparAutorizacaoTemporaria(permissaoKey) {
+    if (!this.autorizacaoTemporaria) return;
+    if (!permissaoKey) {
+      this.autorizacaoTemporaria = null;
+      return;
+    }
+    delete this.autorizacaoTemporaria.permissoes[permissaoKey];
+    if (!Object.keys(this.autorizacaoTemporaria.permissoes).length) this.autorizacaoTemporaria = null;
+  },
+
   executarComPermissaoOuPin(permissaoKey, callbackSucesso, tituloAcao = 'Ação Restrita') {
     if (this.temPermissao(permissaoKey)) {
       if (typeof callbackSucesso === 'function') callbackSucesso();
       return;
     }
 
-    this.solicitarAutorizacaoGerente(callbackSucesso, tituloAcao);
+    this.solicitarAutorizacaoGerente(callbackSucesso, tituloAcao, permissaoKey);
   },
 
   getPinGerente() {
@@ -139,6 +187,7 @@ export const AuthModule = {
   // TELA DE LOGIN & SELEÇÃO DE OPERADOR
   // -------------------------------------------------------------
   abrirTelaLogin() {
+    limparNotificacoes();
     const modal = document.getElementById('modal-login-operador');
     if (!modal) return;
 
@@ -146,6 +195,7 @@ export const AuthModule = {
     this.mostrarCarregandoLogin(false);
     document.body.classList.add('tela-login-ativa');
     modal.classList.add('active');
+    this.usuarioSelecionadoLoginId = null;
     this.renderCardsLogin();
     this.atualizarNomeLojaLogin();
     this.limparPinLogin();
@@ -156,24 +206,16 @@ export const AuthModule = {
     const classicBarcodeInput = document.getElementById('classic-pdv-barcode-input');
     if (classicBarcodeInput) classicBarcodeInput.value = '';
 
-    // Garantir foco imediato e persistente no campo de PIN
+    // Começa pela escolha do operador, sem capturar o foco depois.
     this.focarPinLogin();
+    avisarOperadorLocal();
   },
 
   focarPinLogin() {
-    const tentarFoco = () => {
-      const modal = document.getElementById('modal-login-operador');
-      if (!modal || !modal.classList.contains('active')) return;
-      const pinInput = document.getElementById('login-pin-input');
-      if (pinInput) {
-        pinInput.focus();
-        pinInput.select();
-      }
-    };
-    tentarFoco();
-    setTimeout(tentarFoco, 50);
-    setTimeout(tentarFoco, 150);
-    setTimeout(tentarFoco, 300);
+    const modal = document.getElementById('modal-login-operador');
+    if (!modal?.classList.contains('active')) return;
+    const alvo = document.getElementById(this.usuarioSelecionadoLoginId ? 'login-pin-input' : 'login-operador-select');
+    alvo?.focus();
   },
 
   fecharTelaLogin() {
@@ -181,6 +223,7 @@ export const AuthModule = {
     if (modal) modal.classList.remove('active');
     document.body.classList.remove('tela-login-ativa');
     this.mostrarCarregandoLogin(false);
+    avisarOperadorLocal();
   },
 
   mostrarCarregandoLogin(ativo) {
@@ -197,7 +240,7 @@ export const AuthModule = {
       btn.disabled = !!ativo;
       btn.textContent = ativo ? 'Carregando...' : 'Entrar';
     }
-    if (pinInput) pinInput.disabled = !!ativo;
+    if (pinInput) pinInput.disabled = !!ativo || !this.usuarioSelecionadoLoginId;
     if (select) select.disabled = !!ativo;
   },
 
@@ -224,6 +267,8 @@ export const AuthModule = {
     const container = document.getElementById('login-operadores-grid');
 
     const usuarios = StorageService.getUsuarios().filter(u => u.ativo !== false);
+    const campoPin = document.getElementById('login-pin-input');
+    if (campoPin) campoPin.disabled = true;
 
     if (select) {
       if (usuarios.length === 0) {
@@ -233,26 +278,28 @@ export const AuthModule = {
         return;
       }
 
-      select.innerHTML = usuarios.map(u => {
-        const isGer = u.cargo === 'gerente' || u.cargo === 'superadmin';
+      select.innerHTML = '<option value="">↑↓&#8194;Escolher operador</option>' + usuarios.map(u => {
+        const isGer = ['gerente', 'superadmin', 'admin'].includes(u.cargo);
         const prefix = isGer ? '👑 ' : '👤 ';
-        const roleLabel = isGer ? 'Gerente' : 'Operador Caixa';
+        const roleLabel = isGer ? 'Admin' : 'Operador Caixa';
         return `<option value="${u.id}">${prefix}${u.nome} (${roleLabel})</option>`;
       }).join('');
 
-      // Se o selecionado atual for válido, mantém ele; caso contrário, seleciona o primeiro
+      // Mantém uma escolha explícita; não presume o primeiro operador.
       const userValido = usuarios.find(u => u.id === this.usuarioSelecionadoLoginId);
       if (userValido) {
         select.value = userValido.id;
       } else {
-        select.value = usuarios[0].id;
-        this.usuarioSelecionadoLoginId = usuarios[0].id;
+        select.value = '';
+        this.usuarioSelecionadoLoginId = null;
       }
 
       const usuarioAtivo = usuarios.find(u => u.id === select.value);
       this.atualizarBadgeOperadorSelecionado(usuarioAtivo);
     }
 
+    const pin = document.getElementById('login-pin-input');
+    if (pin) pin.disabled = !this.usuarioSelecionadoLoginId;
     if (container) {
       container.style.display = 'none';
     }
@@ -267,13 +314,13 @@ export const AuthModule = {
     }
     const isGer = u.cargo === 'gerente' || u.cargo === 'superadmin';
     if (isGer) {
-      badgeEl.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 4px; background: #fef3c7; color: #b45309; padding: 2px 8px; border-radius: 6px; font-weight: 800; font-size: 11px; border: 1px solid #fde68a;">👑 Perfil: Gerente</span>`;
+      badgeEl.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 4px; background: #fef3c7; color: #b45309; padding: 2px 8px; border-radius: 6px; font-weight: 800; font-size: 11px; border: 1px solid #fde68a;">👑 Perfil: Admin</span>`;
     } else {
       badgeEl.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 4px; background: #e0f2fe; color: #0369a1; padding: 2px 8px; border-radius: 6px; font-weight: 800; font-size: 11px; border: 1px solid #bae6fd;">👤 Perfil: Caixa</span>`;
     }
   },
 
-  selecionarUsuarioLogin(id) {
+  selecionarUsuarioLogin(id, focarPin = true) {
     this.usuarioSelecionadoLoginId = id;
     const select = document.getElementById('login-operador-select');
     if (select && select.value !== id) {
@@ -287,7 +334,8 @@ export const AuthModule = {
     const pinInput = document.getElementById('login-pin-input');
     if (pinInput) {
       pinInput.value = '';
-      pinInput.focus();
+      pinInput.disabled = !u || u.ativo === false;
+      if (focarPin && !pinInput.disabled) pinInput.focus();
     }
     const erroEl = document.getElementById('login-erro-msg');
     if (erroEl) erroEl.style.display = 'none';
@@ -388,7 +436,12 @@ export const AuthModule = {
 
       if (window.CaixaModule) window.CaixaModule.renderHistoricoVendasTurno();
       if (window.App && typeof window.App.showToast === 'function') {
-        window.App.showToast(`🟢 Bem-vindo(a), ${u.nome}!`, 'success');
+        const agora = Date.now();
+        if (!(this._bemVindoEm && agora - this._bemVindoEm < 2500 && this._bemVindoId === u.id)) {
+          this._bemVindoEm = agora;
+          this._bemVindoId = u.id;
+          window.App.showToast(u.nome, 'success', { titulo: 'Bem-vindo', chave: 'login-bemvindo' });
+        }
       }
     } else {
       this.mostrarCarregandoLogin(false);
@@ -406,6 +459,7 @@ export const AuthModule = {
   logout() {
     sessionStorage.removeItem('flowpdv_usuario_logado');
     this.usuarioAtual = null;
+    this.limparAutorizacaoTemporaria();
     if (window.electronAPI && typeof window.electronAPI.definirTelaCheiaOperador === 'function') {
       window.electronAPI.definirTelaCheiaOperador(false);
     }
@@ -491,7 +545,7 @@ export const AuthModule = {
     if (atendOperator) atendOperator.textContent = u ? `Operador: ${u.nome}` : 'Operador: —';
     if (roleEl) {
       const cargo = u ? u.cargo : 'operador';
-      roleEl.textContent = this.isGerente() ? 'Gerente' : 'Operador';
+      roleEl.textContent = this.isGerente() ? 'Admin' : 'Operador';
       roleEl.className = `user-role-tag ${cargo}`;
     }
 
@@ -515,8 +569,10 @@ export const AuthModule = {
   // -------------------------------------------------------------
   // AUTORIZAÇÃO RÁPIDA DE GERENTE (PARA CANCELAMENTOS / DESCONTOS)
   // -------------------------------------------------------------
-  solicitarAutorizacaoGerente(arg1, arg2) {
+  solicitarAutorizacaoGerente(arg1, arg2, arg3) {
     const callbackSucesso = (typeof arg1 === 'function') ? arg1 : (typeof arg2 === 'function' ? arg2 : null);
+    const titulo = typeof arg2 === 'string' ? arg2 : '';
+    const permissaoKey = typeof arg3 === 'string' ? arg3 : null;
 
     if (this.isGerente()) {
       if (typeof callbackSucesso === 'function') callbackSucesso();
@@ -524,10 +580,17 @@ export const AuthModule = {
     }
 
     this.acaoPendenteCallback = callbackSucesso;
+    this.acaoPendentePermissao = permissaoKey;
     const modal = document.getElementById('modal-auth-gerente');
     const pinInput = document.getElementById('auth-gerente-pin-input');
     const erroMsg = document.getElementById('auth-gerente-erro-msg');
 
+    const texto = document.getElementById('auth-gerente-texto');
+    if (texto) {
+      texto.innerHTML = titulo
+        ? `${titulo}. Digite o <strong>PIN do gerente</strong> para autorizar.`
+        : 'Operadores de caixa não podem alterar preços ou estoque. Digite o <strong>PIN do Gerente</strong> para autorizar:';
+    }
     if (erroMsg) erroMsg.style.display = 'none';
     if (pinInput) {
       pinInput.value = '';
@@ -540,6 +603,7 @@ export const AuthModule = {
     const modal = document.getElementById('modal-auth-gerente');
     if (modal) modal.classList.remove('active');
     this.acaoPendenteCallback = null;
+    this.acaoPendentePermissao = null;
   },
 
   confirmarAutorizacaoGerente() {
@@ -549,7 +613,10 @@ export const AuthModule = {
 
     if (this.validarPinGerente(pin)) {
       const acao = this.acaoPendenteCallback;
+      const permissao = this.acaoPendentePermissao;
       this.acaoPendenteCallback = null;
+      this.acaoPendentePermissao = null;
+      this.concederAutorizacaoTemporaria(permissao);
 
       const modal = document.getElementById('modal-auth-gerente');
       if (modal) modal.classList.remove('active');

@@ -1,0 +1,5 @@
+# Revisão Gestor desktop e SVG — 23/09/2026
+Gestor94a3ca0: alinhamento do input date, botões/hover/cursor, clientes/ações/modais, filtros responsivos, SVG e cargo Administrador (valor gerente mantido). Perfil prioriza config do PDV; não confundir telefone da loja com whatsappSuporte. Master c9581e3: SVG de interface; sem mudança em planos/auth. Cardápio3f07936: últimos ícones textuais em SVG. Site oficial já utiliza SVG.
+Implementações e verificações detalhadas nos registros MEMORIA.md dos repos e MEMORIA-PUBLICACAO.md do cardápio. Evidências locais sintéticas: output/reconstrucao-web-20260923/gestor-desktop. Publicação validada pelo arquivo publicacao.json, separado de testes funcionais na loja.
+Pendente de decisão: liberação de módulos pelo Master; Gestor deveria mostrar status. A rotina atual permite alterar config.modulos e tenta refletir na licença, após autorização de sessão; não foi removida nesta rodada. Super Admin/Admin adiado a pedido do usuário.
+Pendências de validação: edição do perfil no PDV seguido de recebimento real no Gestor; PWA iOS no aparelho. Fora deste escopo: contraste legado em campos/modal do Master, visto ao conferir SVG.

@@ -6,6 +6,10 @@
   "scripts": {
     "bundle": "esbuild src/js/app.js --bundle --outfile=src/js/bundle.js --format=iife --platform=browser",
     "start": "npm run bundle && electron .",
+    "start:test": "npm run bundle && electron . --flowpdv-test",
+    "start:homologacao": "npm run bundle && electron . --flowpdv-homologacao",
+    "start:piloto-v2": "npm run bundle && electron . --flowpdv-piloto-v2",
+    "test:profile": "node --test test/runtime-profile.test.cjs",
     "build": "npm run bundle && electron-builder --win",
     "dist": "npm run build && powershell -Command \"Copy-Item 'C:/Users/User/AppData/Local/Temp/flowpdv_build/FlowPDV-Setup.exe' dist/ -Force; Copy-Item 'C:/Users/User/AppData/Local/Temp/flowpdv_build/latest.yml' dist/ -Force\"",
     "release": "npm run bundle && electron-builder --win --publish always && node scripts/publicar-release.js",
@@ -63,6 +67,7 @@
     ],
     "files": [
       "main.js",
+      "runtime-profile.cjs",
       "preload.js",
       "sitef-bridge.js",
       "index.html",

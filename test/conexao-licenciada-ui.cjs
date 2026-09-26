@@ -1,0 +1,24 @@
+const fs=require('fs'),path=require('path'),assert=require('assert/strict');
+const {chromium}=require('C:/Users/User/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+(async()=>{
+ const browser=await chromium.launch({channel:'chrome',headless:true});const page=await browser.newPage({viewport:{width:1280,height:900}});
+ await page.route('http://flowpdv.test/**',r=>r.fulfill({body:'<html><body></body></html>',contentType:'text/html'}));await page.goto('http://flowpdv.test/');
+ const css=fs.readFileSync('src/css/config-admin.css','utf8');
+ const script=fs.readFileSync('src/js/conexao-cardapio.js','utf8').replace(/^import .*;\r?$/gm,'').replace('export function','function');
+ const core=fs.readFileSync('src/js/conexao-licenciada-core.js','utf8').replace('export function','function');
+ const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.setContent(`<style>*{box-sizing:border-box}body{font-family:Arial;background:#f5f6f8;margin:32px}section{background:white;border:1px solid #d8dfe7;border-radius:12px;padding:24px;max-width:600px}${css}</style><section id="tab-config"><h2>Configurações</h2><h3>Licença da loja</h3><p>BURGER TESTE</p><label>Função deste computador</label><select id="cfg-tipo-terminal"><option>Atendimento (mesas / comandas)</option></select><div id="cfg-conexao-cardapio" hidden><p id="cfg-conexao-cardapio-status"></p><button id="cfg-conexao-cardapio-abrir" class="btn-hw-action">Conectar cardápio</button></div></section>`);
+ await page.addScriptTag({content:`${core}\nlet linked=false;let tipo='atendimento',papel='atendimento';const operator={};const result=()=>({vinculado:linked,chaveLicenca:'LIC-FLOW-937278',deviceId:'TERM-UI',papel});function criarServicosAcessoHospedado(){return {criarAcesso:()=>({prepararTerminal:async()=>({uid:'ui',vinculo:result()}),consultarTerminal:async()=>({vinculo:result()}),entrarGerencia:async()=>{}}),gerencia:()=>({call:async()=>{await new Promise(r=>window.resolveConexao=r);linked=true;papel=tipo}}),encerrarGerencia:async()=>{}}};window.electronAPI={};${script}\n instalarConexaoCardapio({storage:{getLicenca:()=>({chaveLicenca:'LIC-FLOW-937278',nome:'BURGER TESTE'}),getDeviceId:()=> 'TERM-UI',getTipoTerminal:()=> tipo},auth:{isGerente:()=>true,getUsuario:()=>operator}});`});
+ await page.click('#cfg-conexao-cardapio-abrir');await page.getByText('Confirme sua conta para conectar este computador.',{exact:true}).waitFor();
+ const out=path.resolve('../output/migracao-v2-20260923');await page.screenshot({path:path.join(out,'conexao-config-desktop.png')});
+ await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(out,'conexao-config-mobile.png')});
+ assert.equal(await page.$eval('dialog',d=>d.scrollWidth<=d.clientWidth+1),true);
+ await page.fill('#conexao-cardapio-email','teste@example.test');await page.fill('#conexao-cardapio-senha','Ficticia');await page.click('button[type=submit]');assert.equal(await page.inputValue('#conexao-cardapio-senha'),'Ficticia');assert.equal(await page.isDisabled('#conexao-cardapio-senha'),true);await page.evaluate(()=>resolveConexao());await page.getByText('Recebimento de pedidos ainda não ativado.',{exact:true}).waitFor();assert.equal(await page.inputValue('#conexao-cardapio-senha'),'');
+ await page.keyboard.press('Escape');assert.equal(await page.$eval('dialog',d=>d.open),false);
+ await page.evaluate(()=>{tipo='caixa';window.ConexaoCardapio.conferirAposTroca()});
+ await page.getByText(/Troca pendente: de Atendimento para Caixa/).waitFor();
+ await page.fill('#conexao-cardapio-email','teste@example.test');await page.fill('#conexao-cardapio-senha','Ficticia');await page.getByRole('button',{name:'Confirmar troca de função',exact:true}).click();await page.evaluate(()=>resolveConexao());
+ await page.getByText('Recebimento de pedidos ainda não ativado.',{exact:true}).waitFor();
+ assert.equal(await page.textContent('#cfg-conexao-cardapio-status'),'Conectado · Caixa');
+ assert.equal(await page.locator('#conexao-cardapio-conferir').count(),0);await page.screenshot({path:path.join(out,'conexao-sucesso-mobile.png')});await page.setViewportSize({width:1280,height:900});await page.screenshot({path:path.join(out,'conexao-sucesso-desktop.png')});assert.deepEqual(errors,[]);console.log('UI simulada: desktop/mobile, conexão, senha limpa e ESC OK');await browser.close();
+})().catch(e=>{console.error(e);process.exit(1)});

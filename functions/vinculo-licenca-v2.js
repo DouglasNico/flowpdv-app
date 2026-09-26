@@ -11,17 +11,25 @@ module.exports = admin => {
       if (actor.disabled || !actor.email || !actor.emailVerified) fail('permission-denied', 'Gerência com e-mail verificado necessária.');
       const data = request.data || {}, chave = id(data.chaveLicenca), deviceId = id(data.deviceId), uid = id(data.terminalUid);
       if (!['caixa', 'atendimento'].includes(data.tipoTerminal)) fail('invalid-argument', 'Escolha Caixa ou Atendimento nas configurações do PDV.');
-      if (process.env.FUNCTIONS_EMULATOR !== 'true' && chave !== 'LIC-FLOW-937278') fail('failed-precondition', 'Integração ainda não liberada para esta licença.');
       const target = await admin.auth().getUser(uid);
       if (target.disabled || target.email || target.providerData.length || target.customClaims?.admin) fail('failed-precondition', 'Identidade do computador incompatível.');
       return db.runTransaction(async tx => {
-        const migration = (await tx.get(db.doc(`migracoes_v2/${chave}`))).data();
-        if (!migration?.lojaId) fail('failed-precondition', 'Esta licença ainda não está preparada para conexão.');
-        const lojaId = id(migration.lojaId), base = `lojas_v2/${lojaId}`;
-        const refs = [db.doc(base), db.doc(`licencas/${chave}`), db.doc(`${base}/membros/${actor.uid}`), db.doc(`terminais_v2/${uid}`), db.doc(`${base}/membros/${uid}`), db.doc(`${base}/terminais_pdv/${deviceId}`)];
-        const [shopDoc, licenseDoc, managerDoc, terminalDoc, memberDoc, deviceDoc] = await Promise.all(refs.map(ref => tx.get(ref)));
-        const shop = shopDoc.data(), license = licenseDoc.data(), manager = managerDoc.data();
-        if (!shop?.ativo || shop.chaveLicencaLegada !== chave || shop.migracao?.acessoAdministrativo !== true) fail('failed-precondition', 'Conexão indisponível para esta loja.');
+        const [migrationDoc, licenseDoc] = await Promise.all([
+          tx.get(db.doc(`migracoes_v2/${chave}`)),
+          tx.get(db.doc(`licencas/${chave}`))
+        ]);
+        const migration = migrationDoc.exists ? migrationDoc.data() : null;
+        const license = licenseDoc.exists ? licenseDoc.data() : null;
+        if (!license || license.status !== 'ativa') fail('failed-precondition', 'Confira a licença no PDV antes de conectar.');
+
+        let lojaId = migration?.lojaId || license.lojaId || license.slug || `legado-${chave.toLowerCase().replace(/[^a-z0-9_-]/g, '-')}`;
+        lojaId = id(lojaId);
+        const base = `lojas_v2/${lojaId}`;
+        const refs = [db.doc(base), db.doc(`${base}/membros/${actor.uid}`), db.doc(`terminais_v2/${uid}`), db.doc(`${base}/membros/${uid}`), db.doc(`${base}/terminais_pdv/${deviceId}`)];
+        const [shopDoc, managerDoc, terminalDoc, memberDoc, deviceDoc] = await Promise.all(refs.map(ref => tx.get(ref)));
+        const shop = shopDoc.data(), manager = managerDoc.data();
+        if (!shop?.ativo) fail('failed-precondition', 'Conexão indisponível para esta loja.');
+        if (shop.chaveLicencaLegada && shop.chaveLicencaLegada !== chave) fail('failed-precondition', 'Licença não corresponde a esta loja.');
         const isAdmin = actor.customClaims?.admin === true && request.auth.token.admin === true;
         if (!isAdmin && (!manager?.ativo || manager.tipo !== 'usuario' || manager.papel !== 'gerente')) fail('permission-denied', 'Esta conta não administra a loja da licença.');
         if (!license || license.status !== 'ativa') fail('failed-precondition', 'Confira a licença no PDV antes de conectar.');

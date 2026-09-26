@@ -685,13 +685,15 @@ export const XmlImporterModule = {
 
       // Toast de Sucesso
       if (window.App && typeof window.App.showToast === 'function') {
-        window.App.showToast(`🎉 NF-e #${numNota} (${fornNome}) importada! +${totalNovosCadastros} novos, +${totalAtualizados} atualizados, +${totalContasCriadas} contas no financeiro.`);
+        window.App.showToast(`NF-e #${numNota} (${fornNome}) salva neste computador: ${totalNovosCadastros} produtos novos, ${totalAtualizados} atualizados e ${totalContasCriadas} contas no financeiro.`, 'success', { titulo: 'Importação XML concluída' });
       } else {
         alert(`🎉 Entrada concluída com sucesso!\n\n• ${totalNovosCadastros} novos produtos cadastrados\n• ${totalAtualizados} produtos com estoque somado\n• ${totalContasCriadas} parcelas lançadas no Contas a Pagar.`);
       }
     } catch (err) {
       console.error('[XmlImporter] Erro ao confirmar entrada:', err);
-      alert('❌ Erro ao salvar dados da nota fiscal: ' + (err.message || err));
+      const mensagem = 'A importação não foi concluída. Confira o estoque e o financeiro antes de repetir a entrada. ' + (err.message || err);
+      if (window.App?.showToast) window.App.showToast(mensagem, 'error', { titulo: 'Confira a entrada da nota' });
+      else alert(mensagem);
     } finally {
       if (btnConfirmar) {
         btnConfirmar.disabled = false;

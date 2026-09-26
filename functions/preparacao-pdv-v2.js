@@ -6,7 +6,7 @@ module.exports = admin => ({
     const db=admin.firestore();
     return db.runTransaction(async tx=>{
       const t=(await tx.get(db.doc(`terminais_v2/${request.auth.uid}`))).data();
-      if(!t?.ativo || t.papel!=='caixa' || t.chaveLicenca!=='LIC-FLOW-937278' || t.lojaId!=='legado-lic-flow-937278') throw new HttpsError('permission-denied','Caixa não autorizado para este piloto.');
+      if(!t?.ativo || t.papel!=='caixa' || !t.chaveLicenca || !t.lojaId) throw new HttpsError('permission-denied','Caixa não autorizado.');
       const base=`lojas_v2/${t.lojaId}`,shop=(await tx.get(db.doc(base))).data(),member=(await tx.get(db.doc(`${base}/membros/${request.auth.uid}`))).data();
       if(!shop?.ativo || !member?.ativo || member.tipo!=='terminal' || member.papel!=='caixa') throw new HttpsError('permission-denied','Vínculo indisponível.');
       await require('./identidade-operacional-v2')(tx,db,base,t,request.auth.uid);
@@ -29,7 +29,7 @@ module.exports = admin => ({
     const db=admin.firestore();
     return db.runTransaction(async tx=>{
       const ref=db.doc(`terminais_v2/${request.auth.uid}`),t=(await tx.get(ref)).data();
-      if(!t?.ativo||t.lojaId!=='legado-lic-flow-937278'||t.papel!=='caixa'||t.chaveLicenca!=='LIC-FLOW-937278'||t.deviceId!==request.data?.deviceId)throw new HttpsError('permission-denied','Caixa incompatível.');
+      if(!t?.ativo||!t.lojaId||t.papel!=='caixa'||!t.chaveLicenca||t.deviceId!==request.data?.deviceId)throw new HttpsError('permission-denied','Caixa incompatível.');
       const base=`lojas_v2/${t.lojaId}`,shop=(await tx.get(db.doc(base))).data(),member=(await tx.get(db.doc(`${base}/membros/${request.auth.uid}`))).data();
       if(!shop?.ativo||!member?.ativo||member.tipo!=='terminal'||member.papel!=='caixa'||shop.corteOperacionalV2?.legadoBloqueado!==true||!['aguardando_pdv','concluido'].includes(shop.corteOperacionalV2?.estado)||request.data?.revisao!==shop.ativacaoOperacionalV2?.revisao)throw new HttpsError('failed-precondition','Preparação mudou; confira a conexão novamente.');
       await require('./identidade-operacional-v2')(tx,db,base,t,request.auth.uid);

@@ -505,7 +505,7 @@ export const ClientesModule = {
       window.PdvModule.carregarClientesFiadoSelect(novoClienteId);
     }
 
-    window.App.showToast('✅ Cliente salvo com sucesso!', 'success');
+    window.App.showToast('Cadastro do cliente salvo neste computador.', 'success', { titulo: 'Cliente salvo' });
   },
 
   excluirCliente(id) {
@@ -644,12 +644,15 @@ export const ClientesModule = {
     if (modal) modal.classList.remove('active');
   },
 
-  copiarEndereco(endCodificado) {
-    const end = decodeURIComponent(endCodificado || '');
-    if (!end) return;
-    navigator.clipboard.writeText(end).then(() => {
-      if (window.App) window.App.showToast('📋 Endereço copiado para a área de transferência!', 'success');
-    });
+  async copiarEndereco(endCodificado) {
+    try {
+      const end = decodeURIComponent(endCodificado || '');
+      if (!end) return;
+      await navigator.clipboard.writeText(end);
+      window.App?.showToast('Endereço copiado para a área de transferência.', 'success');
+    } catch {
+      window.App?.showToast('Não foi possível copiar. Selecione o endereço e copie manualmente.', 'warning', { titulo: 'Endereço não copiado' });
+    }
   },
 
   // Modal Elegante de Receber Pagamento de Fiado

@@ -1,0 +1,56 @@
+const { app, BrowserWindow, session } = require('electron');
+const fs = require('node:fs'), path = require('node:path'), os = require('node:os');
+const { pathToFileURL } = require('node:url');
+const assert = require('node:assert/strict');
+const root = path.resolve(__dirname, '..');
+const out = path.join(root, '../output/notificacoes-fase2');
+fs.mkdirSync(out, { recursive: true });
+app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'flowpdv-notificacoes-')));
+app.whenReady().then(async () => {
+  session.defaultSession.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*'] }, (_, cb) => cb({ cancel: true }));
+  const win = new BrowserWindow({ width: 1366, height: 768, show: false, webPreferences: { backgroundThrottling: false, contextIsolation: true } });
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8').replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace('<head>', `<head><base href="${pathToFileURL(root + path.sep).href}">`);
+  const fixture = path.join(out, 'fixture.html'); fs.writeFileSync(fixture, html);
+  await win.loadFile(fixture);
+  const js = s => win.webContents.executeJavaScript(s);
+  await js(fs.readFileSync(path.join(root, 'src/js/notificacoes.js'), 'utf8').replaceAll('export function', 'function') + '\nwindow.App={showToast};void 0;');
+  await js(fs.readFileSync(path.join(root, 'src/js/pdv.js'), 'utf8').replace(/^import .*;\r?$/gm, '').replace('export const PdvModule', 'window.PdvModule') + ';void 0;');
+  await js(`document.querySelectorAll('.modal-overlay').forEach(e=>e.classList.remove('active'));Object.defineProperty(document,'hidden',{configurable:true,get:()=>false});
+    window.leitor=document.createElement('input');leitor.id='leitor-teste';leitor.setAttribute('aria-label','Leitor de teste');document.body.append(leitor);leitor.focus();
+    PdvModule.abrirModalCortesia();PdvModule.abrirModalCortesia();`);
+  assert.equal(await js("document.querySelectorAll('.flow-notice').length"), 1);
+  assert.equal(await js("document.activeElement.id"), 'leitor-teste');
+  assert.match(await js("document.querySelector('.flow-notice').textContent"), /Carrinho vazio/);
+  await js(fs.readFileSync(path.join(root, 'src/js/comandas.js'), 'utf8').replace(/^import .*;\r?$/gm, '').replace('export const ComandasModule', 'window.ComandasModule') + ';void 0;');
+  await js(`window.AuthModule={getNomeOperador:()=> 'Teste'};window.AuditModule={registrarOuAtualizarLogMesa:()=>{}};
+    window.contaTeste={id:'M4',nome:'Mesa 04',itens:[]};ComandasModule.getComandas=()=>[contaTeste];ComandasModule.salvarComandas=()=>{};ComandasModule.renderGridComandas=ComandasModule.renderPainelDetalhes=()=>{};
+    for(let i=1;i<=20;i++)ComandasModule.adicionarItem('M4',{id:'P1',nome:'Água',precoVenda:5},1);
+    App.showToast('Não foi possível salvar. Confira a conexão e tente novamente.','error');`);
+  assert.equal(await js("document.querySelectorAll('.flow-notice').length"), 3);
+  assert.match(await js("document.querySelector('.flow-notice--success').textContent"), /1× Água/);
+  assert.equal(await js('contaTeste.itens[0].quantidade'), 20);
+  assert.equal(await js("document.querySelector('.flow-notice--error [role=alert]')!==null"), true);
+  const captures = [];
+  for (const [w,h] of [[1366,768],[1024,768],[390,844]]) {
+    win.setSize(w,h); await new Promise(r=>setTimeout(r,200));
+    const bounds = await js(`Array.from(document.querySelectorAll('.flow-notice')).map(e=>{const r=e.getBoundingClientRect(),z=Number(getComputedStyle(document.body).zoom)||1;return {left:r.left*z,right:r.right*z,bottom:r.bottom*z,width:innerWidth,height:innerHeight,overflow:e.scrollWidth>e.clientWidth}})`);
+    assert.ok(bounds.every(r=>r.left>=0&&r.right<=r.width&&r.bottom<=r.height&&!r.overflow));
+    const file=path.join(out,`notificacoes-${w}.png`);fs.writeFileSync(file,(await win.webContents.capturePage()).toPNG());captures.push(file);
+  }
+  await js("document.querySelectorAll('.flow-notice__close').forEach(b=>b.click());App.showToast('<img src=x onerror=alert(1)>','info',80)");
+  assert.equal(await js("document.querySelector('.flow-notice img')===null"), true);
+  await new Promise(r=>setTimeout(r,150));
+  assert.equal(await js("document.querySelectorAll('.flow-notice').length"), 0);
+  await js("App.showToast('Erro persistente','error');App.showToast('Pausa para leitura','info',120);document.querySelector('.flow-notice--info').dispatchEvent(new MouseEvent('mouseenter'))");
+  await new Promise(r=>setTimeout(r,180));
+  assert.equal(await js("document.querySelectorAll('.flow-notice').length"), 2);
+  await js("document.querySelector('.flow-notice--info').dispatchEvent(new MouseEvent('mouseleave'))");
+  await new Promise(r=>setTimeout(r,180));
+  assert.equal(await js("document.querySelectorAll('.flow-notice').length"), 1);
+  await js("App.showToast('Erro 2','error');App.showToast('Erro 3','error');App.showToast('Erro 4','error');document.querySelector('.flow-notice__close').click()");
+  assert.equal(await js("document.querySelectorAll('.flow-notice').length"), 3);
+  assert.match(await js("document.getElementById('toast-container').textContent"), /Erro 4/);
+  console.log(JSON.stringify({ result: 'PASS', scenarios: ['cortesia real vazia', 'deduplicação', '20 adições agrupadas', 'foco preservado', '3 resoluções sem overflow', 'texto sem HTML', 'prazo explícito', 'pausa ao ler', 'erro persistente e fila'], captures }));
+  win.destroy(); app.quit();
+}).catch(e=>{console.error(e);app.exit(1);});
